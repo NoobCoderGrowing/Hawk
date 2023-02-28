@@ -1,2 +1,6 @@
 /.idea
 */target
+!/nacos/target
+!/nacos2/target
+/nacos/logs
+/nacos2/logs
