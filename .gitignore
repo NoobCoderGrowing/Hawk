@@ -4,3 +4,4 @@
 !/z-nacos2/target
 /z-nacos/logs
 /z-nacos2/logs
+**/*.iml
