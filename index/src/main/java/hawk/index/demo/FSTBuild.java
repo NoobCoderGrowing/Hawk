@@ -8,7 +8,6 @@ import org.apache.lucene.util.fst.Util;
 
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.HashSet;
 
 
 public class FSTBuild {

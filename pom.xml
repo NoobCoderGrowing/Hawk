@@ -24,6 +24,7 @@
         <maven.compiler.target>1.8</maven.compiler.target>
     </properties>
 
+<!--    子项目必然继承-->
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -53,8 +54,15 @@
             <artifactId>apollo-client</artifactId>
             <version>1.7.0</version>
         </dependency>
+
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>fastjson</artifactId>
+            <version>1.2.75</version>
+        </dependency>
     </dependencies>
 
+<!--    dependencyManagement中项目选择继承,及子项目必须写明dependency才继承-->
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -80,17 +88,12 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+
+            <dependency>
+                <groupId>org.lz4</groupId>
+                <artifactId>lz4-java</artifactId>
+                <version>1.8.0</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <version>2.6.6</version>
-            </plugin>
-        </plugins>
-    </build>
-
 </project>
