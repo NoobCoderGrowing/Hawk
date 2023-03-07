@@ -1,5 +1,5 @@
 /.idea
-*/target
+**/target
 !/z-nacos/target
 !/z-nacos2/target
 /z-nacos/logs
