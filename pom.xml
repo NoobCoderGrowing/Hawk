@@ -11,6 +11,7 @@
     <modules>
         <module>index</module>
         <module>segment</module>
+        <module>recall</module>
     </modules>
     <parent>
         <groupId>org.springframework.boot</groupId>
