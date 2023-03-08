@@ -1,6 +1,6 @@
 package hawk.index.core.directory;
 
-public class Directory {
+public abstract class Directory {
 
 
 }

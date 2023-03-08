@@ -6,9 +6,6 @@ import hawk.segment.core.graph.Vertex;
 import hawk.segment.core.Term;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-
-import javax.annotation.PostConstruct;
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -19,8 +16,7 @@ import java.util.*;
 @Data
 public class NShortestPathAnalyzer implements Analyzer {
 
-    @Autowired
-    private StringTools stringTools;
+    private StringTools stringTools = new StringTools();
 
     //number of shortest paths
     private int n=3;
@@ -29,13 +25,7 @@ public class NShortestPathAnalyzer implements Analyzer {
 
     private HashSet<String> NPathSet = new HashSet<String>(621949);
 
-    @Override
-    public List<Term> tokenize(String sentence) {
-        return null;
-    }
-
-    @PostConstruct
-    public void init() {
+    public NShortestPathAnalyzer() {
         loadNPathDic();
     }
 
@@ -246,8 +236,6 @@ public class NShortestPathAnalyzer implements Analyzer {
 
     public static void main(String[] args) {
         NShortestPathAnalyzer nShortestPathAnalyzer = new NShortestPathAnalyzer();
-        nShortestPathAnalyzer.init();
-        nShortestPathAnalyzer.stringTools = new StringTools();
         System.out.println(nShortestPathAnalyzer.anlyze("他说的很有道理",0,"title"));
     }
 

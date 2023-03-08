@@ -1,0 +1,3 @@
+索引日期YYYYMMDD, 共8个字符, 32byte
+segment数量, 用vint表示, 1byte
+目前最大docID, 用int表示, 4个byte
