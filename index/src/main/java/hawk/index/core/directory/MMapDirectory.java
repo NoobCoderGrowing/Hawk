@@ -1,8 +1,4 @@
 package hawk.index.core.directory;
-
-import hawk.index.core.directory.Constants;
-import hawk.index.core.directory.FSDirectory;
-
 import java.io.IOException;
 import java.nio.file.Path;
 
