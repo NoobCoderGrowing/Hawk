@@ -8,11 +8,14 @@ public class StringField extends Field{
 
     private String value;
 
-    private FieldType fieldType;
+    private Enum<Field.Tokenized> isTokenized;
+    private Enum<Field.Stored> isStored;
 
-    public StringField(String name, String value, FieldType fieldType) {
+    public StringField(String name, String value, Enum<Field.Tokenized> isTokenized,
+                       Enum<Field.Stored> isStored) {
         this.name = name;
         this.value = value;
-        this.fieldType = fieldType;
+        this.isTokenized = isTokenized;
+        this.isStored = isStored;
     }
 }

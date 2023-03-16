@@ -7,6 +7,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Set;
 
 
 @Slf4j
@@ -21,7 +24,8 @@ public class SegmentInfo {
             String strPath = directoryPath.toString() + "/segment.info";
             Path path = Paths.get(strPath);
             try {
-                Files.createFile(path);
+                Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwxrwxrwx");
+                Files.createFile(path, PosixFilePermissions.asFileAttribute(perms));
             } catch (IOException e) {
                 log.error("create segment.info file failed");
                 System.exit(1);

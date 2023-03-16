@@ -1,5 +1,4 @@
 package hawk.index.core.directory;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -20,7 +19,7 @@ public class Constants {
     /** architecture, 64 or 32 */
     public static final String OS_ARCH = System.getProperty("os.arch");
 
-    public static final int PROCESSOR_NUM = getProcessorNum();
+    public static final int PROCESSOR_NUM;
 
     static {
         boolean is64Bit = false;
@@ -30,7 +29,9 @@ public class Constants {
             if (datamodel != null) {
                 is64Bit = datamodel.contains("64");
             }
-        } catch (SecurityException ex) {}
+        } catch (SecurityException ex) {
+            ex.printStackTrace();
+        }
         if (datamodel == null) {
             if (OS_ARCH != null && OS_ARCH.contains("64")) {
                 is64Bit = true;
@@ -39,11 +40,12 @@ public class Constants {
             }
         }
         JRE_IS_64BIT = is64Bit;
+        PROCESSOR_NUM = getProcessorNum();
     }
 
     public static int getProcessorNum(){
         String command = "";
-        if(OS_NAME.contains("mac")){//mac
+        if(OS_NAME.contains("Mac")){//mac
             command = "sysctl -n machdep.cpu.core_count";
         }else if(OS_NAME.contains("nix") || OS_NAME.contains("nux") || OS_NAME.contains("aix")){//unix
             command = "lscpu";
@@ -54,7 +56,7 @@ public class Constants {
         int numberOfCores = 0;
         int sockets = 0;
         try {
-            if(OS_NAME.contains("mac")){
+            if(OS_NAME.contains("Mac")){
                 String[] cmd = { "/bin/sh", "-c", command};
                 process = Runtime.getRuntime().exec(cmd);
             }else{
@@ -70,7 +72,7 @@ public class Constants {
 
         try {
             while ((line = reader.readLine()) != null) {
-                if(OS_NAME.contains("mac")){
+                if(OS_NAME.contains("Mac")){
                     numberOfCores = line.length() > 0 ? Integer.parseInt(line) : 0;
                 }else if (OS_NAME.contains("nix") || OS_NAME.contains("nux") || OS_NAME.contains("aix")) {
                     if (line.contains("Core(s) per socket:")) {

@@ -3,7 +3,6 @@ package hawk.index.demo;
 import hawk.index.core.directory.MMapDirectory;
 import hawk.index.core.document.Document;
 import hawk.index.core.field.Field;
-import hawk.index.core.field.FieldType;
 import hawk.index.core.field.StringField;
 import hawk.index.core.writer.IndexWriter;
 import hawk.index.core.writer.IndexWriterConfig;
@@ -21,8 +20,7 @@ public class WirteIndex {
         IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer);
         IndexWriter indexWriter = new IndexWriter(indexWriterConfig, mMapDirectory);
         Document doc = new Document();
-        FieldType fieldType = new FieldType(Field.Stored.YES,Field.Tokenized.YES);
-        StringField field = new StringField("title", "可爱", fieldType);
+        StringField field = new StringField("title", "可爱", Field.Tokenized.YES, Field.Stored.YES);
         doc.add(field);
         indexWriter.addDoc(doc);
         indexWriter.commit();
