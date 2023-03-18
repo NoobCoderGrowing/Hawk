@@ -8,7 +8,8 @@ public class StringField extends Field{
 
     private String value;
 
-    private Enum<Field.Tokenized> isTokenized;
+    public Enum<Field.Tokenized> isTokenized;
+
     private Enum<Field.Stored> isStored;
 
     public StringField(String name, String value, Enum<Field.Tokenized> isTokenized,

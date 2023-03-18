@@ -49,7 +49,7 @@ public class NShortestPathAnalyzer implements Analyzer {
         }
     }
 
-    public HashSet<Term> anlyze(String value, int fieldID, String fieldName){
+    public HashSet<Term> anlyze(String value, String fieldName){
         HashSet<Term> result = new HashSet<>();
         value = stringTools.normalizeString(value);
         String[] strArr = value.split(" ");
@@ -63,22 +63,21 @@ public class NShortestPathAnalyzer implements Analyzer {
             strArr[i] = stringTools.splitChineseDigitEnglishByComma(strArr[i]);
             pos = stringTools.collectHanPinDigit(strArr[i], hanPinDigSeg, pos);
         }
-        tokenize(fieldID, hanPinDigSeg, result, fieldName);
+        tokenize(hanPinDigSeg, result, fieldName);
         return result;
     }
 
-    public void tokenize(int fieldID, HanPinDigSeg hanPinDigSeg,
+    public void tokenize( HanPinDigSeg hanPinDigSeg,
                                    HashSet<Term> termSet, String fieldName){
         ArrayList<Phrase> hanziList = hanPinDigSeg.getHanZiList();
         //汉字分词形成token
         for (int i = 0; i < hanziList.size(); i++) {
-            nShortestPath(hanziList.get(i), fieldID, termSet, fieldName);
+            nShortestPath(hanziList.get(i), termSet, fieldName);
         }
         //数字形成token，粗分
         ArrayList<Phrase> digitList = hanPinDigSeg.getDigitList();
         for (int i = 0; i < digitList.size(); i++) {
             Term digitTerm = new Term();
-            digitTerm.setFieldId(fieldID);
             digitTerm.setValue(digitList.get(i).getValue());
             digitTerm.setPos(digitList.get(i).getPos());
             digitTerm.setFieldName(fieldName);
@@ -88,7 +87,6 @@ public class NShortestPathAnalyzer implements Analyzer {
         //数字形成token，粗分
         for (int i = 0; i < pinYinList.size(); i++) {
             Term pinYinTerm = new Term();
-            pinYinTerm.setFieldId(fieldID);
             pinYinTerm.setValue(pinYinList.get(i).getValue());
             pinYinTerm.setPos(pinYinList.get(i).getPos());
             pinYinTerm.setFieldName(fieldName);
@@ -97,7 +95,7 @@ public class NShortestPathAnalyzer implements Analyzer {
     }
 
     // n 最短路径分词
-    public void nShortestPath(Phrase phrase, int fieldID, HashSet<Term> termSet, String fieldName){
+    public void nShortestPath(Phrase phrase, HashSet<Term> termSet, String fieldName){
         String chineseStr = phrase.getValue();
         if(StringUtils.isNullOrEmpty(chineseStr)){
             return;
@@ -107,7 +105,6 @@ public class NShortestPathAnalyzer implements Analyzer {
             Term term = new Term();
             term.setValue(chineseStr);
             term.setPos(phrase.getPos());
-            term.setFieldId(fieldID);
             term.setFieldName(fieldName);
             termSet.add(term);
             return;
@@ -118,7 +115,7 @@ public class NShortestPathAnalyzer implements Analyzer {
         }
         List<Vertex> graph = createGraph(chineseStr);
         computeNShortestPath(graph);
-        retriveNShortestPath(graph, phrase.getPos(), fieldID, termSet, fieldName);
+        retriveNShortestPath(graph, phrase.getPos(), termSet, fieldName);
     }
 
 
@@ -202,14 +199,14 @@ public class NShortestPathAnalyzer implements Analyzer {
     }
 
 
-    public void retriveNShortestPath(List<Vertex> graph, int pos, int fieldId,
+    public void retriveNShortestPath(List<Vertex> graph, int pos,
                                                HashSet<Term> termSet, String fieldName){
         Vertex curNode = graph.get(graph.size()-1);
-        getTerm(curNode, graph, termSet, pos, fieldId, fieldName);
+        getTerm(curNode, graph, termSet, pos, fieldName);
     }
 
     // 回溯时间复杂度为nN^2, n为字符数，N为最短路径数
-    public void getTerm(Vertex curNode, List<Vertex> graph, HashSet<Term> termSet, int pos, int field,
+    public void getTerm(Vertex curNode, List<Vertex> graph, HashSet<Term> termSet, int pos,
                         String fieldName){
         if(curNode == graph.get(0)){
             return;
@@ -226,17 +223,16 @@ public class NShortestPathAnalyzer implements Analyzer {
             Term term = new Term();
             term.setValue(edge.getWord());
             term.setPos(startPos);
-            term.setFieldId(field);
             term.setFieldName(fieldName);
             termSet.add(term);
             it.remove();
-            getTerm(prevNode, graph, termSet, pos, field,fieldName);
+            getTerm(prevNode, graph, termSet, pos,fieldName);
         }
     }
 
     public static void main(String[] args) {
         NShortestPathAnalyzer nShortestPathAnalyzer = new NShortestPathAnalyzer();
-        System.out.println(nShortestPathAnalyzer.anlyze("他说的很有道理",0,"title"));
+        System.out.println(nShortestPathAnalyzer.anlyze("他说的很有道理","title"));
     }
 
 }

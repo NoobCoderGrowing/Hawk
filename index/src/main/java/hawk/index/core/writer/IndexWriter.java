@@ -49,10 +49,11 @@ public class IndexWriter {
         if(bytesUsed.get() >= config.getMaxRamUsage() * 0.95){
             //no one should write into ivt when ram is full until flushing is finished
             flush();//every flush creates a new segment and may incur sgement merge
+            reset();
             ramEmpty.signalAll();
         }
         threadPoolExecutor.execute(new IndexChainPerThread(docIDAllocator, doc, ivt, bytesUsed, ramFull,
-                config.getMaxRamUsage(), ramUsageLock));
+                config.getMaxRamUsage(), ramUsageLock, config.getAnalyzer()));
     }
 
     public void reset(){

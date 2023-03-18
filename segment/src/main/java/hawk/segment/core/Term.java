@@ -11,8 +11,6 @@ public class Term {
 
     private int pos;
 
-    private int fieldId;
-
     private String fieldName;
 
     @Override
@@ -20,11 +18,12 @@ public class Term {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Term term = (Term) o;
-        return pos == term.pos && fieldId == term.fieldId && Objects.equals(value, term.value) && Objects.equals(fieldName, term.fieldName);
+        return pos == term.pos && Objects.equals(value, term.value) && Objects.equals(fieldName,
+                term.fieldName);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(value, pos, fieldId, fieldName);
+        return Objects.hash(value, pos, fieldName);
     }
 }
