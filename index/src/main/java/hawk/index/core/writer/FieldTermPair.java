@@ -14,29 +14,25 @@ public class FieldTermPair {
 
     private byte[] term;
 
-    private byte termType;
+
+    public FieldTermPair(byte[] field, byte[] term) {
+        this.field = field;
+        this.term = term;
+    }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         FieldTermPair that = (FieldTermPair) o;
-        return termType == that.termType && Arrays.equals(field, that.field) && Arrays.equals(term,
-                that.term);
+        return Arrays.equals(field, that.field) && Arrays.equals(term, that.term);
     }
 
     @Override
     public int hashCode() {
-        int result = Objects.hash(termType);
-        result = 31 * result + Arrays.hashCode(field);
+        int result = Arrays.hashCode(field);
         result = 31 * result + Arrays.hashCode(term);
         return result;
-    }
-
-    public FieldTermPair(byte[] field, byte[] term, byte termType) {
-        this.field = field;
-        this.term = term;
-        this.termType = termType;
     }
 
     public static void main(String[] args) {

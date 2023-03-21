@@ -1,7 +1,6 @@
 package hawk.index.demo;
 
 import hawk.index.core.directory.memory.UnMMap;
-import sun.nio.ch.DirectBuffer;
 
 import java.io.*;
 import java.nio.MappedByteBuffer;
