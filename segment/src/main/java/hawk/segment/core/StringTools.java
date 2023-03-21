@@ -67,7 +67,7 @@ public class StringTools {
     }
 
     public String traditionToSimple(String value){
-        value = ChineseUtils.toSimplyField(value);
+        value = ChineseUtils.toSimpleField(value);
         return value;
     }
 

@@ -177,7 +177,7 @@ public class ChineseUtils {
         }
     }
 
-    public static String toSimplyField(String str){
+    public static String toSimpleField(String str){
         char[] charArray = str.toCharArray();
         for (int i = 0; i < charArray.length; i++) {
             Character simple = TRADITIONAL_TO_SIMPLE_MAP.get(charArray[i]);

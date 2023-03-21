@@ -5,11 +5,8 @@ import hawk.index.core.field.StringField;
 import hawk.segment.core.Term;
 import hawk.segment.core.anlyzer.Analyzer;
 import lombok.extern.slf4j.Slf4j;
-
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -35,12 +32,14 @@ public class IndexChainPerThread implements Runnable {
 
     private Analyzer analyzer;
 
+    private ConcurrentHashMap<Integer, byte[][]> fdt;
+
 
     public IndexChainPerThread(AtomicInteger docIDAllocator, Document doc, ConcurrentHashMap<FieldTermPair,
             int[]> ivt,
                                AtomicLong bytesUsed, Condition ramFull, long maxRamUsage,
                                ReentrantLock ramUsageLock,
-                               Analyzer analyzer) {
+                               Analyzer analyzer, ConcurrentHashMap fdt) {
         this.docIDAllocator = docIDAllocator;
         this.doc = doc;
         this.ivt = ivt;
@@ -49,12 +48,14 @@ public class IndexChainPerThread implements Runnable {
         this.maxRamUsage = maxRamUsage;
         this.ramUsageLock = ramUsageLock;
         this.analyzer = analyzer;
+        this.fdt = fdt;
     }
 
     @Override
     public void run() {
         // tokenization here
-        HashMap<FieldTermPair, Integer> result = processDoc(doc);
+        byte[][] storedFields = processStoredFields(doc);
+        HashMap<FieldTermPair, Integer> result = processIndexedField(doc);
         //--------
         long bytesCurDoc = 0;
         ramUsageLock.lock();// though atomic class method is atomic, but between methods are not atomic
@@ -69,6 +70,7 @@ public class IndexChainPerThread implements Runnable {
         ramUsageLock.unlock();
         // start constructing memory index
         int docID = docIDAllocator.incrementAndGet();
+        fdt.put(docID, storedFields);
         for (Map.Entry<FieldTermPair, Integer> entry : result.entrySet()) {
             FieldTermPair fieldTermPair = entry.getKey();
             int frequency = entry.getValue();
@@ -84,16 +86,44 @@ public class IndexChainPerThread implements Runnable {
 
     }
 
-    public HashMap<FieldTermPair, Integer> processDoc(Document doc){
+    public byte[][] bytePoolGrow(byte[][] old){
+        byte[][] ret = new byte[old.length+1][];
+        for (int i = 0; i < old.length; i++) {
+            ret[i] = old[i];
+        }
+        return ret;
+    }
+
+    public byte[][] processStoredFields(Document doc){
+        List<Field> fields = doc.getFields();
+        byte[][] bytePool = new byte[10][];
+        for (int i = 0; i < fields.size(); i++) {
+            Field field = fields.get(i);
+            if(field.isStored == Field.Stored.YES){
+                byte[] fieldBytes = field.getBytes();
+                if(bytePool.length < i + 1){
+                    bytePool = bytePoolGrow(bytePool);
+                }
+                bytePool[i] = fieldBytes;
+            }
+        }
+        return bytePool;
+    }
+
+
+    public HashMap<FieldTermPair, Integer> processIndexedField(Document doc){
         HashMap<FieldTermPair, Integer> result = new HashMap<>();
         for (int i = 0; i < doc.getFields().size(); i++) {
-            processField(doc.getFields().get(i), result);
+            Field field = doc.getFields().get(i);
+            if(field.isTokenized == Field.Tokenized.YES){
+                processIndexedField(field, result);
+            }
         }
         return result;
     }
 
-    public void processField(Field field, HashMap<FieldTermPair, Integer> result){
-        if (field instanceof StringField && ((StringField) field).isTokenized == Field.Tokenized.YES){
+    public void processIndexedField(Field field, HashMap<FieldTermPair, Integer> result){
+        if (field instanceof StringField){
             // since analyzer returns position information, terms in same field
             //with same value may identified as different terms as their positions differ
             HashSet<Term> termSet = analyzer.anlyze(((StringField) field).getValue(),
@@ -109,6 +139,10 @@ public class IndexChainPerThread implements Runnable {
                 }
             }
         }
+    }
+
+    public static void main(String[] args) {
+
     }
 
 }

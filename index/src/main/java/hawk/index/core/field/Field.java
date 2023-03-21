@@ -1,6 +1,13 @@
 package hawk.index.core.field;
 
-public class Field{
+import lombok.Data;
+
+@Data
+public abstract class Field{
+
+    public Enum<Field.Tokenized> isTokenized;
+
+    public Enum<Field.Stored> isStored;
 
     public enum Stored{
         YES,
@@ -13,5 +20,7 @@ public class Field{
 
         NO
     }
+
+    public abstract byte[] getBytes();
 
 }
