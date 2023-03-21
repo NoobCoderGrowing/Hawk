@@ -4,6 +4,7 @@ import hawk.index.core.directory.Directory;
 import hawk.index.core.document.Document;
 import lombok.Data;
 
+import java.util.HashMap;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -18,9 +19,9 @@ public class IndexWriter {
 
     private ThreadPoolExecutor threadPoolExecutor;
 
-    private volatile ConcurrentHashMap<FieldTermPair, int[]> ivt;
+    private volatile HashMap<FieldTermPair, int[]> ivt;
 
-    private volatile ConcurrentHashMap<Integer, byte[][]> fdt;
+    private volatile HashMap<Integer, byte[][]> fdt;
 
     private volatile Long bytesUsed;
 
@@ -32,11 +33,15 @@ public class IndexWriter {
 
     private AtomicInteger docIDAllocator;
 
+    private FlushControl flushControl;
+
+    
+
     public IndexWriter(IndexWriterConfig config, Directory directory) {
         this.config = config;
         this.directory = directory;
-        this.ivt = new ConcurrentHashMap<>();
-        this.fdt = new ConcurrentHashMap<>();
+        this.ivt = new HashMap<>();
+        this.fdt = new HashMap<>();
         this.bytesUsed = new Long(0);
         this.ramUsageLock = new ReentrantLock();
         this.ramNotFull = ramUsageLock.newCondition();
@@ -45,6 +50,9 @@ public class IndexWriter {
         this.threadPoolExecutor =  new ThreadPoolExecutor( config.getIndexerThreadNum(),
                 config.getIndexerThreadNum(), 0, TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>());
+        this.flushControl = new FlushControl(config,this, ramNotFull,
+                ramUsageLock, ramNotEmpty);
+        flushControl.start();
     }
 
 // indexing is by default multithreaded. User specified multi-thread-indexing leads to unpredictable outcome.

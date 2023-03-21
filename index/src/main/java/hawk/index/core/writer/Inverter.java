@@ -5,14 +5,9 @@ import hawk.index.core.field.StringField;
 import hawk.segment.core.Term;
 import hawk.segment.core.anlyzer.Analyzer;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.lucene.util.ArrayUtil;
-import org.yaml.snakeyaml.util.ArrayUtils;
-
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -23,7 +18,9 @@ public class Inverter implements Runnable {
 
     private Document doc;
 
-    private volatile ConcurrentHashMap<FieldTermPair, int[]> ivt;
+    private volatile HashMap<FieldTermPair, int[]> ivt;
+
+    private volatile HashMap<Integer, byte[][]> fdt;
 
     private volatile Long bytesUsed;
 
@@ -37,12 +34,9 @@ public class Inverter implements Runnable {
 
     private Analyzer analyzer;
 
-    private ConcurrentHashMap<Integer, byte[][]> fdt;
-
-
-    public Inverter(AtomicInteger docIDAllocator, Document doc, ConcurrentHashMap<FieldTermPair,
+    public Inverter(AtomicInteger docIDAllocator, Document doc, HashMap<FieldTermPair,
             int[]> ivt, Long bytesUsed, Condition ramNotFull, Condition ramNotEmpty, long maxRamUsage,
-                    ReentrantLock ramUsageLock, Analyzer analyzer, ConcurrentHashMap fdt) {
+                    ReentrantLock ramUsageLock, Analyzer analyzer, HashMap fdt) {
         this.docIDAllocator = docIDAllocator;
         this.doc = doc;
         this.ivt = ivt;
@@ -58,11 +52,10 @@ public class Inverter implements Runnable {
     @Override
     public void run() {
         int docID = docIDAllocator.addAndGet(1);
-        long bytesCurDoc = 0;
-        // tokenization here
-        Map.Entry<Integer, byte[][]> docFDT = processStoredFields(doc, docID);
-        HashMap<FieldTermPair, int[]> docIVT = processIndexedFields(doc, docID);
-
+        Long bytesCurDoc = new Long(0);
+        // parallel tokenization here
+        Map.Entry<Integer, byte[][]> docFDT = processStoredFields(doc, docID, bytesCurDoc);
+        HashMap<FieldTermPair, int[]> docIVT = processIndexedFields(doc, docID, bytesCurDoc);
         // flush when ram usage exceeds configuration
         ramUsageLock.lock();
         while(bytesUsed + bytesCurDoc >= maxRamUsage * 0.95){
@@ -73,9 +66,6 @@ public class Inverter implements Runnable {
                 log.info("inverter is woke up by flush control");
             }
         }
-        bytesUsed += bytesCurDoc;
-        ramUsageLock.unlock();
-
         // start constructing memory index
         fdt.put(docFDT.getKey(),docFDT.getValue());
         for (Map.Entry<FieldTermPair, int[] > entry : docIVT.entrySet()) {
@@ -87,7 +77,8 @@ public class Inverter implements Runnable {
                 ivt.put(fieldTermPair, oldVal);
             }
         }
-
+        bytesUsed += bytesCurDoc;
+        ramUsageLock.unlock();
     }
 
     public byte[][] bytePoolGrow(byte[][] old){
@@ -98,7 +89,7 @@ public class Inverter implements Runnable {
         return ret;
     }
 
-    public Map.Entry<Integer, byte[][]> processStoredFields(Document doc, int docID){
+    public Map.Entry<Integer, byte[][]> processStoredFields(Document doc, int docID, Long bytesCurDoc){
         List<Field> fields = doc.getFields();
         byte[][] bytePool = new byte[10][];
         for (int i = 0; i < fields.size(); i++) {
@@ -109,6 +100,7 @@ public class Inverter implements Runnable {
                     bytePool = bytePoolGrow(bytePool);
                 }
                 bytePool[i] = fieldBytes;
+                bytesCurDoc += fieldBytes.length;
             }
         }
         Map.Entry<Integer, byte[][]> docFDT = new AbstractMap.SimpleEntry<>(docID, bytePool);
@@ -116,12 +108,12 @@ public class Inverter implements Runnable {
     }
 
 
-    public HashMap<FieldTermPair, int[]> processIndexedFields(Document doc, int docID){
+    public HashMap<FieldTermPair, int[]> processIndexedFields(Document doc, int docID, Long bytesCurDoc){
         HashMap<FieldTermPair, int[]> ret = new HashMap<>();
         for (int i = 0; i < doc.getFields().size(); i++) {
             Field field = doc.getFields().get(i);
             if(field.isTokenized == Field.Tokenized.YES){
-                processIndexedField(field, ret, docID);
+                processIndexedField(field, ret, docID, bytesCurDoc);
             }
         }
         return ret;
@@ -152,7 +144,7 @@ public class Inverter implements Runnable {
         return temp;
     }
 
-    public void processIndexedField(Field field, HashMap<FieldTermPair, int[]> result, int docID){
+    public void processIndexedField(Field field, HashMap<FieldTermPair, int[]> result, int docID, Long bytesCurDoc){
         if (field instanceof StringField){
             // since analyzer returns position information, terms in same field
             //with same value may be identified as different terms as their positions differ
@@ -167,6 +159,8 @@ public class Inverter implements Runnable {
                 int[] preValue = result.putIfAbsent(fieldTermPair, new int[]{docID, 1});
                 if(preValue != null){
                     result.put(fieldTermPair, new int[]{docID, preValue[1] + 1});
+                }else{
+                    bytesCurDoc += (filedName.length + filedValue.length + 8); // 2 java ints are 8 bytes
                 }
             }
         }
