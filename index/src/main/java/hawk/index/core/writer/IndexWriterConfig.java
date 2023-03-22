@@ -22,6 +22,8 @@ public class IndexWriterConfig {
 
     private LZ4FastDecompressor decompressor;
 
+    private int blocSize;
+
     public IndexWriterConfig(Analyzer analyzer) {
         // default 1GB
         // default core num according to hardware
@@ -42,5 +44,6 @@ public class IndexWriterConfig {
         this.indexerThreadNum = indexerThreadNum;
         this.compressor = factory.fastCompressor();
         this.decompressor = factory.fastDecompressor();
+        this.blocSize = 16 * 1024;
     }
 }

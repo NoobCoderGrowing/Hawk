@@ -20,7 +20,7 @@ public class WirteIndex {
         IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer,2);
         IndexWriter indexWriter = new IndexWriter(indexWriterConfig, mMapDirectory);
         Document doc = new Document();
-        StringField field = new StringField("title", "可爱", Field.Tokenized.YES, Field.Stored.YES);
+        StringField field = new StringField("title", "可爱", Field.Tokenized.NO, Field.Stored.YES);
         doc.add(field);
         indexWriter.addDoc(doc);
         indexWriter.commit();

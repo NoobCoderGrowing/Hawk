@@ -1,0 +1,6 @@
+.fdt
+[compressed block length, data]
+
+
+.fdx
+[block start id, .fdt start offset]

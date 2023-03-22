@@ -4,10 +4,7 @@ import hawk.index.core.document.Document;
 import hawk.index.core.field.Field;
 import hawk.index.core.field.StringField;
 import hawk.segment.core.Term;
-import hawk.segment.core.anlyzer.Analyzer;
 import lombok.extern.slf4j.Slf4j;
-import net.jpountz.lz4.LZ4Compressor;
-import net.jpountz.lz4.LZ4Factory;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -20,7 +17,6 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.stream.Collectors;
 
 @Slf4j
 public class DocWriter implements Runnable {
@@ -119,47 +115,64 @@ public class DocWriter implements Runnable {
         return false;
     }
 
-    public void flushStored(Path fdtPath, Path fdxPath){
+    public void writeFDTBloc(byte[] buffer, byte[] compressedBuffer, int maxCompressedLength, FileChannel fdtChannel,
+                         Long filePos, Integer bufferPos){
+        try {
+            int compressedLength = config.getCompressor().compress(buffer, 0, buffer.length, compressedBuffer,
+                    0, maxCompressedLength);
+            DataOutput.writeVInt(compressedLength, fdtChannel, filePos);
+            ByteBuffer byteBuffer = ByteBuffer.wrap(compressedBuffer, 0, compressedLength);
+            fdtChannel.write(byteBuffer, filePos);
+            filePos += compressedLength;
+            // clear buffer and buffer pos
+            Arrays.fill(buffer, (byte) 0);
+            bufferPos = 0;
+            Arrays.fill(compressedBuffer, (byte) 0);
+        } catch (IOException e) {
+            log.error("write fdt or fdx failed");
+            System.exit(1);
+        }
+    }
+
+    public void writeFDX(FileChannel fc, int docID, Long fdtPos, Long fdxPos){
+        DataOutput.writeVInt(docID, fc, fdxPos);
+        DataOutput.writeVLong(fdtPos, fc, fdxPos);
+    }
+
+    public void flushStored(Path fdtPath, Path fdxPath, int docBase){
         try {
             FileChannel fdtChannel = new RandomAccessFile(fdtPath.toAbsolutePath().toString(), "rw").getChannel();
             FileChannel fdxChannel = new RandomAccessFile(fdxPath.toAbsolutePath().toString(), "rw").getChannel();
             // get compression config
-            byte[] buffer = new byte[16 * 1024];
+            byte[] buffer = new byte[config.getBlocSize()];
             int maxCompressedLength = config.getCompressor().maxCompressedLength(buffer.length);
-            byte[] compressed = new byte[maxCompressedLength];
+            byte[] compressedBuffer = new byte[maxCompressedLength];
             Integer bufferPos = new Integer(0);
-            long filePos = 0;
+            Long fdtPos = new Long(0);
+            Long fdxPos = new Long(0);
+            Integer docID = null;
             for (int i = 0; i < fdt.size(); i++) {
-                Integer docID = (Integer) fdt.get(i).getLeft();
+                docID = (Integer) fdt.get(i).getLeft() + docBase;
                 byte[][] data = (byte[][]) fdt.get(i).getRight();
                 while(!insertChunk(docID, data, buffer, bufferPos)){ // if buffer is full, write to disk
-                    int compressedLength = config.getCompressor().compress(buffer, 0, buffer.length, compressed,
-                            0, maxCompressedLength);
-                    ByteBuffer byteBuffer = ByteBuffer.wrap(compressed, 0, compressedLength);
-                    fdtChannel.write(byteBuffer, filePos);
-                    filePos += compressedLength;
-                    // clear buffer and buffer pos
-                    Arrays.fill(buffer, (byte) 0);
-                    bufferPos = 0;
-                    Arrays.fill(compressed, (byte) 0);
+                    writeFDX(fdxChannel, docID, fdtPos, fdxPos);
+                    writeFDTBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
                 }
             } //last write
             if(bufferPos > 0){
-                int compressedLength = config.getCompressor().compress(buffer, 0, buffer.length, compressed,
-                        0, maxCompressedLength);
-                ByteBuffer byteBuffer = ByteBuffer.wrap(compressed, 0, compressedLength);
-                fdtChannel.write(byteBuffer, filePos);
+                writeFDX(fdxChannel, docID, fdtPos, fdxPos);
+                writeFDTBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
             }
             //close channel
+            fdxChannel.force(false);
             fdtChannel.force(false);
             fdtChannel.close();
-
+            fdtChannel.close();
         } catch (FileNotFoundException e) {
             log.error("fdt or fdx file has not been generated");
             System.exit(1);
         } catch (IOException e) {
-            log.error("write fdt or fdx failed");
-            System.exit(1);
+            log.error("sth wrong when close fdx or fdx file channel");
         }
     }
 
@@ -177,7 +190,7 @@ public class DocWriter implements Runnable {
             Integer b = (Integer) o2. getLeft();
             return  a - b;
         });
-        flushStored(fdtPath, fdxPath);
+        flushStored(fdtPath, fdxPath, docBase);
     }
 
     public byte[][] bytePoolGrow(byte[][] old){
@@ -252,7 +265,7 @@ public class DocWriter implements Runnable {
             byte termType = getTermType(field);
             for (Term t : termSet) {
                 byte[] filedName = t.getFieldName().getBytes(StandardCharsets.UTF_16);
-                filedName = bytesConcatenation(filedName, new byte[termType]);
+                filedName = bytesConcatenation(filedName, new byte[]{termType});
                 byte[] filedValue = t.getValue().getBytes(StandardCharsets.UTF_16);
                 FieldTermPair fieldTermPair = new FieldTermPair(filedName, filedValue);
                 int[] preValue = result.putIfAbsent(fieldTermPair, new int[]{docID, 1});
