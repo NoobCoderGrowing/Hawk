@@ -37,4 +37,14 @@ public class FSDirectory extends Directory{
     public void updateSegInfo() {
 
     }
+
+    @Override
+    public int getDocBase() {
+        return 0;
+    }
+
+    @Override
+    public String[] generateSegFiles() {
+        return null;
+    }
 }

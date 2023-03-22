@@ -3,6 +3,9 @@ package hawk.index.core.writer;
 import hawk.index.core.directory.Constants;
 import hawk.segment.core.anlyzer.Analyzer;
 import lombok.Data;
+import net.jpountz.lz4.LZ4Compressor;
+import net.jpountz.lz4.LZ4Factory;
+import net.jpountz.lz4.LZ4FastDecompressor;
 
 @Data
 public class IndexWriterConfig {
@@ -12,6 +15,12 @@ public class IndexWriterConfig {
     private long maxRamUsage;
 
     private int indexerThreadNum;
+
+    private LZ4Factory factory = LZ4Factory.fastestInstance();
+
+    private LZ4Compressor compressor;
+
+    private LZ4FastDecompressor decompressor;
 
     public IndexWriterConfig(Analyzer analyzer) {
         // default 1GB
@@ -31,5 +40,7 @@ public class IndexWriterConfig {
         this.analyzer = analyzer;
         this.maxRamUsage = maxRamUsage;
         this.indexerThreadNum = indexerThreadNum;
+        this.compressor = factory.fastCompressor();
+        this.decompressor = factory.fastDecompressor();
     }
 }

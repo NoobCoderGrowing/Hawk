@@ -31,7 +31,7 @@ public class IndexWriter {
     private volatile HashMap<FieldTermPair, int[]> ivt;
 
     //stored doc fields
-    private volatile HashMap<Integer, byte[][]> fdt;
+    private volatile List<Pair> fdt;
 
     // calculation of byte used in fdt and ivt
     private volatile Long bytesUsed;
@@ -50,7 +50,7 @@ public class IndexWriter {
         this.config = config;
         this.directory = directory;
         this.ivt = new HashMap<>();
-        this.fdt = new HashMap<>();
+        this.fdt = new ArrayList<>();
         this.bytesUsed = new Long(0);
         this.ramUsageLock = new ReentrantLock();
         this.docIDAllocator = new AtomicInteger(0);
@@ -63,7 +63,7 @@ public class IndexWriter {
 // indexing is by default multithreaded. User specified multi-thread-indexing leads to unpredictable outcome.
     public void addDoc(Document doc){
         Future<?> future = threadPoolExecutor.submit(new DocWriter(docIDAllocator, doc, fdt, ivt, bytesUsed,
-                config.getMaxRamUsage(), ramUsageLock, config.getAnalyzer()));
+                config.getMaxRamUsage(), ramUsageLock, directory, config));
         futures.add(future);
     }
 
@@ -81,7 +81,7 @@ public class IndexWriter {
         threadPoolExecutor.shutdown();
         if(ivt.size() != 0){
             DocWriter lastDocWriter = new DocWriter(docIDAllocator, null, fdt, ivt, bytesUsed, config.getMaxRamUsage(),
-                    ramUsageLock, config.getAnalyzer());
+                    ramUsageLock, directory, config);
             lastDocWriter.flush();
         }
         directory.updateSegInfo();

@@ -1,14 +1,26 @@
 package hawk.index.core.writer;
+import hawk.index.core.directory.Directory;
 import hawk.index.core.document.Document;
 import hawk.index.core.field.Field;
 import hawk.index.core.field.StringField;
 import hawk.segment.core.Term;
 import hawk.segment.core.anlyzer.Analyzer;
 import lombok.extern.slf4j.Slf4j;
+import net.jpountz.lz4.LZ4Compressor;
+import net.jpountz.lz4.LZ4Factory;
+
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class DocWriter implements Runnable {
@@ -18,8 +30,7 @@ public class DocWriter implements Runnable {
     private Document doc;
 
     private volatile HashMap<FieldTermPair, int[]> ivt;
-
-    private volatile HashMap<Integer, byte[][]> fdt;
+    private volatile List<Pair> fdt;
 
     private volatile Long bytesUsed;
 
@@ -27,10 +38,16 @@ public class DocWriter implements Runnable {
 
     private ReentrantLock ramUsageLock;
 
-    private Analyzer analyzer;
+    private Directory directory;
 
-    public DocWriter(AtomicInteger docIDAllocator, Document doc, HashMap fdt, HashMap<FieldTermPair,
-            int[]> ivt, Long bytesUsed, long maxRamUsage, ReentrantLock ramUsageLock, Analyzer analyzer) {
+    private IndexWriterConfig config;
+
+
+
+
+    public DocWriter(AtomicInteger docIDAllocator, Document doc, List fdt, HashMap<FieldTermPair,
+            int[]> ivt, Long bytesUsed, long maxRamUsage, ReentrantLock ramUsageLock, Directory directory,
+                     IndexWriterConfig config) {
         this.docIDAllocator = docIDAllocator;
         this.doc = doc;
         this.fdt = fdt;
@@ -38,7 +55,8 @@ public class DocWriter implements Runnable {
         this.bytesUsed = bytesUsed;
         this.maxRamUsage = maxRamUsage;
         this.ramUsageLock = ramUsageLock;
-        this.analyzer = analyzer;
+        this.directory = directory;
+        this.config = config;
     }
 
     @Override
@@ -46,7 +64,7 @@ public class DocWriter implements Runnable {
         int docID = docIDAllocator.addAndGet(1);
         Long bytesCurDoc = new Long(0);
         // parallel tokenization here
-        Map.Entry<Integer, byte[][]> docFDT = processStoredFields(doc, docID, bytesCurDoc);
+        Pair<Integer, byte[][]>  docFDT = processStoredFields(doc, docID, bytesCurDoc);
         HashMap<FieldTermPair, int[]> docIVT = processIndexedFields(doc, docID, bytesCurDoc);
         // flush when ram usage exceeds configuration
         ramUsageLock.lock();
@@ -55,7 +73,7 @@ public class DocWriter implements Runnable {
             reset();
         }
         // assemble memory index
-        fdt.put(docFDT.getKey(),docFDT.getValue());
+        fdt.add(docFDT);
         for (Map.Entry<FieldTermPair, int[] > entry : docIVT.entrySet()) {
             FieldTermPair fieldTermPair = entry.getKey();
             int[] IDFreq = entry.getValue();
@@ -75,8 +93,91 @@ public class DocWriter implements Runnable {
         fdt.clear();
     }
 
-    public void flush(){
+    // write fdt into a buffer of 16kb
+    // return false if the buffer can't fit
+    public boolean insertChunk(int docID, byte[][] data, byte[] buffer, Integer pos){
+        int remains = buffer.length - pos;
+        int need = 0;
+        int notEmpty = 0;
+        for (int i = 0; i < data.length; i++) {
+            if(data[i]!=null){
+                need += data[i].length;
+                notEmpty ++;
+            }
+        }
+        if(need <= remains){
+            byte[] idBytes = DataOutput.int2bytes(docID);
+            System.arraycopy(idBytes, 0, buffer, pos, 4);
+            pos += 4;
+            for (int i = 0; i < notEmpty; i++) {
+                int length = data[i].length;
+                System.arraycopy(data[i], 0, buffer, pos, length);
+                pos += length;
+            }
+            return true;
+        }
+        return false;
+    }
 
+    public void flushStored(Path fdtPath, Path fdxPath){
+        try {
+            FileChannel fdtChannel = new RandomAccessFile(fdtPath.toAbsolutePath().toString(), "rw").getChannel();
+            FileChannel fdxChannel = new RandomAccessFile(fdxPath.toAbsolutePath().toString(), "rw").getChannel();
+            // get compression config
+            byte[] buffer = new byte[16 * 1024];
+            int maxCompressedLength = config.getCompressor().maxCompressedLength(buffer.length);
+            byte[] compressed = new byte[maxCompressedLength];
+            Integer bufferPos = new Integer(0);
+            long filePos = 0;
+            for (int i = 0; i < fdt.size(); i++) {
+                Integer docID = (Integer) fdt.get(i).getLeft();
+                byte[][] data = (byte[][]) fdt.get(i).getRight();
+                while(!insertChunk(docID, data, buffer, bufferPos)){ // if buffer is full, write to disk
+                    int compressedLength = config.getCompressor().compress(buffer, 0, buffer.length, compressed,
+                            0, maxCompressedLength);
+                    ByteBuffer byteBuffer = ByteBuffer.wrap(compressed, 0, compressedLength);
+                    fdtChannel.write(byteBuffer, filePos);
+                    filePos += compressedLength;
+                    // clear buffer and buffer pos
+                    Arrays.fill(buffer, (byte) 0);
+                    bufferPos = 0;
+                    Arrays.fill(compressed, (byte) 0);
+                }
+            } //last write
+            if(bufferPos > 0){
+                int compressedLength = config.getCompressor().compress(buffer, 0, buffer.length, compressed,
+                        0, maxCompressedLength);
+                ByteBuffer byteBuffer = ByteBuffer.wrap(compressed, 0, compressedLength);
+                fdtChannel.write(byteBuffer, filePos);
+            }
+            //close channel
+            fdtChannel.force(false);
+            fdtChannel.close();
+
+        } catch (FileNotFoundException e) {
+            log.error("fdt or fdx file has not been generated");
+            System.exit(1);
+        } catch (IOException e) {
+            log.error("write fdt or fdx failed");
+            System.exit(1);
+        }
+    }
+
+    public void flush(){
+        log.info("start flush fdt and fdx");
+        int docBase = directory.getDocBase();
+        String[] files = directory.generateSegFiles();
+        Path fdtPath = Paths.get(files[0]);
+        Path fdxPath = Paths.get(files[1]);
+        Path timPath = Paths.get(files[2]);
+        Path frqPath = Paths.get(files[3]);
+
+        Collections.sort(fdt, (o1, o2) -> {
+            Integer a = (Integer) o1.getLeft();
+            Integer b = (Integer) o2. getLeft();
+            return  a - b;
+        });
+        flushStored(fdtPath, fdxPath);
     }
 
     public byte[][] bytePoolGrow(byte[][] old){
@@ -87,7 +188,7 @@ public class DocWriter implements Runnable {
         return ret;
     }
 
-    public Map.Entry<Integer, byte[][]> processStoredFields(Document doc, int docID, Long bytesCurDoc){
+    public Pair<Integer, byte[][]> processStoredFields(Document doc, int docID, Long bytesCurDoc){
         List<Field> fields = doc.getFields();
         byte[][] bytePool = new byte[10][];
         for (int i = 0; i < fields.size(); i++) {
@@ -101,7 +202,7 @@ public class DocWriter implements Runnable {
                 bytesCurDoc += fieldBytes.length;
             }
         }
-        Map.Entry<Integer, byte[][]> docFDT = new AbstractMap.SimpleEntry<>(docID, bytePool);
+        Pair<Integer, byte[][]> docFDT = new Pair<>(docID, bytePool);
         return docFDT;
     }
 
@@ -146,7 +247,7 @@ public class DocWriter implements Runnable {
         if (field instanceof StringField){
             // since analyzer returns position information, terms in same field
             //with same value may be identified as different terms as their positions differ
-            HashSet<Term> termSet = analyzer.anlyze(((StringField) field).getValue(),
+            HashSet<Term> termSet = config.getAnalyzer().anlyze(((StringField) field).getValue(),
                     ((StringField) field).getName());
             byte termType = getTermType(field);
             for (Term t : termSet) {
