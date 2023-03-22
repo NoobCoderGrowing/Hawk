@@ -33,4 +33,8 @@ public class FSDirectory extends Directory{
         return new FSDirectory(path);
     }
 
+    @Override
+    public void updateSegInfo() {
+
+    }
 }

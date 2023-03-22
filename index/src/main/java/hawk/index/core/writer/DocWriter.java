@@ -8,11 +8,10 @@ import lombok.extern.slf4j.Slf4j;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Slf4j
-public class Inverter implements Runnable {
+public class DocWriter implements Runnable {
 
     private AtomicInteger docIDAllocator;
 
@@ -24,29 +23,22 @@ public class Inverter implements Runnable {
 
     private volatile Long bytesUsed;
 
-    private Condition ramNotFull;
-
-    private Condition ramNotEmpty;
-
     private long maxRamUsage;
 
     private ReentrantLock ramUsageLock;
 
     private Analyzer analyzer;
 
-    public Inverter(AtomicInteger docIDAllocator, Document doc, HashMap<FieldTermPair,
-            int[]> ivt, Long bytesUsed, Condition ramNotFull, Condition ramNotEmpty, long maxRamUsage,
-                    ReentrantLock ramUsageLock, Analyzer analyzer, HashMap fdt) {
+    public DocWriter(AtomicInteger docIDAllocator, Document doc, HashMap fdt, HashMap<FieldTermPair,
+            int[]> ivt, Long bytesUsed, long maxRamUsage, ReentrantLock ramUsageLock, Analyzer analyzer) {
         this.docIDAllocator = docIDAllocator;
         this.doc = doc;
+        this.fdt = fdt;
         this.ivt = ivt;
         this.bytesUsed = bytesUsed;
-        this.ramNotFull = ramNotFull;
-        this.ramNotEmpty = ramNotEmpty;
         this.maxRamUsage = maxRamUsage;
         this.ramUsageLock = ramUsageLock;
         this.analyzer = analyzer;
-        this.fdt = fdt;
     }
 
     @Override
@@ -59,14 +51,10 @@ public class Inverter implements Runnable {
         // flush when ram usage exceeds configuration
         ramUsageLock.lock();
         while(bytesUsed + bytesCurDoc >= maxRamUsage * 0.95){
-            try {
-                ramNotEmpty.signal(); //wake up flush control
-                ramNotFull.await();// wait for flush control finish
-            } catch (InterruptedException e) {
-                log.info("inverter is woke up by flush control");
-            }
+            flush();
+            reset();
         }
-        // start constructing memory index
+        // assemble memory index
         fdt.put(docFDT.getKey(),docFDT.getValue());
         for (Map.Entry<FieldTermPair, int[] > entry : docIVT.entrySet()) {
             FieldTermPair fieldTermPair = entry.getKey();
@@ -79,6 +67,16 @@ public class Inverter implements Runnable {
         }
         bytesUsed += bytesCurDoc;
         ramUsageLock.unlock();
+    }
+
+    public void reset(){
+        bytesUsed = new Long(0);
+        ivt.clear();
+        fdt.clear();
+    }
+
+    public void flush(){
+
     }
 
     public byte[][] bytePoolGrow(byte[][] old){
