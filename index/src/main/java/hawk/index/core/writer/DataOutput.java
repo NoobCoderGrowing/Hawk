@@ -16,7 +16,7 @@ public class DataOutput {
             fc.write(buffer, pos);
             pos ++;
         } catch (IOException e) {
-            log.error("sth wrong with write Vint ");
+            log.error("sth wrong with write byte ");
         }
 
     }
@@ -37,6 +37,22 @@ public class DataOutput {
         }
         writeByte((byte) input, fc, pos);
     }
+
+    public static void writeBytes(byte[] bytes, FileChannel fc, Long pos){
+        ByteBuffer byteBuffer = ByteBuffer.wrap(bytes);
+        try {
+            fc.write(byteBuffer, pos);
+        } catch (IOException e) {
+            log.error("sth wrong with write byte ");
+        }
+    }
+
+    public static void writeInt(int i, FileChannel fc, Long pos){
+        byte[] bytes = int2bytes(i);
+        writeBytes(bytes, fc, pos);
+    }
+
+
 
     public static byte[] int2bytes(int i){
         byte[] ret = new byte[]{

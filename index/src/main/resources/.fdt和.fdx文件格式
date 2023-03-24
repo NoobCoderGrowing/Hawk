@@ -1,6 +1,8 @@
 .fdt
-[compressed block length, data]
-
+[data<byte>]
+no need to store block length, as .fdx stores every block start offset
 
 .fdx
-[block start id, .fdt start offset]
+[block start id<int>, block start offset<vlong>]
+
+.tim

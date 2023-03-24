@@ -115,12 +115,12 @@ public class DocWriter implements Runnable {
         return false;
     }
 
+    // write a block into .fdt file
     public void writeFDTBloc(byte[] buffer, byte[] compressedBuffer, int maxCompressedLength, FileChannel fdtChannel,
                          Long filePos, Integer bufferPos){
         try {
             int compressedLength = config.getCompressor().compress(buffer, 0, buffer.length, compressedBuffer,
                     0, maxCompressedLength);
-            DataOutput.writeVInt(compressedLength, fdtChannel, filePos);
             ByteBuffer byteBuffer = ByteBuffer.wrap(compressedBuffer, 0, compressedLength);
             fdtChannel.write(byteBuffer, filePos);
             filePos += compressedLength;
@@ -135,7 +135,7 @@ public class DocWriter implements Runnable {
     }
 
     public void writeFDX(FileChannel fc, int docID, Long fdtPos, Long fdxPos){
-        DataOutput.writeVInt(docID, fc, fdxPos);
+        DataOutput.writeInt(docID, fc, fdxPos);
         DataOutput.writeVLong(fdtPos, fc, fdxPos);
     }
 
