@@ -3,7 +3,10 @@ import hawk.index.core.directory.Directory;
 import hawk.index.core.document.Document;
 import hawk.index.core.field.Field;
 import hawk.index.core.field.StringField;
+import hawk.index.core.util.WrapInt;
+import hawk.index.core.util.WrapLong;
 import hawk.segment.core.Term;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.FileNotFoundException;
@@ -16,6 +19,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Slf4j
@@ -28,7 +32,7 @@ public class DocWriter implements Runnable {
     private volatile HashMap<FieldTermPair, int[]> ivt;
     private volatile List<Pair> fdt;
 
-    private volatile Long bytesUsed;
+    private AtomicLong bytesUsed;
 
     private long maxRamUsage;
 
@@ -42,7 +46,7 @@ public class DocWriter implements Runnable {
 
 
     public DocWriter(AtomicInteger docIDAllocator, Document doc, List fdt, HashMap<FieldTermPair,
-            int[]> ivt, Long bytesUsed, long maxRamUsage, ReentrantLock ramUsageLock, Directory directory,
+            int[]> ivt, AtomicLong bytesUsed, long maxRamUsage, ReentrantLock ramUsageLock, Directory directory,
                      IndexWriterConfig config) {
         this.docIDAllocator = docIDAllocator;
         this.doc = doc;
@@ -58,13 +62,13 @@ public class DocWriter implements Runnable {
     @Override
     public void run() {
         int docID = docIDAllocator.addAndGet(1);
-        Long bytesCurDoc = new Long(0);
+        WrapLong bytesCurDoc = new WrapLong(0);
         // parallel tokenization here
         Pair<Integer, byte[][]>  docFDT = processStoredFields(doc, docID, bytesCurDoc);
         HashMap<FieldTermPair, int[]> docIVT = processIndexedFields(doc, docID, bytesCurDoc);
         // flush when ram usage exceeds configuration
         ramUsageLock.lock();
-        while(bytesUsed + bytesCurDoc >= maxRamUsage * 0.95){
+        while(bytesUsed.get() + bytesCurDoc.getValue() >= maxRamUsage * 0.95){
             flush();
             reset();
         }
@@ -79,36 +83,38 @@ public class DocWriter implements Runnable {
                 ivt.put(fieldTermPair, oldVal);
             }
         }
-        bytesUsed += bytesCurDoc;
+        bytesUsed.addAndGet(bytesCurDoc.getValue());
         ramUsageLock.unlock();
     }
 
     public void reset(){
-        bytesUsed = new Long(0);
+        bytesUsed.set(0);
         ivt.clear();
         fdt.clear();
     }
 
     // write fdt into a buffer of 16kb
     // return false if the buffer can't fit
-    public boolean insertChunk(int docID, byte[][] data, byte[] buffer, Integer pos){
-        int remains = buffer.length - pos;
+    public boolean insertChunk(int docID, byte[][] data, byte[] buffer, WrapInt pos){
+        int remains = buffer.length - pos.getValue();
         int need = 0;
         int notEmpty = 0;
         for (int i = 0; i < data.length; i++) {
             if(data[i]!=null){
                 need += data[i].length;
                 notEmpty ++;
+            }else{
+                break;
             }
         }
         if(need <= remains){
-            byte[] idBytes = DataOutput.int2bytes(docID);
-            System.arraycopy(idBytes, 0, buffer, pos, 4);
-            pos += 4;
+            // write doc length
+            DataOutput.writeVInt(need + 4, buffer, pos);
+            // write docID
+            DataOutput.writeInt(docID, buffer, pos);
             for (int i = 0; i < notEmpty; i++) {
-                int length = data[i].length;
-                System.arraycopy(data[i], 0, buffer, pos, length);
-                pos += length;
+                //write doc data
+                DataOutput.writeBytes(data[i], buffer, pos);
             }
             return true;
         }
@@ -117,24 +123,20 @@ public class DocWriter implements Runnable {
 
     // write a block into .fdt file
     public void writeFDTBloc(byte[] buffer, byte[] compressedBuffer, int maxCompressedLength, FileChannel fdtChannel,
-                         Long filePos, Integer bufferPos){
-        try {
-            int compressedLength = config.getCompressor().compress(buffer, 0, buffer.length, compressedBuffer,
-                    0, maxCompressedLength);
-            ByteBuffer byteBuffer = ByteBuffer.wrap(compressedBuffer, 0, compressedLength);
-            fdtChannel.write(byteBuffer, filePos);
-            filePos += compressedLength;
-            // clear buffer and buffer pos
-            Arrays.fill(buffer, (byte) 0);
-            bufferPos = 0;
-            Arrays.fill(compressedBuffer, (byte) 0);
-        } catch (IOException e) {
-            log.error("write fdt or fdx failed");
-            System.exit(1);
-        }
+                         WrapLong fdtPos, WrapInt bufferPos){
+        //compress
+        int compressedLength = config.getCompressor().compress(buffer, 0, buffer.length, compressedBuffer,
+                0, maxCompressedLength);
+        //write to .fdt
+        ByteBuffer byteBuffer = ByteBuffer.wrap(compressedBuffer, 0, compressedLength);
+        DataOutput.writeBytes(byteBuffer, fdtChannel, fdtPos);
+        // clear buffer and buffer pos
+        Arrays.fill(buffer, (byte) 0);
+        bufferPos.setValue(0);
+        Arrays.fill(compressedBuffer, (byte) 0);
     }
 
-    public void writeFDX(FileChannel fc, int docID, Long fdtPos, Long fdxPos){
+    public void writeFDX(FileChannel fc, int docID, WrapLong fdtPos, WrapLong fdxPos){
         DataOutput.writeInt(docID, fc, fdxPos);
         DataOutput.writeVLong(fdtPos, fc, fdxPos);
     }
@@ -147,9 +149,9 @@ public class DocWriter implements Runnable {
             byte[] buffer = new byte[config.getBlocSize()];
             int maxCompressedLength = config.getCompressor().maxCompressedLength(buffer.length);
             byte[] compressedBuffer = new byte[maxCompressedLength];
-            Integer bufferPos = new Integer(0);
-            Long fdtPos = new Long(0);
-            Long fdxPos = new Long(0);
+            WrapInt bufferPos = new WrapInt(0);
+            WrapLong fdtPos = new WrapLong(0);
+            WrapLong fdxPos = new WrapLong(0);
             Integer docID = null;
             for (int i = 0; i < fdt.size(); i++) {
                 docID = (Integer) fdt.get(i).getLeft() + docBase;
@@ -159,7 +161,7 @@ public class DocWriter implements Runnable {
                     writeFDTBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
                 }
             } //last write
-            if(bufferPos > 0){
+            if(bufferPos.getValue() > 0){
                 writeFDX(fdxChannel, docID, fdtPos, fdxPos);
                 writeFDTBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
             }
@@ -201,7 +203,7 @@ public class DocWriter implements Runnable {
         return ret;
     }
 
-    public Pair<Integer, byte[][]> processStoredFields(Document doc, int docID, Long bytesCurDoc){
+    public Pair<Integer, byte[][]> processStoredFields(Document doc, int docID, WrapLong bytesCurDoc){
         List<Field> fields = doc.getFields();
         byte[][] bytePool = new byte[10][];
         for (int i = 0; i < fields.size(); i++) {
@@ -212,7 +214,7 @@ public class DocWriter implements Runnable {
                     bytePool = bytePoolGrow(bytePool);
                 }
                 bytePool[i] = fieldBytes;
-                bytesCurDoc += fieldBytes.length;
+                bytesCurDoc.setValue(bytesCurDoc.getValue() + fieldBytes.length);
             }
         }
         Pair<Integer, byte[][]> docFDT = new Pair<>(docID, bytePool);
@@ -220,7 +222,7 @@ public class DocWriter implements Runnable {
     }
 
 
-    public HashMap<FieldTermPair, int[]> processIndexedFields(Document doc, int docID, Long bytesCurDoc){
+    public HashMap<FieldTermPair, int[]> processIndexedFields(Document doc, int docID, WrapLong bytesCurDoc){
         HashMap<FieldTermPair, int[]> ret = new HashMap<>();
         for (int i = 0; i < doc.getFields().size(); i++) {
             Field field = doc.getFields().get(i);
@@ -256,7 +258,8 @@ public class DocWriter implements Runnable {
         return temp;
     }
 
-    public void processIndexedField(Field field, HashMap<FieldTermPair, int[]> result, int docID, Long bytesCurDoc){
+    public void processIndexedField(Field field, HashMap<FieldTermPair, int[]> result, int docID,
+                                    WrapLong bytesCurDoc){
         if (field instanceof StringField){
             // since analyzer returns position information, terms in same field
             //with same value may be identified as different terms as their positions differ
@@ -272,7 +275,7 @@ public class DocWriter implements Runnable {
                 if(preValue != null){
                     result.put(fieldTermPair, new int[]{docID, preValue[1] + 1});
                 }else{
-                    bytesCurDoc += (filedName.length + filedValue.length + 8); // 2 java ints are 8 bytes
+                    bytesCurDoc.setValue(bytesCurDoc.getValue() + filedName.length + filedValue.length + 8);
                 }
             }
         }

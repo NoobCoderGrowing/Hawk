@@ -1,5 +1,8 @@
+block - > 16kb
+[docLength<Vint>, docID<Vint>, docContent<byte>]
+
 .fdt
-[data<byte>]
+[bloc<byte>]
 no need to store block length, as .fdx stores every block start offset
 
 .fdx

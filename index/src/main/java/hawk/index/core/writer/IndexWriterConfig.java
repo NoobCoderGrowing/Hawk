@@ -27,7 +27,7 @@ public class IndexWriterConfig {
     public IndexWriterConfig(Analyzer analyzer) {
         // default 1GB
         // default core num according to hardware
-        this(analyzer, 1024 * 1024 * 1024, Constants.PROCESSOR_NUM);
+        this(analyzer, 1024 * 1024 * 1024L, Constants.PROCESSOR_NUM);
     }
 
     public IndexWriterConfig(Analyzer analyzer, long maxRamUsage) {

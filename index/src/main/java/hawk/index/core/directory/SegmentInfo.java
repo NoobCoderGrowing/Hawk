@@ -1,9 +1,11 @@
 package hawk.index.core.directory;
 
+import hawk.index.core.util.WrapLong;
 import hawk.index.core.writer.DataOutput;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -35,17 +37,10 @@ public class SegmentInfo {
     public SegmentInfo(Path directoryPath, Set<String> dirFiles){
         String strPath = directoryPath.toString() + "/segment.info";
         Path path = Paths.get(strPath);
-        if(dirFiles.contains("/segment.info")){
+        if(dirFiles.contains("segment.info")){
             read(path);
         }else{ // create segment.info
-            try {
-                Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwxrwxrwx");
-                Files.createFile(path, PosixFilePermissions.asFileAttribute(perms));
-                dirFiles.add("/segment.info");
-            } catch (IOException e) {
-                log.error("create segment.info file failed");
-                System.exit(1);
-            }
+            Directory.createFile(path);
             init(path);
             read(path);
         }
@@ -55,15 +50,18 @@ public class SegmentInfo {
     public void read(Path path){
         try {
             FileChannel fc = FileChannel.open(path);
-            ByteBuffer timeStamp = ByteBuffer.allocate(8);
-            ByteBuffer segCount = ByteBuffer.allocate(4);
-            ByteBuffer preMaxID = ByteBuffer.allocate(4);
-            fc.read(timeStamp, 0);
-            fc.read(segCount, 8);
-            fc.read(preMaxID, 12);
-            this.timeStamp = new String(timeStamp.array(), StandardCharsets.UTF_8);
-            this.segCount = segCount.getInt();
-            this.preMaxID = preMaxID.getInt();
+            ByteBuffer buffer = ByteBuffer.allocate(8);
+            fc.read(buffer, 0);
+            buffer.flip();
+            this.timeStamp = new String(buffer.array(), StandardCharsets.UTF_8);
+
+            fc.read(buffer, 8);
+            buffer.flip();
+            this.segCount = buffer.getInt();
+
+            fc.read(buffer, 12);
+            buffer.flip();
+            this.preMaxID = buffer.getInt();
         } catch (IOException e) {
             log.error("sth wrong reading segment.info");
             System.exit(1);
@@ -85,16 +83,16 @@ public class SegmentInfo {
     }
 
     public void writeSegCount(FileChannel fc, int count){
-        DataOutput.writeInt(count, fc, 8L);
+        DataOutput.writeInt(count, fc, new WrapLong(8));
     }
 
     public void writePreMaxID(FileChannel fc, int id){
-        DataOutput.writeInt(id, fc, 12L);
+        DataOutput.writeInt(id, fc, new WrapLong(12));
     }
 
     public void init(Path path){
         try {
-            FileChannel fc =FileChannel.open(path);
+            FileChannel fc = new RandomAccessFile(path.toString(), "rw").getChannel();
             writeDate(fc);
             writeSegCount(fc, 0);
             writePreMaxID(fc, 0);
@@ -109,7 +107,7 @@ public class SegmentInfo {
     public void update(){
         FileChannel fc = null;
         try {
-            fc = FileChannel.open(segmentInfoPath);
+            fc = new RandomAccessFile(segmentInfoPath.toString(),"rw").getChannel();
             writeDate(fc);
             writeSegCount(fc, this.segCount);
             writePreMaxID(fc, this.preMaxID);

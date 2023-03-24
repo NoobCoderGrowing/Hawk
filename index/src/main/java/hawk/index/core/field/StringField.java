@@ -20,8 +20,8 @@ public class StringField extends Field{
 
     @Override
     public byte[] getBytes() {
-        byte[] nameByte = name.getBytes(StandardCharsets.UTF_16);
-        byte[] valueByte = name.getBytes(StandardCharsets.UTF_16);
+        byte[] nameByte = name.getBytes(StandardCharsets.UTF_8);
+        byte[] valueByte = name.getBytes(StandardCharsets.UTF_8);
         byte[] result = new byte[nameByte.length + valueByte.length];
         System.arraycopy(nameByte, 0, result, 0, nameByte.length);
         System.arraycopy(valueByte, 0, result, nameByte.length, valueByte.length);

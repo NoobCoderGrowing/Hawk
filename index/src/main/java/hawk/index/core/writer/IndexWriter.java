@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Data
@@ -34,7 +35,7 @@ public class IndexWriter {
     private volatile List<Pair> fdt;
 
     // calculation of byte used in fdt and ivt
-    private volatile Long bytesUsed;
+    private AtomicLong bytesUsed;
 
     // lock for flush and reset byteUsed
     private ReentrantLock ramUsageLock;
@@ -51,7 +52,7 @@ public class IndexWriter {
         this.directory = directory;
         this.ivt = new HashMap<>();
         this.fdt = new ArrayList<>();
-        this.bytesUsed = new Long(0);
+        this.bytesUsed = new AtomicLong(0);
         this.ramUsageLock = new ReentrantLock();
         this.docIDAllocator = new AtomicInteger(0);
         this.threadPoolExecutor =  new ThreadPoolExecutor( config.getIndexerThreadNum(),
@@ -79,7 +80,7 @@ public class IndexWriter {
             }
         }
         threadPoolExecutor.shutdown();
-        if(ivt.size() != 0){
+        if(ivt.size() != 0 || fdt.size() != 0){
             DocWriter lastDocWriter = new DocWriter(docIDAllocator, null, fdt, ivt, bytesUsed, config.getMaxRamUsage(),
                     ramUsageLock, directory, config);
             lastDocWriter.flush();

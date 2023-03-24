@@ -17,7 +17,7 @@ public class WirteIndex {
     public static void main(String[] args) throws IOException {
         MMapDirectory mMapDirectory = new MMapDirectory(Paths.get("/opt/temp"));
         Analyzer analyzer = new NShortestPathAnalyzer(1);
-        IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer,2);
+        IndexWriterConfig indexWriterConfig = new IndexWriterConfig(analyzer);
         IndexWriter indexWriter = new IndexWriter(indexWriterConfig, mMapDirectory);
         Document doc = new Document();
         StringField field = new StringField("title", "可爱", Field.Tokenized.NO, Field.Stored.YES);
