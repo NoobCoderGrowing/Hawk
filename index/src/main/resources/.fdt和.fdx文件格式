@@ -1,11 +1,18 @@
 block - > 16kb
-[docLength<Vint>, docID<Vint>, docContent<byte>]
+[docLength<Vint>, docID<Vint>, docContent<bytes>]
 
 .fdt
-[bloc<byte>]
+[bloc<bytes>]
 no need to store block length, as .fdx stores every block start offset
 
 .fdx
-[block start id<int>, block start offset<vlong>]
+[block start id<vint>, block start offset<vlong>]
+
+.fdm
+[field<bytes>, fieldType<byte>]
+
+.frq
+[frq length<vint> [docID<vint>, frq<vint>]]
 
 .tim
+[field<bytes>,term<bytes>,.frq start offset<vlong>]

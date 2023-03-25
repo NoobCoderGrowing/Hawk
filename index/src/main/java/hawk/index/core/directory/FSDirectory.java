@@ -59,8 +59,7 @@ public class FSDirectory extends Directory{
         segmentInfo.setSegCount(curSeg);
         String prfix = path.toString() + "/";
         String[] fileNames = new String[]{prfix + curSeg + ".fdt", prfix + curSeg + ".fdx",
-                prfix + curSeg + ".tim",
-                prfix + curSeg + ".frq"};
+                prfix + curSeg + ".tim", prfix + curSeg + ".frq", prfix +curSeg + ".fdm"};
         for (int i = 0; i < fileNames.length; i++) {
             Path path = Paths.get(fileNames[i]);
             createFile(path);

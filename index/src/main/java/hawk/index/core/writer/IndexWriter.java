@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -45,6 +46,8 @@ public class IndexWriter {
 
     private List<Future> futures;
 
+    private HashMap<byte[], byte[]> fdm;
+
     
 
     public IndexWriter(IndexWriterConfig config, Directory directory) {
@@ -59,12 +62,13 @@ public class IndexWriter {
                 config.getIndexerThreadNum(), 0, TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>());
         this.futures = new ArrayList<>();
+        this.fdm = new HashMap<>();
     }
 
 // indexing is by default multithreaded. User specified multi-thread-indexing leads to unpredictable outcome.
     public void addDoc(Document doc){
         Future<?> future = threadPoolExecutor.submit(new DocWriter(docIDAllocator, doc, fdt, ivt, bytesUsed,
-                config.getMaxRamUsage(), ramUsageLock, directory, config));
+                config.getMaxRamUsage(), ramUsageLock, directory, config, fdm));
         futures.add(future);
     }
 
@@ -83,7 +87,7 @@ public class IndexWriter {
         threadPoolExecutor.shutdown();
         if(ivt.size() != 0 || fdt.size() != 0){
             DocWriter lastDocWriter = new DocWriter(docIDAllocator, null, fdt, ivt, bytesUsed, config.getMaxRamUsage(),
-                    ramUsageLock, directory, config);
+                    ramUsageLock, directory, config, fdm);
             lastDocWriter.flush();
         }
         directory.updateSegInfo();

@@ -11,7 +11,6 @@ public class FieldTermPair {
 
     private byte[] term;
 
-
     public FieldTermPair(byte[] field, byte[] term) {
         this.field = field;
         this.term = term;
