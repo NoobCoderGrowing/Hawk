@@ -77,6 +77,7 @@ public class IndexWriter {
                 log.info("wait task " + i + "successful");
             } catch (ExecutionException e) {
                 log.error("something wrong with task " + i);
+                System.exit(1);
             }
         }
         threadPoolExecutor.shutdown();

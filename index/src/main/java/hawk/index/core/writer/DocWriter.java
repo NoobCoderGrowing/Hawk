@@ -178,6 +178,22 @@ public class DocWriter implements Runnable {
         }
     }
 
+    public void flushIndexed(Path timPath, Path frqPath, int docBase,
+                             ArrayList<Map.Entry<FieldTermPair, int[]>> ivtList){
+        try {
+            FileChannel fdtChannel = new RandomAccessFile(timPath.toAbsolutePath().toString(),
+                    "rw").getChannel();
+            FileChannel fdxChannel = new RandomAccessFile(frqPath.toAbsolutePath().toString(),
+                    "rw").getChannel();
+            for (int i = 0; i < ivtList.size(); i++) {
+
+            }
+        } catch (FileNotFoundException e) {
+            log.error(".tim / .frq file not found");
+            System.exit(1);
+        }
+    }
+
     public void flush(){
         log.info("start flush fdt and fdx");
         int docBase = directory.getDocBase();
@@ -186,13 +202,43 @@ public class DocWriter implements Runnable {
         Path fdxPath = Paths.get(files[1]);
         Path timPath = Paths.get(files[2]);
         Path frqPath = Paths.get(files[3]);
-
+        // sort fdt
         Collections.sort(fdt, (o1, o2) -> {
             Integer a = (Integer) o1.getLeft();
             Integer b = (Integer) o2. getLeft();
             return  a - b;
         });
+        // sort ivt ( sort field first and then term lexicographically)
+        ArrayList<Map.Entry<FieldTermPair, int[]>> ivtList = new ArrayList<>(ivt.entrySet());
+        Collections.sort(ivtList,(a, b)->{
+            FieldTermPair aP = a.getKey();
+            FieldTermPair bP = b.getKey();
+            byte[] aField = aP.getField();
+            byte[] aTerm = aP.getTerm();
+            byte[] bField = bP.getField();
+            byte[] bTerm = bP.getTerm();
+            for (int i = 0; i < aField.length && i < bField.length; i++) {
+                int aFieldByte = (aField[i] & 0xff);
+                int bFieldByte = (bField[i] & 0xff);
+                if(aFieldByte != bFieldByte) {
+                    return aFieldByte - bFieldByte;
+                }
+            }
+            if(aField.length != bField.length){
+                return aField.length - bField.length;
+            }else{
+                for (int i = 0; i < aTerm.length && i < bTerm.length; i++) {
+                    int aTermByte = (aTerm[i] & 0xff);
+                    int bTermByte = (bTerm[i] & 0xff);
+                    if(aTermByte != bTermByte) {
+                        return aTermByte - bTermByte;
+                    }
+                }
+                return aTerm.length - bTerm.length;
+            }
+        });
         flushStored(fdtPath, fdxPath, docBase);
+        flushIndexed(timPath, frqPath, docBase, ivtList);
     }
 
     public byte[][] bytePoolGrow(byte[][] old){
@@ -267,9 +313,9 @@ public class DocWriter implements Runnable {
                     ((StringField) field).getName());
             byte termType = getTermType(field);
             for (Term t : termSet) {
-                byte[] filedName = t.getFieldName().getBytes(StandardCharsets.UTF_16);
+                byte[] filedName = t.getFieldName().getBytes(StandardCharsets.UTF_8);
                 filedName = bytesConcatenation(filedName, new byte[]{termType});
-                byte[] filedValue = t.getValue().getBytes(StandardCharsets.UTF_16);
+                byte[] filedValue = t.getValue().getBytes(StandardCharsets.UTF_8);
                 FieldTermPair fieldTermPair = new FieldTermPair(filedName, filedValue);
                 int[] preValue = result.putIfAbsent(fieldTermPair, new int[]{docID, 1});
                 if(preValue != null){
