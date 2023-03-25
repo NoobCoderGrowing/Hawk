@@ -9,10 +9,10 @@ no need to store block length, as .fdx stores every block start offset
 [block start id<vint>, block start offset<vlong>]
 
 .fdm
-[field<bytes>, fieldType<byte>]
+[length<int>, field<bytes>, fieldType<byte>]
 
 .frq
 [frq length<vint> [docID<vint>, frq<vint>]]
 
 .tim
-[field<bytes>,term<bytes>,.frq start offset<vlong>]
+[fieldLength<int>, field<bytes>, termLength<int>, term<bytes>, .frq start offset<vlong>]

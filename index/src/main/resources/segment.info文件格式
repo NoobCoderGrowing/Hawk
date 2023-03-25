@@ -1,5 +1,3 @@
-索引日期YYYYMMDD, 共8个字符<utf-16>, 32byte
-
 date<byte>(YYYYMMDD, UTF-8) 8bytes
 segment count<int>
 pre maxDocID<int>

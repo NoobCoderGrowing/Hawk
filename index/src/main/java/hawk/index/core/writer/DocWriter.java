@@ -191,22 +191,70 @@ public class DocWriter implements Runnable {
         }
     }
 
+    public void writeFDM(FileChannel fc, ArrayList<Map.Entry<byte[], byte[]>> fdmList){
+        WrapLong pos = new WrapLong(0);
+        for (int i = 0; i < fdmList.size(); i++) {
+            byte[] field = fdmList.get(i).getKey();
+            byte type = fdmList.get(i).getValue()[0];
+            int length = field.length + 1;
+            DataOutput.writeInt(length, fc, pos);
+            DataOutput.writeBytes(field, fc, pos);
+            DataOutput.writeByte(type, fc, pos);
+        }
+    }
+
+    public void writeTIM(FileChannel fc, FieldTermPair fieldTermPair, WrapLong timPos, WrapLong frqPos){
+        byte[] field = fieldTermPair.getField();
+        byte[] term = fieldTermPair.getTerm();
+        DataOutput.writeInt(field.length, fc, timPos);
+        DataOutput.writeBytes(field, fc, timPos);
+        DataOutput.writeInt(term.length, fc, timPos);
+        DataOutput.writeBytes(term, fc, timPos);
+        DataOutput.writeVLong(frqPos, fc, timPos);
+    }
+
+    public void writeFRQ(FileChannel fc, int[] posting, WrapLong frqPos){
+        int length = posting.length/2;
+        DataOutput.writeVInt(length, fc, frqPos);
+        for (int i = 0; i < length; i++) {
+            DataOutput.writeVInt(posting[i * 2 ], fc, frqPos);
+            DataOutput.writeVInt(posting[i * 2 + 1], fc, frqPos);
+        }
+    }
+
     public void flushIndexed(Path timPath, Path frqPath, Path fdmPath, int docBase,
-                             ArrayList<Map.Entry<FieldTermPair, int[]>> ivtList){
+                             ArrayList<Map.Entry<FieldTermPair, int[]>> ivtList, ArrayList<Map.Entry<byte[], byte[]>>
+                                     fdmList){
         try {
-            FileChannel fdtChannel = new RandomAccessFile(timPath.toAbsolutePath().toString(),
+            FileChannel timChannel = new RandomAccessFile(timPath.toAbsolutePath().toString(),
                     "rw").getChannel();
-            FileChannel fdxChannel = new RandomAccessFile(frqPath.toAbsolutePath().toString(),
+            FileChannel frqChannel = new RandomAccessFile(frqPath.toAbsolutePath().toString(),
                     "rw").getChannel();
             FileChannel fdmChannel = new RandomAccessFile(fdmPath.toAbsolutePath().toString(),
                     "rw").getChannel();
-            for (int i = 0; i < ivtList.size(); i++) {
-
+            // write fdm
+            writeFDM(fdmChannel, fdmList);
+            WrapLong frqPos = new WrapLong(0);
+            WrapLong timPos = new WrapLong(0);
+            for (int i = 0; i < ivtList.size(); i++) { // write .tim and .frq
+                FieldTermPair fieldTermPair = ivtList.get(i).getKey();
+                int[] posting = ivtList.get(i).getValue();
+                writeTIM(timChannel, fieldTermPair, timPos, frqPos);
+                writeFRQ(frqChannel, posting, frqPos);
             }
+            timChannel.force(false);
+            frqChannel.force(false);
+            fdmChannel.force(false);
+            timChannel.close();
+            frqChannel.close();
+            fdmChannel.close();
         } catch (FileNotFoundException e) {
-            log.error(".tim / .frq file not found");
+            log.error(".tim / .frq / .fdm file not found");
             System.exit(1);
+        } catch (IOException e) {
+            log.error("force flush .tim / .frq / .fdm file errored");
         }
+
     }
 
     public void flush(){
@@ -269,7 +317,7 @@ public class DocWriter implements Runnable {
             }
         });
         flushStored(fdtPath, fdxPath, docBase);
-        flushIndexed(timPath, frqPath, fdmPath, docBase, ivtList);
+        flushIndexed(timPath, frqPath, fdmPath, docBase, ivtList, fdmList);
     }
 
     public byte[][] bytePoolGrow(byte[][] old){
