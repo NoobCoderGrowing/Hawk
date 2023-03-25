@@ -103,6 +103,7 @@ public class DocWriter implements Runnable {
         bytesUsed.set(0);
         ivt.clear();
         fdt.clear();
+        fdm.clear();
     }
 
     // write fdt into a buffer of 16kb
