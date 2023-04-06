@@ -21,12 +21,6 @@ public abstract class Field{
         NO
     }
 
-    public enum Numeric{
-        YES,
-
-        NO
-    }
-
     public abstract byte[] getBytes();
 
     public abstract byte[] getNameBytes();
