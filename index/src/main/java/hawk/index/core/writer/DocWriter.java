@@ -370,7 +370,7 @@ public class DocWriter implements Runnable {
         if(field.isTokenized == Field.Tokenized.YES){
             termType |= 0b00000010;
         }
-        if(field.isNumeric == Field.Numeric.YES){
+        if(field instanceof DoubleField){
             termType |= 0b00000100;
         }
 

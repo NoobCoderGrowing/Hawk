@@ -9,8 +9,6 @@ public abstract class Field{
 
     public Enum<Field.Stored> isStored;
 
-    public Enum<Field.Numeric> isNumeric;
-
     public enum Stored{
         YES,
 
