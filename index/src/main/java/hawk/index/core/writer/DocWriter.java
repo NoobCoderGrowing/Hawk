@@ -417,9 +417,10 @@ public class DocWriter implements Runnable {
         } else if (field instanceof DoubleField) {
             double value = ((DoubleField) field).getValue();
             long sortableLong = NumberUtil.double2SortableLong(value);// double to sort
-            byte[][] prefixedLong = NumberUtil.long2PrefixFormat(sortableLong,config.getPrecisionStep());
-            for (int i = 0; i < prefixedLong.length; i++) {
-                assembleFieldTermMap(fieldTermMap, filedName, prefixedLong[i],docID, bytesCurDoc);
+            HashSet<PrefixedNumber> prefixedNumbers = NumberUtil.long2PrefixFormat(sortableLong,
+                    config.getPrecisionStep());
+            for (PrefixedNumber prefixedNumber : prefixedNumbers) {
+                assembleFieldTermMap(fieldTermMap, filedName, prefixedNumber.getValue(),docID, bytesCurDoc);
             }
         }
     }

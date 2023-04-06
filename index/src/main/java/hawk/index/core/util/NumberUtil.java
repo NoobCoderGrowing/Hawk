@@ -1,8 +1,14 @@
 package hawk.index.core.util;
+
+import hawk.index.core.writer.PrefixedNumber;
+
+import java.util.HashSet;
+
 public class NumberUtil {
 
 
-    public static byte[][] long2PrefixFormat(long rawBits, int precisionStep){
+    public static HashSet<PrefixedNumber> long2PrefixFormat(long rawBits, int precisionStep){
+
         StringBuilder sb = new StringBuilder();
         int preFixCount = 64%precisionStep==0?64/precisionStep:64/precisionStep+1;
         long[] retLong = new long[preFixCount];
@@ -19,9 +25,9 @@ public class NumberUtil {
             sb.setLength(0);
             retLong[i] = rawBits & mask;
         }
-        byte[][] ret = new byte[preFixCount][];
+        HashSet<PrefixedNumber> ret = new HashSet<>();
         for (int i = 0; i < preFixCount; i++) {
-            ret[i] = long2Bytes(retLong[i]);
+            ret.add(new PrefixedNumber(long2Bytes(retLong[i])));
         }
         return ret;
     }
