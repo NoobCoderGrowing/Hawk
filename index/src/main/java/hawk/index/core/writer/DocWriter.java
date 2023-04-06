@@ -4,6 +4,7 @@ import hawk.index.core.document.Document;
 import hawk.index.core.field.DoubleField;
 import hawk.index.core.field.Field;
 import hawk.index.core.field.StringField;
+import hawk.index.core.util.ArrayUtil;
 import hawk.index.core.util.NumberUtil;
 import hawk.index.core.util.WrapInt;
 import hawk.index.core.util.WrapLong;
@@ -95,7 +96,7 @@ public class DocWriter implements Runnable {
             int[] IDFreq = entry.getValue();
             int[] oldVal = ivt.putIfAbsent(fieldTermPair, IDFreq);
             if(oldVal != null){ // if already a posting exists, concatenates old and new
-                oldVal = intsConcatenation(oldVal, IDFreq);
+                oldVal = ArrayUtil.intsConcatenation(oldVal, IDFreq);
                 ivt.put(fieldTermPair, oldVal);
             }
         }
@@ -259,23 +260,7 @@ public class DocWriter implements Runnable {
 
     }
 
-    public void flush(){
-        log.info("start flush fdt and fdx");
-        int docBase = directory.getDocBase();
-        String[] files = directory.generateSegFiles();
-        Path fdtPath = Paths.get(files[0]);
-        Path fdxPath = Paths.get(files[1]);
-        Path timPath = Paths.get(files[2]);
-        Path frqPath = Paths.get(files[3]);
-        Path fdmPath = Paths.get(files[4]);
-        // sort fdt
-        Collections.sort(fdt, (o1, o2) -> {
-            Integer a = (Integer) o1.getLeft();
-            Integer b = (Integer) o2.getLeft();
-            return  a - b;
-        });
-        // sort fdm (by field lexicographically)
-        ArrayList<Map.Entry<byte[], byte[]>> fdmList = new ArrayList<>(fdm.entrySet());
+    public void sortFDM(ArrayList<Map.Entry<byte[], byte[]>> fdmList){
         Collections.sort(fdmList, (a, b) -> {
             byte[] aField = a.getKey();
             byte[] bField = b.getKey();
@@ -288,9 +273,9 @@ public class DocWriter implements Runnable {
             }
             return aField.length - bField.length;
         });
+    }
 
-        // sort ivt ( sort field first and then term lexicographically)
-        ArrayList<Map.Entry<FieldTermPair, int[]>> ivtList = new ArrayList<>(ivt.entrySet());
+    public void sortIVT(ArrayList<Map.Entry<FieldTermPair, int[]>> ivtList){
         Collections.sort(ivtList,(a, b)->{
             FieldTermPair aP = a.getKey();
             FieldTermPair bP = b.getKey();
@@ -318,17 +303,34 @@ public class DocWriter implements Runnable {
                 return aTerm.length - bTerm.length;
             }
         });
+    }
+
+    public void flush(){
+        log.info("start flush fdt and fdx");
+        int docBase = directory.getDocBase();
+        String[] files = directory.generateSegFiles();
+        Path fdtPath = Paths.get(files[0]);
+        Path fdxPath = Paths.get(files[1]);
+        Path timPath = Paths.get(files[2]);
+        Path frqPath = Paths.get(files[3]);
+        Path fdmPath = Paths.get(files[4]);
+        // sort fdt
+        Collections.sort(fdt, (o1, o2) -> {
+            Integer a = (Integer) o1.getLeft();
+            Integer b = (Integer) o2.getLeft();
+            return  a - b;
+        });
+        // sort fdm (by field lexicographically)
+        ArrayList<Map.Entry<byte[], byte[]>> fdmList = new ArrayList<>(fdm.entrySet());
+        sortFDM(fdmList);
+        // sort ivt ( sort field first and then term lexicographically)
+        ArrayList<Map.Entry<FieldTermPair, int[]>> ivtList = new ArrayList<>(ivt.entrySet());
+        sortIVT(ivtList);
         flushStored(fdtPath, fdxPath, docBase);
         flushIndexed(timPath, frqPath, fdmPath, docBase, ivtList, fdmList);
     }
 
-    public byte[][] bytePoolGrow(byte[][] old){
-        byte[][] ret = new byte[old.length+1][];
-        for (int i = 0; i < old.length; i++) {
-            ret[i] = old[i];
-        }
-        return ret;
-    }
+
 
     public Pair<Integer, byte[][]> processStoredFields(Document doc, int docID, WrapLong bytesCurDoc){
         List<Field> fields = doc.getFields();
@@ -338,7 +340,7 @@ public class DocWriter implements Runnable {
             if(field.isStored == Field.Stored.YES){
                 byte[] fieldBytes = field.getBytes();
                 if(bytePool.length < i + 1){
-                    bytePool = bytePoolGrow(bytePool);
+                    bytePool = ArrayUtil.bytePoolGrow(bytePool);
                 }
                 bytePool[i] = fieldBytes;
                 bytesCurDoc.setValue(bytesCurDoc.getValue() + fieldBytes.length);
@@ -375,19 +377,7 @@ public class DocWriter implements Runnable {
         return termType;
     }
 
-    public int[] intsConcatenation(int[] a, int[] b){
-        int[] temp = new int[a.length + b.length];
-        System.arraycopy(a, 0, temp, 0, a.length);
-        System.arraycopy(b, 0, temp, a.length, b.length);
-        return temp;
-    }
 
-    public byte[] bytesConcatenation(byte[] bytes1, byte[] bytes2){
-        byte[] temp = new byte[bytes1.length + bytes2.length];
-        System.arraycopy(bytes1, 0, temp, 0, bytes1.length);
-        System.arraycopy(bytes2, 0, temp, bytes1.length, bytes2.length);
-        return temp;
-    }
 
     public void assembleFieldTypeMap(HashMap<byte[], byte[]> fieldTypeMap, byte[] fieldName, byte[] type,
                                      WrapLong bytesCurDoc){
