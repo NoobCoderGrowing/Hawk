@@ -1,8 +1,10 @@
 package hawk.index.core.writer;
 import hawk.index.core.directory.Directory;
 import hawk.index.core.document.Document;
+import hawk.index.core.field.DoubleField;
 import hawk.index.core.field.Field;
 import hawk.index.core.field.StringField;
+import hawk.index.core.util.NumberUtil;
 import hawk.index.core.util.WrapInt;
 import hawk.index.core.util.WrapLong;
 import hawk.segment.core.Term;
@@ -214,7 +216,7 @@ public class DocWriter implements Runnable {
     }
 
     public void writeFRQ(FileChannel fc, int[] posting, WrapLong frqPos){
-        int length = posting.length/2;
+        int length = posting.length/2; // half is docID and the other is frequency
         DataOutput.writeVInt(length, fc, frqPos);
         for (int i = 0; i < length; i++) {
             DataOutput.writeVInt(posting[i * 2 ], fc, frqPos);
@@ -269,7 +271,7 @@ public class DocWriter implements Runnable {
         // sort fdt
         Collections.sort(fdt, (o1, o2) -> {
             Integer a = (Integer) o1.getLeft();
-            Integer b = (Integer) o2. getLeft();
+            Integer b = (Integer) o2.getLeft();
             return  a - b;
         });
         // sort fdm (by field lexicographically)
@@ -366,6 +368,10 @@ public class DocWriter implements Runnable {
         if(field.isTokenized == Field.Tokenized.YES){
             termType |= 0b00000010;
         }
+        if(field.isNumeric == Field.Numeric.YES){
+            termType |= 0b00000100;
+        }
+
         return termType;
     }
 
@@ -397,7 +403,7 @@ public class DocWriter implements Runnable {
         int[] preValue = fieldTermMap.putIfAbsent(fieldTermPair, new int[]{docID, 1});
         if(preValue != null){
             fieldTermMap.put(fieldTermPair, new int[]{docID, preValue[1] + 1});
-        }else{
+        }else{// 8 bytes of docID and frequency
             bytesCurDoc.setValue(bytesCurDoc.getValue() + filedName.length + filedValue.length + 8);
         }
     }
@@ -406,18 +412,24 @@ public class DocWriter implements Runnable {
                                     WrapLong bytesCurDoc){
         HashMap<byte[], byte[]> fieldTypeMap = (HashMap) pair.getLeft();
         HashMap<FieldTermPair, int[]> fieldTermMap = (HashMap) pair.getRight();
+        byte termType = getTermType(field);
+        byte[] filedName = field.getNameBytes();
+        assembleFieldTypeMap(fieldTypeMap, filedName, new byte[]{termType},bytesCurDoc);
         if (field instanceof StringField){
             // since analyzer returns position information, terms in same field
             //with same value may be identified as different terms as their positions differ
             HashSet<Term> termSet = config.getAnalyzer().anlyze(((StringField) field).getValue(),
                     ((StringField) field).getName());
-            byte termType = getTermType(field);
             for (Term t : termSet) {
-                byte[] filedName = t.getFieldName().getBytes(StandardCharsets.UTF_8);
-                filedName = bytesConcatenation(filedName, new byte[]{termType});
                 byte[] filedValue = t.getValue().getBytes(StandardCharsets.UTF_8);
                 assembleFieldTermMap(fieldTermMap,filedName,filedValue,docID,bytesCurDoc);
-                assembleFieldTypeMap(fieldTypeMap, filedName, new byte[]{(byte) 0b10000000},bytesCurDoc);
+            }
+        } else if (field instanceof DoubleField) {
+            double value = ((DoubleField) field).getValue();
+            long sortableLong = NumberUtil.double2SortableLong(value);// double to sort
+            byte[][] prefixedLong = NumberUtil.long2PrefixFormat(sortableLong,config.getPrecisionStep());
+            for (int i = 0; i < prefixedLong.length; i++) {
+                assembleFieldTermMap(fieldTermMap, filedName, prefixedLong[i],docID, bytesCurDoc);
             }
         }
     }

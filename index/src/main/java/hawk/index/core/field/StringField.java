@@ -18,6 +18,10 @@ public class StringField extends Field{
         this.isStored = isStored;
     }
 
+    public byte[] getNameBytes(){
+        return this.name.getBytes(StandardCharsets.UTF_8);
+    }
+
     @Override
     public byte[] getBytes() {
         byte[] nameByte = name.getBytes(StandardCharsets.UTF_8);

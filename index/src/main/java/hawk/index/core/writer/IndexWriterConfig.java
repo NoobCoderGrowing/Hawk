@@ -18,11 +18,13 @@ public class IndexWriterConfig {
 
     private LZ4Factory factory = LZ4Factory.fastestInstance();
 
-    private LZ4Compressor compressor;
+    private LZ4Compressor compressor = factory.fastCompressor();
 
-    private LZ4FastDecompressor decompressor;
+    private LZ4FastDecompressor decompressor = factory.fastDecompressor();
 
-    private int blocSize;
+    private int blocSize = 16 * 1024;
+
+    private int precisionStep = 4;
 
     public IndexWriterConfig(Analyzer analyzer) {
         // default 1GB
@@ -42,8 +44,5 @@ public class IndexWriterConfig {
         this.analyzer = analyzer;
         this.maxRamUsage = maxRamUsage;
         this.indexerThreadNum = indexerThreadNum;
-        this.compressor = factory.fastCompressor();
-        this.decompressor = factory.fastDecompressor();
-        this.blocSize = 16 * 1024;
     }
 }

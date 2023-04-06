@@ -1,18 +1,23 @@
 block - > 16kb
 [docLength<Vint>, docID<Vint>, docContent<bytes>]
 
+#original data
 .fdt
 [bloc<bytes>]
 no need to store block length, as .fdx stores every block start offset
 
+#index of original data
 .fdx
 [block start id<vint>, block start offset<vlong>]
 
+#field name and type data
 .fdm
 [length<int>, field<bytes>, fieldType<byte>]
 
+#posting list
 .frq
 [frq length<vint> [docID<vint>, frq<vint>]]
 
+# field - term to posting
 .tim
 [fieldLength<int>, field<bytes>, termLength<int>, term<bytes>, .frq start offset<vlong>]

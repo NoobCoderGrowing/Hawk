@@ -1,6 +1,7 @@
 package hawk.index.core.writer;
 
 
+import hawk.index.core.util.NumberUtil;
 import hawk.index.core.util.WrapInt;
 import hawk.index.core.util.WrapLong;
 import lombok.extern.slf4j.Slf4j;
@@ -82,27 +83,21 @@ public class DataOutput {
     }
 
     public static void writeInt(int i, byte[] buffer, WrapInt pos){
-        byte[] bytes = int2bytes(i);
+        byte[] bytes = NumberUtil.int2Bytes(i);
         writeBytes(bytes, buffer, pos);
     }
 
 
     public static void writeInt(int i, FileChannel fc, WrapLong pos){
-        byte[] bytes = int2bytes(i);
+        byte[] bytes = NumberUtil.int2Bytes(i);
         writeBytes(bytes, fc, pos);
     }
 
 
 
-    public static byte[] int2bytes(int i){
-        byte[] ret = new byte[]{
-                (byte) (i >> 24),
-                (byte) (i >> 16),
-                (byte) (i >> 8),
-                (byte) i
-        };
-        return ret;
-    }
+
+
+
 
     public static void main(String[] args) {
         System.out.println(0x7FL);

@@ -9,6 +9,8 @@ public abstract class Field{
 
     public Enum<Field.Stored> isStored;
 
+    public Enum<Field.Numeric> isNumeric;
+
     public enum Stored{
         YES,
 
@@ -21,6 +23,14 @@ public abstract class Field{
         NO
     }
 
+    public enum Numeric{
+        YES,
+
+        NO
+    }
+
     public abstract byte[] getBytes();
+
+    public abstract byte[] getNameBytes();
 
 }
