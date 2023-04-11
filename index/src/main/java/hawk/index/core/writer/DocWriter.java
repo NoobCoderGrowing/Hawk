@@ -362,7 +362,7 @@ public class DocWriter implements Runnable {
         return ret;
     }
 
-    public byte getTermType(Field field){
+    public byte getFieldType(Field field){
         byte termType = 0b00000000;
         if(field.isStored == Field.Stored.YES){
             termType |= 0b00000001;
@@ -372,8 +372,9 @@ public class DocWriter implements Runnable {
         }
         if(field instanceof DoubleField){
             termType |= 0b00000100;
+        } else if (field instanceof StringField) {
+            termType |= 0b00001000;
         }
-
         return termType;
     }
 
@@ -402,7 +403,7 @@ public class DocWriter implements Runnable {
                                     WrapLong bytesCurDoc){
         HashMap<byte[], byte[]> fieldTypeMap = (HashMap) pair.getLeft();
         HashMap<FieldTermPair, int[]> fieldTermMap = (HashMap) pair.getRight();
-        byte termType = getTermType(field);
+        byte termType = getFieldType(field);
         byte[] filedName = field.getNameBytes();
         assembleFieldTypeMap(fieldTypeMap, filedName, new byte[]{termType},bytesCurDoc);
         if (field instanceof StringField){
@@ -420,7 +421,7 @@ public class DocWriter implements Runnable {
             HashSet<PrefixedNumber> prefixedNumbers = NumberUtil.long2PrefixFormat(sortableLong,
                     config.getPrecisionStep());
             for (PrefixedNumber prefixedNumber : prefixedNumbers) {
-                assembleFieldTermMap(fieldTermMap, filedName, prefixedNumber.getValue(),docID, bytesCurDoc);
+                assembleFieldTermMap(fieldTermMap, filedName, prefixedNumber.getValue(), docID, bytesCurDoc);
             }
         }
     }

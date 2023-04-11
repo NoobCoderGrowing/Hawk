@@ -1,10 +1,7 @@
 package hawk.index.demo;
 
 import org.apache.lucene.util.*;
-import org.apache.lucene.util.fst.Builder;
-import org.apache.lucene.util.fst.FST;
-import org.apache.lucene.util.fst.PositiveIntOutputs;
-import org.apache.lucene.util.fst.Util;
+import org.apache.lucene.util.fst.*;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -19,7 +16,6 @@ public class FSTBuild {
                 "daaaaaaaaaa","dog", "dogs",};
         long outputValues[] = {1,2,3,9,5,6,7,8, 13,10,11};
         HashMap<String, Long> map = new HashMap<>();
-
         PositiveIntOutputs outputs = PositiveIntOutputs.getSingleton();
         Builder<Long> builder = new Builder<Long>(FST.INPUT_TYPE.BYTE1, outputs);
         BytesRefBuilder scratchBytes = new BytesRefBuilder();

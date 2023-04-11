@@ -2,6 +2,12 @@ package hawk.index.core.util;
 
 public class ArrayUtil {
 
+    public static NumericTrie.Node[] growNumericNodeArray(NumericTrie.Node[] nodes){
+        NumericTrie.Node[] newArray = new NumericTrie.Node[nodes.length+1];
+        System.arraycopy(nodes,0,newArray,0,nodes.length);
+        return newArray;
+    }
+
     public static byte[] bytesConcatenation(byte[] bytes1, byte[] bytes2){
         byte[] temp = new byte[bytes1.length + bytes2.length];
         System.arraycopy(bytes1, 0, temp, 0, bytes1.length);

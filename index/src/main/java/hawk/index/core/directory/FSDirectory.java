@@ -15,12 +15,6 @@ import java.util.Set;
 @Slf4j
 public class FSDirectory extends Directory{
 
-    private Path path;
-
-    private Set<String> files;
-
-    private SegmentInfo segmentInfo;
-
     //创建索引文件夹
     public FSDirectory(Path path) {
         //create index folder directory

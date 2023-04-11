@@ -62,6 +62,7 @@ public class SegmentInfo {
             fc.read(buffer, 12);
             buffer.flip();
             this.preMaxID = buffer.getInt();
+            fc.close();
         } catch (IOException e) {
             log.error("sth wrong reading segment.info");
             System.exit(1);
@@ -117,10 +118,6 @@ public class SegmentInfo {
             log.error("update .info failed");
             System.exit(1);
         }
-
-    }
-
-    public static void main(String[] args) {
 
     }
 }

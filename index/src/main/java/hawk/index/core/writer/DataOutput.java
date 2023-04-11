@@ -93,15 +93,4 @@ public class DataOutput {
         writeBytes(bytes, fc, pos);
     }
 
-
-
-
-
-
-
-    public static void main(String[] args) {
-        System.out.println(0x7FL);
-        System.out.println(0x7F);
-    }
-
 }
