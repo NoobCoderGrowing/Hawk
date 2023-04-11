@@ -93,4 +93,10 @@ public class DataOutput {
         writeBytes(bytes, fc, pos);
     }
 
+    public static void main(String[] args) {
+        long a = 123;
+        byte[] bytes = NumberUtil.long2Bytes(123);
+        System.out.println(bytes.length);
+    }
+
 }

@@ -89,7 +89,7 @@ public class DocWriter implements Runnable {
         ramUsageLock.unlock();
     }
 
-    public void assembleIVT(HashMap<FieldTermPair, int[]> docIVT){
+    public void  assembleIVT(HashMap<FieldTermPair, int[]> docIVT){
         for (Map.Entry<FieldTermPair, int[] > entry : docIVT.entrySet()) {
             FieldTermPair fieldTermPair = entry.getKey();
             //assemble ivt
@@ -418,11 +418,17 @@ public class DocWriter implements Runnable {
         } else if (field instanceof DoubleField) {
             double value = ((DoubleField) field).getValue();
             long sortableLong = NumberUtil.double2SortableLong(value);// double to sort
-            HashSet<PrefixedNumber> prefixedNumbers = NumberUtil.long2PrefixFormat(sortableLong,
-                    config.getPrecisionStep());
-            for (PrefixedNumber prefixedNumber : prefixedNumbers) {
-                assembleFieldTermMap(fieldTermMap, filedName, prefixedNumber.getValue(), docID, bytesCurDoc);
+//            HashSet<PrefixedNumber> prefixedNumbers = NumberUtil.long2PrefixFormat(sortableLong,
+//                    config.getPrecisionStep());
+//            for (PrefixedNumber prefixedNumber : prefixedNumbers) {
+//                assembleFieldTermMap(fieldTermMap, filedName, prefixedNumber.getValue(), docID, bytesCurDoc);
+//            }
+            String[] prefixString = NumberUtil.long2PrefixString(sortableLong,config.getPrecisionStep());
+
+            for (int i = 0; i < prefixString.length; i++) {
+                assembleFieldTermMap(fieldTermMap, filedName,prefixString[i].getBytes(StandardCharsets.UTF_8), docID, bytesCurDoc);
             }
+
         }
     }
 
