@@ -1,8 +1,10 @@
 package hawk.index.core.reader;
 
+import hawk.index.core.util.NumberUtil;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 @Slf4j
@@ -38,6 +40,22 @@ public class DataInput {
     public static long readUnsignedLong(byte[] bytes){
         return ByteBuffer.wrap(bytes).getLong();
     }
+
+    public static long read7bitBytes2Long(byte[] bytes, int start){
+        long ret = 0;
+        ret |= ((bytes[start] &0x7fL) << 57);
+        ret |= ((bytes[start+1] &0x7fL) << 50);
+        ret |= ((bytes[start+2] &0x7fL) << 43);
+        ret |= ((bytes[start+3] &0x7fL) << 36);
+        ret |= ((bytes[start+4] &0x7fL) << 29);
+        ret |= ((bytes[start+5] &0x7fL) << 22);
+        ret |= ((bytes[start+6] &0x7fL) << 15);
+        ret |= ((bytes[start+7] &0x7fL) << 8);
+        ret |= ((bytes[start+8] &0x7fL) << 1);
+        ret |= ((bytes[start+9] &0x7fL) );
+        return ret;
+    }
+
 
     public static byte[] readVlongBytes(ByteBuffer buffer){
         byte[] vLong = new byte[0];

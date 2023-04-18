@@ -126,10 +126,12 @@ public class AVLTree<T> {
 
     public T find(int key){
         Node curNode = root;
+        Node preNode;
         while(curNode != null){
             if(curNode.key == key){
                 break;
             }
+            preNode = curNode;
             curNode = curNode.key < key? curNode.right : curNode.left;
         }
         return curNode == null? null : (T) curNode.value;

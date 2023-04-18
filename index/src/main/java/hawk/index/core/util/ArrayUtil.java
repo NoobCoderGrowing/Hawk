@@ -8,6 +8,13 @@ public class ArrayUtil {
         return newArray;
     }
 
+    public static NumericTrie.Node[] growNumericNodeArray2(NumericTrie.Node[] nodes){
+        NumericTrie.Node[] newArray = new NumericTrie.Node[nodes.length+1];
+        System.arraycopy(nodes,0,newArray,0,nodes.length);
+        return newArray;
+    }
+
+
     public static byte[] bytesConcatenation(byte[] bytes1, byte[] bytes2){
         byte[] temp = new byte[bytes1.length + bytes2.length];
         System.arraycopy(bytes1, 0, temp, 0, bytes1.length);
@@ -28,5 +35,13 @@ public class ArrayUtil {
             ret[i] = old[i];
         }
         return ret;
+    }
+
+    public static void main(String[] args) {
+        double a = 9999.5;
+        System.out.println(Long.toBinaryString(NumberUtil.double2SortableLong(a)));
+
+        long parent = Long.parseUnsignedLong("1100000011000011100001110000000000000000000000000000000000000000", 2);
+        System.out.println(NumberUtil.sortableLong2Double(parent));
     }
 }

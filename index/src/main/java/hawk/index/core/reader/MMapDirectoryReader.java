@@ -150,26 +150,27 @@ public class MMapDirectoryReader extends DirectoryReader {
             long fcSize = fc.size();
             MappedByteBuffer buffer = fc.map(FileChannel.MapMode.READ_ONLY, 0, fcSize);
             int fieldLength, termLength;
-            byte[] bytes;
-            String fieldName;
+            byte[] filedNameBytes, fieldValueBytes, offset;
+            String fieldName, fieldValue;
             byte fieldType;
             BytesRef bytesRef;
             while (buffer.position() < buffer.limit()){
                 fieldLength = buffer.getInt();
-                bytes = new byte[fieldLength];
-                buffer.get(bytes);
-                fieldName = new String(bytes, StandardCharsets.UTF_8);
+                filedNameBytes = new byte[fieldLength];
+                buffer.get(filedNameBytes);
+                fieldName = new String(filedNameBytes, StandardCharsets.UTF_8);
                 termLength = buffer.getInt();
-                bytes = new byte[termLength];
-                buffer.get(bytes);
-                bytes = DataInput.readVlongBytes(buffer);
+                fieldValueBytes = new byte[termLength];
+                buffer.get(fieldValueBytes);
+                fieldValue = new String(fieldValueBytes,StandardCharsets.UTF_8);
+                offset = DataInput.readVlongBytes(buffer);
                 fieldType = fdmMap.get(fieldName)[0];
-                if((fieldType & 0b00001000) != 0){
-                    scratchBytes.copyChars(fieldName);
-                    bytesRef = new BytesRef(bytes);
+                if((fieldType & 0b00001000) != 0){ // String term
+                    scratchBytes.copyChars(fieldName.concat(fieldValue));
+                    bytesRef = new BytesRef(offset);
                     builder.add(Util.toIntsRef(scratchBytes.get(), scratchInts), bytesRef);
-                } else if ((fieldType & 0b00000100)!= 0) {
-                    constructNumericTrie(fieldName, bytes);
+                } else if ((fieldType & 0b00000100)!= 0) { // double term
+                    constructNumericTrie(fieldName, fieldValueBytes, offset);
                 }
             }
             this.termFST = builder.finish();
@@ -183,8 +184,10 @@ public class MMapDirectoryReader extends DirectoryReader {
         }
     }
 
-    public void  constructNumericTrie(String fieldName, byte[] bytes){
+    public void  constructNumericTrie(String fieldName, byte[] fieldValueBytes, byte[] offset){
+        if(numericTries.containsKey(fieldName)){
 
+        }
     }
 
 }

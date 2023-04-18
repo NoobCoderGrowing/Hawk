@@ -77,21 +77,6 @@ public class NumberUtil {
         return ret;
     }
 
-    public static int compareDoubleBytes(byte[] a , byte[] b ){
-        int aInt = 0;
-        int bInt = 0;
-        for (int i = 0; i < 8; i++) {
-            aInt = Byte.toUnsignedInt(a[i]);
-            bInt = Byte.toUnsignedInt(b[i]);
-            if(aInt > bInt){
-                return 1;
-            }else if (aInt < bInt){
-                return -1;
-            }
-        }
-        return 0;
-    }
-
     public static int compareSortableBytes(byte[] a, byte[] b){
         int aInt, bInt;
         for (int i = 0; i < a.length && i < b.length; i++) {
@@ -110,16 +95,54 @@ public class NumberUtil {
         }
         return 0;
     }
-    public static String long2String(long input){
+//    public static String long2String(long input){
+//        StringBuilder sb = new StringBuilder();
+//        int roll = 64/7 + 1;
+//        char cur;
+//        for (int i = 0; i < roll; i++) {
+//            cur = (char) (input & 0x7f);
+//            sb.append(cur);
+//            input >>>= 7;
+//        }
+//        return sb.reverse().toString();
+//    }
+
+    public static String long2String(long i){
+        byte[] strBytes = new byte[]{
+                (byte) ((i >> 57) & 0x7f),
+                (byte) ((i >> 50) & 0x7f),
+                (byte) ((i >> 43) & 0x7f),
+                (byte) ((i >> 36) & 0x7f),
+                (byte) ((i >> 29) & 0x7f),
+                (byte) ((i >> 22) & 0x7f),
+                (byte) ((i >> 15) & 0x7f),
+                (byte) ((i >> 8) & 0x7f),
+                (byte) ((i >> 1) & 0x7f),
+                (byte) (i & 0x01),
+        };
+        return new String(strBytes, StandardCharsets.UTF_8);
+    }
+
+
+    public static String long2StringWithShift(int shift, long input){
         StringBuilder sb = new StringBuilder();
-        int roll = 64/7 + 1;
-        char cur;
-        for (int i = 0; i < roll; i++) {
-            cur = (char) (input & 0x7f);
-            sb.append(cur);
-            input >>>= 7;
+        sb.append((char) shift);
+        sb.append(long2String(input));
+        return sb.toString();
+    }
+
+    public static long getLongMask(int maskLength){
+        if(maskLength >= 64){
+            return 0xffffffffffffffffL;
         }
-        return sb.reverse().toString();
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < maskLength; i++) {
+            sb.append("1");
+        }
+        for (int i = 0; i < 64 - maskLength; i++) {
+            sb.append("0");
+        }
+        return Long.parseUnsignedLong(sb.toString(), 2);
     }
 
 
@@ -138,9 +161,11 @@ public class NumberUtil {
             for (int j = 0; j < 64-reservedBits; j++) {
                 sb.append(0);
             }
-            long mask = Long.parseUnsignedLong(sb.toString(),2);
+            String maskString = sb.toString();
+            if(maskString.length() > 64) maskString = maskString.substring(0, 64);
+            long mask = Long.parseUnsignedLong(maskString,2);
             sb.setLength(0);
-            shift = (char) ((preFixCount - i - 1) & 0xff);
+            shift = (char) i;
             String prefixString = long2String(rawBits & mask);
             sb.append(shift);
             sb.append(prefixString);

@@ -1,31 +1,28 @@
 package hawk.index.core.util;
 
 import hawk.index.core.reader.DataInput;
-import hawk.index.core.writer.DataOutput;
-import hawk.index.core.writer.PrefixedNumber;
 
-import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class NumericTrie {
 
-    class Node{
-        long key;
-        byte[] keyBytes;
+    class Node {
+        String key;
         byte[] offset;
         Node left;
         Node right;
         Node parent;
         Node[] children;
+        int shift;
 
         public Node() {
         }
 
-        public Node(long key, byte[] keyBytes, byte[] offset) {
+        public Node(String key, byte[] offset, int shift) {
             this.key = key;
-            this.keyBytes = keyBytes;
             this.offset = offset;
+            this.shift = shift;
         }
 
         @Override
@@ -33,121 +30,84 @@ public class NumericTrie {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             Node node = (Node) o;
-            return Arrays.equals(keyBytes, node.keyBytes);
+            return Objects.equals(key, node.key);
         }
 
         @Override
         public int hashCode() {
-            return Arrays.hashCode(keyBytes);
+            return Objects.hash(key);
         }
     }
-    private int length;
 
+    private int length;
     private int precisionStep;
     private Node root;
-
-    private HashMap<Long, Node> map;
-
-    private Node[] nodes;
+    private Node[] lastLayer;
+    private HashMap<String, Node> nodeMap;
+    private int lastLayerShift;
 
     public NumericTrie(int length, int precisionStep) {
         this.length = length;
         this.precisionStep = precisionStep;
         this.root = new Node();
-        this.map = new HashMap<>();
-        this.nodes = new Node[0];
+        this.nodeMap = new HashMap<>();
+        this.lastLayerShift = length % precisionStep == 0 ? (length / precisionStep) - 1 : length / precisionStep;
+        this.lastLayer = new Node[0];
     }
 
-    public long get64Mask(int maskLength){
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < maskLength; i++) {
-            sb.append("1");
-        }
-        for (int i = 0; i < 64 - maskLength; i++) {
-            sb.append("0");
-        }
-        String maskString = sb.toString();
-        return Long.parseUnsignedLong(maskString, 2);
-    }
-
-    public void add(byte[] number, byte[] offset){
-        if(length == 64){
-            add64(number,offset);
-        }else{
-            add32(number, offset);
-        }
-    }
-    public void add32(byte[] number, byte[] offset){}
-
-
-    public void addChild(Node parent, Node child, long key){
-        if(parent.children!=null){ // already has children list
-            parent.children = ArrayUtil.growNumericNodeArray(parent.children);
-            parent.children[parent.children.length-1] = child;
-            Node left = parent.children[parent.children.length-2];
-            left.right = child;
-            child.left = left;
+    public void addChild(Node parent, Node child, int shift){
+        Node[] children = parent.children;
+        if(children != null){
+            children = ArrayUtil.growNumericNodeArray2(children);
+            children[children.length - 1] = child;
+            child.left = children[children.length - 2];
+            children[children.length - 2].right = child;
         }else{
             parent.children = new Node[1];
             parent.children[0] = child;
         }
         child.parent = parent;
-        this.nodes = ArrayUtil.growNumericNodeArray(this.nodes);
-        this.nodes[this.nodes.length-1] = child;
-        this.map.put(key, child);
+        nodeMap.put(child.key, child);
+        if(shift == lastLayerShift){
+            lastLayer = ArrayUtil.growNumericNodeArray2(lastLayer);
+            lastLayer[lastLayer.length - 1] = child;
+        }
     }
 
-    public int get64LowestSetBit(long number){
-        long setBit = number & -number;
-        if(setBit != 0x8000000000000000L){
-            return (int) (Math.round(Math.log(setBit)/Math.log(2)) + 1);
-        }
-        return 64;
-    }
-    public void add64(byte[] number, byte[] offset){
-        long longNum = DataInput.readUnsignedLong(number);
-        //get the lowest set bit
-        long lowestSetBit = get64LowestSetBit(longNum);
-        Node newNode = new Node(longNum, number, offset);
-        if(length - lowestSetBit < precisionStep){
-            addChild(root, newNode, longNum);
+    public void add(String key, byte[] offset){
+        byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
+        int shift = keyBytes[0] & 0xff;
+        Node newNode = new Node(key,offset, shift);
+        if(shift == 0){
+            addChild(root, newNode, shift);
         }else{
-//            int maskLength = (int)( (length - lowestSetBit + 1) % precisionStep == 0? length - lowestSetBit -
-//                    precisionStep + 1 : length - lowestSetBit + 1 - (lowestSetBit % precisionStep + 1));
-
-            int maskLength = (int)(length - lowestSetBit + 1 - (length - lowestSetBit + 1) % precisionStep -precisionStep);
-            long mask = get64Mask(maskLength);
-            long parentKey = longNum & mask;
-            Node parent = map.get(parentKey);
-            addChild(parent,newNode,longNum);
+            byte parentShift = (byte) ((shift - 1) & 0xff);
+            long parentValue = DataInput.read7bitBytes2Long(keyBytes, 1);
+            long mask = NumberUtil.getLongMask(precisionStep * shift);
+            parentValue &= mask;
+            String parentKey = NumberUtil.long2StringWithShift(parentShift, parentValue);;
+            Node parent = nodeMap.get(parentKey);
+            addChild(parent, newNode, shift);
         }
     }
 
-    //find the first larger or equal node
-    public Node find64Lower(byte[] lower){
-        if(this.nodes.length == 0){
-            return null;
-        } // if first node is larger, return first node
-        if(NumberUtil.compareSortableBytes(this.nodes[0].keyBytes, lower) == 1){
-            return this.nodes[0];
-        }
+    public Node searchLower(String lower){
+        // if first node is larger, return first node
+        if(lastLayer[0].key.compareTo(lower) >= 0) return lastLayer[0];
+
         int left = 0;
-        int right = this.nodes.length - 1;
+        int right = lastLayer.length - 1;
         int mid = (left + right) / 2;
         while(left <= right){//binary search
-            if(NumberUtil.compareSortableBytes(this.nodes[mid].keyBytes, lower) == -1){
+            if(lastLayer[mid].key.compareTo(lower) < 0){
                 // if mid is smaller, and mid + 1 is larger, return mid + 1
-                if(mid + 1 < this.nodes.length && NumberUtil.compareSortableBytes(this.nodes[mid + 1].keyBytes, lower) >= 0){
-                    return this.nodes[mid + 1];
-                }
+                if(mid + 1 < lastLayer.length && lastLayer[mid + 1].key.compareTo(lower) >= 0) return lastLayer[mid + 1];
                 left = mid + 1;
-            } else if (NumberUtil.compareSortableBytes(this.nodes[mid].keyBytes, lower) == 0) {
-                return this.nodes[mid];
-            } else if (NumberUtil.compareSortableBytes(this.nodes[mid].keyBytes, lower) == 1) {
+            } else if (lastLayer[mid].key.compareTo(lower) == 0) {
+                return lastLayer[mid];
+            } else if (lastLayer[mid].key.compareTo(lower) > 0) {
                 // if mid is larger, and mid - 1 is smaller, return mid
-                if(mid - 1 >= 0 && NumberUtil.compareSortableBytes(this.nodes[mid - 1].keyBytes, lower) == -1){
-                    return this.nodes[mid];
-                }
+                if(mid - 1 >= 0 && lastLayer[mid-1].key.compareTo(lower) < 0) return this.lastLayer[mid];
                 right = mid - 1;
             }
             mid = (left + right) / 2;
@@ -155,30 +115,23 @@ public class NumericTrie {
         return null;
     }
 
-    public Node find64Upper(byte[] upper){
-        if(this.nodes.length == 0){
-            return null;
-        } // if last node is smaller, return last node
-        if(NumberUtil.compareSortableBytes(this.nodes[this.nodes.length - 1].keyBytes, upper) <= 0){
-            return this.nodes[this.nodes.length - 1];
-        }
+    public Node searchUpper(String upper){
+        // if last node is smaller, return last node
+        if(lastLayer[lastLayer.length -1].key.compareTo(upper) <= 0) return lastLayer[lastLayer.length - 1];
+
         int left = 0;
-        int right = this.nodes.length - 1;
+        int right = lastLayer.length - 1;
         int mid = (left + right) / 2;
         while(left <= right){//binary search
-            if(NumberUtil.compareSortableBytes(this.nodes[mid].keyBytes, upper) == -1){
+            if(lastLayer[mid].key.compareTo(upper) < 0){
                 // if mid is smaller, and mid + 1 is larger, return mid
-                if(mid + 1 < this.nodes.length && NumberUtil.compareSortableBytes(this.nodes[mid + 1].keyBytes, upper) == 1){
-                    return this.nodes[mid];
-                }
+                if(mid + 1 < lastLayer.length && lastLayer[mid + 1].key.compareTo(upper) > 0) return lastLayer[mid];
                 left = mid + 1;
-            } else if (NumberUtil.compareSortableBytes(this.nodes[mid].keyBytes, upper) == 0) {
-                return this.nodes[mid];
-            } else if (NumberUtil.compareSortableBytes(this.nodes[mid].keyBytes, upper) == 1) {
+            } else if (lastLayer[mid].key.compareTo(upper) == 0) {
+                return this.lastLayer[mid];
+            } else if (lastLayer[mid].key.compareTo(upper) > 0) {
                 // if mid is larger, and mid - 1 is smaller, return mid - 1
-                if(mid - 1 >= 0 && NumberUtil.compareSortableBytes(this.nodes[mid - 1].keyBytes, upper) <= 0){
-                    return this.nodes[mid - 1];
-                }
+                if(mid - 1 >= 0 && lastLayer[mid - 1].key.compareTo(upper) <= 0) return lastLayer[mid -1];
                 right = mid - 1;
             }
             mid = (left + right) / 2;
@@ -186,122 +139,86 @@ public class NumericTrie {
         return null;
     }
 
-    public HashSet<Node> rangeSearch64(double lower, double upper){
-        if(lower > upper){
-            return null;
+    public HashSet<Node> rangeSearch(double lower, double upper){
+        HashSet<Node> result = new HashSet<>();
+        if(lower > upper) return result;
+        if(lastLayer.length == 0) return result;
+        long lowerBits = NumberUtil.double2SortableLong(lower);
+        long upperBits = NumberUtil.double2SortableLong(upper);
+        String lowerString = NumberUtil.long2StringWithShift(lastLayerShift, lowerBits);
+        String upperString = NumberUtil.long2StringWithShift(lastLayerShift, upperBits);
+        if(lowerString.compareTo(lastLayer[lastLayer.length-1].key) > 0) return result;
+        if(upperString.compareTo(lastLayer[0].key) < 0 ) return result;
+        Node lowerNode = searchLower(lowerString);
+        Node upperNode = searchUpper(upperString);
+        //start search
+        result.add(lowerNode);
+        result.add(upperNode);
+        while(lowerNode.parent != upperNode.parent){
+            while(lowerNode.right != null){
+                lowerNode = lowerNode.right;
+                result.add(lowerNode);
+            }
+            while(upperNode.left != null){
+                upperNode = upperNode.left;
+                result.add(upperNode);
+            }
+            lowerNode = lowerNode.parent;
+            upperNode = upperNode.parent;
         }
-        long lowerLong = NumberUtil.double2SortableLong(lower);
-        long upperLong = NumberUtil.double2SortableLong(upper);
-        byte[] lowerBytes = NumberUtil.long2Bytes(lowerLong);
-        byte[] upperBytes = NumberUtil.long2Bytes(upperLong);
-        //  if largest is smaller than lower, return null
-        if(NumberUtil.compareSortableBytes(this.nodes[this.nodes.length - 1].keyBytes, lowerBytes) == -1){
-            return null;
+        while(lowerNode.right != upperNode){
+            lowerNode = lowerNode.right;
+            result.add(lowerNode);
         }
-        // if smallest is larger than upper, return null;
-        if(NumberUtil.compareSortableBytes(this.nodes[0].keyBytes, upperBytes) == 1){
-            return null;
-        }
-        Node lowerNode = find64Lower(lowerBytes);
-        Node upperNode = find64Upper(upperBytes);
-        HashSet<Node> set = new HashSet<>();
-        set.add(lowerNode);
-        set.add(upperNode);
-        findLargerRecursive(set, lowerNode, upperNode);
-        findSmallerRecursive(set, upperNode, lowerNode);
-        return set;
-    }
-
-    public void findLargerRecursive(HashSet<Node> set, Node cur, Node upper){
-        while (cur.right != null && NumberUtil.compareSortableBytes(cur.right.keyBytes, upper.keyBytes) == -1){
-            cur = cur.right;
-            set.add(cur);
-        }
-        if(cur.parent.right != null && NumberUtil.compareSortableBytes(cur.parent.right.keyBytes, upper.keyBytes) == -1){
-            cur = cur.parent.right;
-            set.add(cur);
-            findLargerRecursive(set,cur,upper);
-        }
-    }
-
-    public void findSmallerRecursive(HashSet<Node> set, Node cur, Node lower){
-        while (cur.left != null && NumberUtil.compareSortableBytes(cur.left.keyBytes, lower.keyBytes) == 1){
-            cur = cur.left;
-            set.add(cur);
-            long longbits = ByteBuffer.wrap(cur.keyBytes).getLong();
-            System.out.println(NumberUtil.sortableLong2Double(longbits));
-        }
-        if(cur.parent.left != null && NumberUtil.compareSortableBytes(cur.parent.left.keyBytes, lower.keyBytes) == 1){
-            cur = cur.parent.left;
-            set.add(cur);
-            long longbits = ByteBuffer.wrap(cur.keyBytes).getLong();
-            System.out.println(NumberUtil.sortableLong2Double(longbits));
-            findSmallerRecursive(set,cur,lower);
-        }
-    }
-
-    public HashSet<Node> rangeSearch(Number lower, Number uppper){
-        if(lower instanceof Double){
-            return rangeSearch64((double)lower, (double) uppper);
-        }
-        return null;
+        return result;
     }
 
     public static void main(String[] args) {
-        NumericTrie trie = new NumericTrie(64, 4);
-        HashSet<PrefixedNumber> prefixes = new HashSet<>();
-        Random random = new Random();
+        NumericTrie numericTrie = new NumericTrie(64, 4);
+        HashSet<String> set = new HashSet<>();
         for (int i = 0; i < 10000; i++) {
-            int randInt = random.nextInt(10000);
-            double first = randInt + 0.5;
-            long sortable = NumberUtil.double2SortableLong(first);
-            prefixes.addAll(NumberUtil.long2PrefixFormat(sortable,4)) ;
+            double value = i + 0.5;
+            long sortable = NumberUtil.double2SortableLong(value);
+            String[] strings = NumberUtil.long2PrefixString(sortable,4);
+            set.addAll(Arrays.asList(strings));
+        }
+        ArrayList<String> list = new ArrayList<>(set);
+        Collections.sort(list);
+        for (int i = 0; i < list.size(); i++) {
+            numericTrie.add(list.get(i),null);
         }
 
-        double first = 100001;
-        long sortable = NumberUtil.double2SortableLong(first);
-        prefixes.addAll(NumberUtil.long2PrefixFormat(sortable,4)) ;
-        first = 2023;
-        sortable = NumberUtil.double2SortableLong(first);
-        prefixes.addAll(NumberUtil.long2PrefixFormat(sortable,4)) ;
-
-
-        ArrayList<PrefixedNumber> prefixedNumbers = new ArrayList<>(prefixes);
-        Collections.sort(prefixedNumbers,(a,b)->{
-            byte[] aBytes = a.getValue();
-            byte[] bytes = b.getValue();
-            for (int j = 0; j < aBytes.length && j < bytes.length; j++) {
-                int aInt = aBytes[j] & 0xff;
-                int bInt = bytes[j] & 0xff;
-                if(aInt > bInt){
-                    return 1;
-                } else if (aInt<bInt) {
-                    return -1;
-                }
+        HashSet<Node> set2 = numericTrie.rangeSearch(0.5 , 10000.5);
+        List<Node> nodes = new ArrayList<>(set2);
+        Collections.sort(nodes,(a,b)->{
+            byte[] abytes  = a.key.getBytes();
+            byte[] bytes = b.key.getBytes();
+            int aShift = abytes[0] & 0xff;
+            int bShift = bytes[0] & 0xff;
+            if(aShift != bShift){
+                return aShift - bShift;
             }
-            return aBytes.length - bytes.length;
+            long aLong = DataInput.read7bitBytes2Long(abytes,1);
+            long bLong = DataInput.read7bitBytes2Long(bytes, 1);
+            double aDouble = NumberUtil.sortableLong2Double(aLong);
+            double bDouble = NumberUtil.sortableLong2Double(bLong);
+            if(aDouble > bDouble){
+                return 1;
+            } else if (aDouble < bDouble) {
+                return -1;
+            }
+            return 0;
         });
-        for (int j = 0; j < prefixedNumbers.size(); j++) {
-            byte[] number = prefixedNumbers.get(j).getValue();
-            System.out.println(Long.toBinaryString(ByteBuffer.wrap(number).getLong()));
-            trie.add(prefixedNumbers.get(j).getValue(),null);
+
+        for (int i = 0; i < nodes.size(); i++) {
+            String key = nodes.get(i).key;
+            byte[] bytes = key.getBytes();
+            System.out.println(bytes[0]&0xff);
+            long k = DataInput.read7bitBytes2Long(bytes,1);
+            System.out.println(Long.toUnsignedString(k,2));
+            Double j = NumberUtil.sortableLong2Double(k);
+            System.out.println(j);
         }
 
-
-
-
-
-        HashSet<Node> set = trie.rangeSearch((double) 0, (double)10000);
-        System.out.println("---------");
-        System.out.println(set.size());
-        for (Node node: set
-             ) {
-            long longbits = ByteBuffer.wrap(node.keyBytes).getLong();
-            System.out.println(NumberUtil.sortableLong2Double(longbits));
-//            System.out.println(Long.toBinaryString(longbits));
-
-        }
     }
-
-
 }
