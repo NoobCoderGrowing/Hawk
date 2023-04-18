@@ -139,8 +139,8 @@ public class NumericTrie {
         return null;
     }
 
-    public HashSet<Node> rangeSearch(double lower, double upper){
-        HashSet<Node> result = new HashSet<>();
+    public List<Node> rangeSearch(double lower, double upper){
+        List<Node> result = new ArrayList<>();
         if(lower > upper) return result;
         if(lastLayer.length == 0) return result;
         long lowerBits = NumberUtil.double2SortableLong(lower);
@@ -187,9 +187,7 @@ public class NumericTrie {
         for (int i = 0; i < list.size(); i++) {
             numericTrie.add(list.get(i),null);
         }
-
-        HashSet<Node> set2 = numericTrie.rangeSearch(0.5 , 10000.5);
-        List<Node> nodes = new ArrayList<>(set2);
+        List<Node> nodes = numericTrie.rangeSearch(0.5 , 10000.5);
         Collections.sort(nodes,(a,b)->{
             byte[] abytes  = a.key.getBytes();
             byte[] bytes = b.key.getBytes();
