@@ -170,7 +170,7 @@ public class MMapDirectoryReader extends DirectoryReader {
                     bytesRef = new BytesRef(offset);
                     builder.add(Util.toIntsRef(scratchBytes.get(), scratchInts), bytesRef);
                 } else if ((fieldType & 0b00000100)!= 0) { // double term
-                    constructNumericTrie(fieldName, fieldValueBytes, offset);
+                    constructNumericTrieMap(fieldName, fieldValueBytes, offset, 64 , 4);
                 }
             }
             this.termFST = builder.finish();
@@ -184,9 +184,15 @@ public class MMapDirectoryReader extends DirectoryReader {
         }
     }
 
-    public void  constructNumericTrie(String fieldName, byte[] fieldValueBytes, byte[] offset){
+    public void  constructNumericTrieMap(String fieldName, byte[] fieldValueBytes, byte[] offset, int length,
+                                      int precisionStep){
         if(numericTries.containsKey(fieldName)){
-
+            NumericTrie trie = numericTries.get(fieldName);
+            trie.add(new String(fieldValueBytes), offset);
+        }else {
+            NumericTrie trie = new NumericTrie(length, precisionStep);
+            trie.add(new String(fieldValueBytes), offset);
+            numericTries.put(fieldName, trie);
         }
     }
 

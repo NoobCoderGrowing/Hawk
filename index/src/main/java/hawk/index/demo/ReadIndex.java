@@ -1,7 +1,6 @@
 package hawk.index.demo;
 
 import hawk.index.core.directory.Directory;
-import hawk.index.core.directory.FSDirectory;
 import hawk.index.core.directory.MMapDirectory;
 import hawk.index.core.reader.DirectoryReader;
 

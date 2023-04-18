@@ -95,17 +95,6 @@ public class NumberUtil {
         }
         return 0;
     }
-//    public static String long2String(long input){
-//        StringBuilder sb = new StringBuilder();
-//        int roll = 64/7 + 1;
-//        char cur;
-//        for (int i = 0; i < roll; i++) {
-//            cur = (char) (input & 0x7f);
-//            sb.append(cur);
-//            input >>>= 7;
-//        }
-//        return sb.reverse().toString();
-//    }
 
     public static String long2String(long i){
         byte[] strBytes = new byte[]{
