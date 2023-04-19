@@ -1,14 +1,7 @@
 package hawk.index.core.util;
 
 public class ArrayUtil {
-
     public static NumericTrie.Node[] growNumericNodeArray(NumericTrie.Node[] nodes){
-        NumericTrie.Node[] newArray = new NumericTrie.Node[nodes.length+1];
-        System.arraycopy(nodes,0,newArray,0,nodes.length);
-        return newArray;
-    }
-
-    public static NumericTrie.Node[] growNumericNodeArray2(NumericTrie.Node[] nodes){
         NumericTrie.Node[] newArray = new NumericTrie.Node[nodes.length+1];
         System.arraycopy(nodes,0,newArray,0,nodes.length);
         return newArray;
@@ -27,6 +20,12 @@ public class ArrayUtil {
         System.arraycopy(a, 0, temp, 0, a.length);
         System.arraycopy(b, 0, temp, a.length, b.length);
         return temp;
+    }
+
+    public static byte[] growByteArray(byte[] input){
+        byte[] newArray = new byte[input.length+1];
+        System.arraycopy(input,0,newArray,0,input.length);
+        return newArray;
     }
 
     public static byte[][] bytePoolGrow(byte[][] old){

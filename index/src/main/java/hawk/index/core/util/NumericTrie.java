@@ -1,13 +1,16 @@
 package hawk.index.core.util;
 
 import hawk.index.core.reader.DataInput;
+import lombok.Data;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+@Data
 public class NumericTrie {
 
-    class Node {
+    @Data
+    public class Node {
         String key;
         byte[] offset;
         Node left;
@@ -58,7 +61,7 @@ public class NumericTrie {
     public void addChild(Node parent, Node child, int shift){
         Node[] children = parent.children;
         if(children != null){
-            children = ArrayUtil.growNumericNodeArray2(children);
+            children = ArrayUtil.growNumericNodeArray(children);
             children[children.length - 1] = child;
             child.left = children[children.length - 2];
             children[children.length - 2].right = child;
@@ -69,7 +72,7 @@ public class NumericTrie {
         child.parent = parent;
         nodeMap.put(child.key, child);
         if(shift == lastLayerShift){
-            lastLayer = ArrayUtil.growNumericNodeArray2(lastLayer);
+            lastLayer = ArrayUtil.growNumericNodeArray(lastLayer);
             lastLayer[lastLayer.length - 1] = child;
         }
     }

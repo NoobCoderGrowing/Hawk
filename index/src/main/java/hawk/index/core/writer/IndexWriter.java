@@ -45,7 +45,7 @@ public class IndexWriter {
 
     private List<Future> futures;
 
-    private HashMap<byte[], byte[]> fdm;
+    private HashMap<ByteReference, Pair<byte[], int[]>> fdm;
 
     
 

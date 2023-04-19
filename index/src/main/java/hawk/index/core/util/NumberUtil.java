@@ -77,6 +77,19 @@ public class NumberUtil {
         return ret;
     }
 
+    public static byte[] long2Vlong(long input){
+        byte[] ret = new byte[1];
+        int j = 0;
+        while((input & ~0x7fL) != 0){
+            ret[j] = (byte)((input & 0x7fL) | 0x80L);
+            input >>>= 7;
+            ret = ArrayUtil.growByteArray(ret);
+            j ++;
+        }
+        ret[j] = (byte) input;
+        return ret;
+    }
+
     public static int compareSortableBytes(byte[] a, byte[] b){
         int aInt, bInt;
         for (int i = 0; i < a.length && i < b.length; i++) {

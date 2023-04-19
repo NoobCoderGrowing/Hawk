@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.HashMap;
 
 @Slf4j
 public class DataOutput {
@@ -94,9 +95,13 @@ public class DataOutput {
     }
 
     public static void main(String[] args) {
-        long a = 123;
-        byte[] bytes = NumberUtil.long2Bytes(123);
-        System.out.println(bytes.length);
+        ByteReference byteReference = new ByteReference(new byte[]{1});
+        HashMap<ByteReference, Pair<byte[], Integer>> map = new HashMap<>();
+        map.put(byteReference, new Pair<>(new byte[0], 1));
+        System.out.println(map.get(byteReference).getRight());
+        Pair pair = map.get(byteReference);
+        pair.setRight(2);
+        System.out.println(map.get(byteReference).getRight());
     }
 
 }

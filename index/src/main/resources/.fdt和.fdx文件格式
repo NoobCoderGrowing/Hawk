@@ -12,11 +12,11 @@ no need to store block length, as .fdx stores every block start offset
 
 #field name and type data
 .fdm
-[length<int>, field<bytes>, fieldType<byte>]
+[length<int>, field<bytes>, fieldType<byte>, fieldLengthSum<int>, docCount<int>]
 
 #posting list
 .frq
-[frq length<vint> [docID<vint>, frq<vint>]]
+[frq length<vint> [docID<vint>, frq<vint>, fieldLength<vint>]]
 
 # field - term to posting
 .tim

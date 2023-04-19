@@ -25,7 +25,7 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     private AVLTree<byte[]> fdxTree;
 
-    private MappedByteBuffer fdxBuffer;
+    private MappedByteBuffer fdtBuffer;
 
     private HashMap<String, byte[]> fdmMap;
 
@@ -82,7 +82,7 @@ public class MMapDirectoryReader extends DirectoryReader {
             long fcSize = fc.size();
             MappedByteBuffer buffer = fc.map(FileChannel.MapMode.READ_ONLY, 0, fcSize);// .fdt must not exceed 4GB
             buffer.load(); // force load buffer content into memory
-            this.fdxBuffer = buffer;
+            this.fdtBuffer = buffer;
             fc.close();
         } catch (FileNotFoundException e) {
             throw new RuntimeException(e);
@@ -196,4 +196,28 @@ public class MMapDirectoryReader extends DirectoryReader {
         }
     }
 
+    @Override
+    public FST<BytesRef> getTermFST() {
+        return this.termFST;
+    }
+
+    @Override
+    public MappedByteBuffer getFRQBuffer() {
+        return this.frqBuffer;
+    }
+
+    @Override
+    public AVLTree<byte[]> getFDXTree() {
+        return this.fdxTree;
+    }
+
+    @Override
+    public MappedByteBuffer getFDTBuffer() {
+        return this.fdtBuffer;
+    }
+
+    @Override
+    public HashMap<String, NumericTrie> getNumericTrieMap() {
+        return this.numericTries;
+    }
 }

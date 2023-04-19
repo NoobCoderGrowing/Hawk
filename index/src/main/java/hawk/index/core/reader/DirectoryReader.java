@@ -2,8 +2,15 @@ package hawk.index.core.reader;
 
 import hawk.index.core.directory.Directory;
 import hawk.index.core.directory.MMapDirectory;
+import hawk.index.core.util.AVLTree;
+import hawk.index.core.util.NumericTrie;
+import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.fst.FST;
 
-public class DirectoryReader {
+import java.nio.MappedByteBuffer;
+import java.util.HashMap;
+
+public abstract class DirectoryReader {
 
     public static DirectoryReader open(Directory directory){
         if(directory instanceof MMapDirectory){
@@ -11,4 +18,14 @@ public class DirectoryReader {
         }
         return null;
     }
+
+    public abstract FST<BytesRef> getTermFST();
+
+    public abstract MappedByteBuffer getFRQBuffer();
+
+    public abstract AVLTree<byte[]> getFDXTree();
+
+    public abstract MappedByteBuffer getFDTBuffer();
+
+    public abstract HashMap<String, NumericTrie> getNumericTrieMap();
 }
