@@ -7,6 +7,12 @@ public class ArrayUtil {
         return newArray;
     }
 
+    public static int[][] grow2DIntArray(int[][] array){
+        int[][] newArray = new int[array.length + 1][];
+        System.arraycopy(array,0, newArray, 0, array.length);
+        return newArray;
+    }
+
 
     public static byte[] bytesConcatenation(byte[] bytes1, byte[] bytes2){
         byte[] temp = new byte[bytes1.length + bytes2.length];

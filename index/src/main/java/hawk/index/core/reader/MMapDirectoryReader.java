@@ -3,6 +3,7 @@ package hawk.index.core.reader;
 import hawk.index.core.directory.Directory;
 import hawk.index.core.util.AVLTree;
 import hawk.index.core.util.NumericTrie;
+import hawk.index.core.writer.Pair;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
@@ -27,7 +28,7 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     private MappedByteBuffer fdtBuffer;
 
-    private HashMap<String, byte[]> fdmMap;
+    private HashMap<String, Pair<byte[], Float>> fdmMap;
 
     private MappedByteBuffer frqBuffer;
 
@@ -98,17 +99,16 @@ public class MMapDirectoryReader extends DirectoryReader {
             FileChannel fc = new RandomAccessFile(fdmPath, "rw").getChannel();
             int fcSize = (int) fc.size(); // .fdx must not exceed 4GB
             ByteBuffer buffer = ByteBuffer.allocate(fcSize);
-            int length = 0;
-            byte[] bytes;
-            byte fieldType;
-            String fieldName;
             while (buffer.position() < buffer.limit()){
-                length = buffer.getInt();
-                bytes = new byte[length];
+                int length = buffer.getInt();
+                byte[] bytes = new byte[length];
                 buffer.get(bytes);
-                fieldName = new String(bytes, StandardCharsets.UTF_8);
-                fieldType = buffer.get();
-                fdmMap.put(fieldName, new byte[]{fieldType});
+                String fieldName = new String(bytes, StandardCharsets.UTF_8);
+                byte fieldType =  buffer.get();
+                int fieldLengthSum = buffer.getInt();
+                int docCount = buffer.getInt();
+                float avgFieldLength = fieldLengthSum/docCount;
+                fdmMap.put(fieldName, new Pair<>(new byte[]{fieldType}, avgFieldLength));
             }
             fc.close();
         } catch (FileNotFoundException e) {
@@ -164,7 +164,7 @@ public class MMapDirectoryReader extends DirectoryReader {
                 buffer.get(fieldValueBytes);
                 fieldValue = new String(fieldValueBytes,StandardCharsets.UTF_8);
                 offset = DataInput.readVlongBytes(buffer);
-                fieldType = fdmMap.get(fieldName)[0];
+                fieldType = fdmMap.get(fieldName).getLeft()[0];
                 if((fieldType & 0b00001000) != 0){ // String term
                     scratchBytes.copyChars(fieldName.concat(fieldValue));
                     bytesRef = new BytesRef(offset);
@@ -220,4 +220,15 @@ public class MMapDirectoryReader extends DirectoryReader {
     public HashMap<String, NumericTrie> getNumericTrieMap() {
         return this.numericTries;
     }
+
+    @Override
+    public HashMap<String, Pair<byte[], Float>> getFDMMap() {
+        return this.fdmMap;
+    }
+
+    @Override
+    public int getTotalDoc() {
+        return directory.getSegmentInfo().getPreMaxID();
+    }
+
 }

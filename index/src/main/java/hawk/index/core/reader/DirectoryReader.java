@@ -4,6 +4,7 @@ import hawk.index.core.directory.Directory;
 import hawk.index.core.directory.MMapDirectory;
 import hawk.index.core.util.AVLTree;
 import hawk.index.core.util.NumericTrie;
+import hawk.index.core.writer.Pair;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.fst.FST;
 
@@ -28,4 +29,8 @@ public abstract class DirectoryReader {
     public abstract MappedByteBuffer getFDTBuffer();
 
     public abstract HashMap<String, NumericTrie> getNumericTrieMap();
+
+    public abstract HashMap<String, Pair<byte[], Float>> getFDMMap();
+
+    public abstract int getTotalDoc();
 }

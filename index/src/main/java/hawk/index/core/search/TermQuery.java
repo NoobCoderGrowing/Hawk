@@ -6,7 +6,6 @@ import lombok.Data;
 public class TermQuery extends Query{
 
     private String field;
-
     private String term;
 
     public TermQuery(String title, String term) {

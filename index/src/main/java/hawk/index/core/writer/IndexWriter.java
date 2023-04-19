@@ -29,7 +29,7 @@ public class IndexWriter {
     private ThreadPoolExecutor threadPoolExecutor;
 
     // in-mem inverted index
-    private volatile HashMap<FieldTermPair, int[]> ivt;
+    private volatile HashMap<FieldTermPair, int[][]> ivt;
 
     //stored doc fields
     private volatile List<Pair> fdt;

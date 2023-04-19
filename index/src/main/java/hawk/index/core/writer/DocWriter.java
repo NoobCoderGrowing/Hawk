@@ -33,7 +33,7 @@ public class DocWriter implements Runnable {
 
     private Document doc;
 
-    private volatile HashMap<FieldTermPair, int[]> ivt;
+    private volatile HashMap<FieldTermPair, int[][]> ivt;
     private volatile List<Pair> fdt;
 
     private AtomicLong bytesUsed;
@@ -52,7 +52,7 @@ public class DocWriter implements Runnable {
 
 
     public DocWriter(AtomicInteger docIDAllocator, Document doc, List fdt, HashMap<FieldTermPair,
-            int[]> ivt, AtomicLong bytesUsed, long maxRamUsage, ReentrantLock ramUsageLock, Directory directory,
+            int[][]> ivt, AtomicLong bytesUsed, long maxRamUsage, ReentrantLock ramUsageLock, Directory directory,
                      IndexWriterConfig config, HashMap<ByteReference, Pair<byte[], int[]>> fdm) {
         this.docIDAllocator = docIDAllocator;
         this.doc = doc;
@@ -106,11 +106,12 @@ public class DocWriter implements Runnable {
         for (Map.Entry<FieldTermPair, int[] > entry : docIVT.entrySet()) {
             FieldTermPair fieldTermPair = entry.getKey();
             //assemble ivt
-            int[] IDFreqLength = entry.getValue();
-            int[] oldVal = ivt.putIfAbsent(fieldTermPair, IDFreqLength);
+//            int[] IDFreqLength = entry.getValue();
+            int[][] IDFreqLength = new int[][]{entry.getValue()};
+            int[][] oldVal = ivt.putIfAbsent(fieldTermPair, IDFreqLength);
             if(oldVal != null){ // if already a posting exists, concatenates old and new
-                oldVal = ArrayUtil.intsConcatenation(oldVal, IDFreqLength);
-                ivt.put(fieldTermPair, oldVal);
+                oldVal = ArrayUtil.grow2DIntArray(oldVal);
+                oldVal[oldVal.length-1] = entry.getValue();
             }
         }
     }
@@ -214,7 +215,7 @@ public class DocWriter implements Runnable {
             byte type = fdmList.get(i).getValue().getLeft()[0];
             int fieldLengthSum = fdmList.get(i).getValue().getRight()[0];
             int docCount = fdmList.get(i).getValue().getRight()[1];
-            int length = field.length + 9; // 1 for field type, 4 for fieldLengthSum and 4 for docCount
+            int length = field.length;
             DataOutput.writeInt(length, fc, pos);
             DataOutput.writeBytes(field, fc, pos);
             DataOutput.writeByte(type, fc, pos);
@@ -233,18 +234,18 @@ public class DocWriter implements Runnable {
         DataOutput.writeVLong(frqPos, fc, timPos);
     }
 
-    public void writeFRQ(FileChannel fc, int[] posting, WrapLong frqPos){
-        int length = posting.length/3; //  triple of docId, frequency and doc field length
+    public void writeFRQ(FileChannel fc, int[][] posting, WrapLong frqPos){
+        int length = posting.length;
         DataOutput.writeVInt(length, fc, frqPos);
         for (int i = 0; i < length; i++) {
-            DataOutput.writeVInt(posting[i * 3 ], fc, frqPos);
-            DataOutput.writeVInt(posting[i * 3 + 1], fc, frqPos);
-            DataOutput.writeVInt(posting[i * 3 + 2], fc, frqPos);
+            DataOutput.writeVInt(posting[i][0], fc, frqPos);
+            DataOutput.writeVInt(posting[i][1], fc, frqPos);
+            DataOutput.writeVInt(posting[i][2], fc, frqPos);
         }
     }
 
     public void flushIndexed(Path timPath, Path frqPath, Path fdmPath, int docBase,
-                             ArrayList<Map.Entry<FieldTermPair, int[]>> ivtList, ArrayList<Map.Entry<ByteReference, Pair<byte[], int[]>>>
+                             ArrayList<Map.Entry<FieldTermPair, int[][]>> ivtList, ArrayList<Map.Entry<ByteReference, Pair<byte[], int[]>>>
                                      fdmList){
         try {
             FileChannel timChannel = new RandomAccessFile(timPath.toAbsolutePath().toString(),
@@ -259,7 +260,7 @@ public class DocWriter implements Runnable {
             WrapLong timPos = new WrapLong(0);
             for (int i = 0; i < ivtList.size(); i++) { // write .tim and .frq
                 FieldTermPair fieldTermPair = ivtList.get(i).getKey();
-                int[] posting = ivtList.get(i).getValue();
+                int[][] posting = ivtList.get(i).getValue();
                 writeTIM(timChannel, fieldTermPair, timPos, frqPos);
                 writeFRQ(frqChannel, posting, frqPos);
             }
@@ -293,7 +294,20 @@ public class DocWriter implements Runnable {
         });
     }
 
-    public void sortIVT(ArrayList<Map.Entry<FieldTermPair, int[]>> ivtList){
+    public void sortPosting(ArrayList<Map.Entry<FieldTermPair, int[][]>> ivtList){
+        for (int i = 0; i < ivtList.size(); i++) {
+            int[][] posting = ivtList.get(i).getValue();
+            Arrays.sort(posting, new Comparator<int[]>() {
+                @Override
+                public int compare(int[] o1, int[] o2) {
+                    return o1[0] - o2[0];
+                }
+            });
+        }
+    }
+
+
+    public void sortIVTList(ArrayList<Map.Entry<FieldTermPair, int[][]>> ivtList){
         Collections.sort(ivtList,(a, b)->{
             FieldTermPair aP = a.getKey();
             FieldTermPair bP = b.getKey();
@@ -324,7 +338,7 @@ public class DocWriter implements Runnable {
     }
 
     public void flush(){
-        log.info("start flush fdt and fdx");
+        log.info("start flushing");
         int docBase = directory.getDocBase();
         String[] files = directory.generateSegFiles();
         Path fdtPath = Paths.get(files[0]);
@@ -342,8 +356,9 @@ public class DocWriter implements Runnable {
         ArrayList<Map.Entry<ByteReference, Pair<byte[], int[]>>> fdmList = new ArrayList<>(fdm.entrySet());
         sortFDM(fdmList);
         // sort ivt ( sort field first and then term lexicographically)
-        ArrayList<Map.Entry<FieldTermPair, int[]>> ivtList = new ArrayList<>(ivt.entrySet());
-        sortIVT(ivtList);
+        ArrayList<Map.Entry<FieldTermPair, int[][]>> ivtList = new ArrayList<>(ivt.entrySet());
+        sortIVTList(ivtList);
+        sortPosting(ivtList);
         flushStored(fdtPath, fdxPath, docBase);
         flushIndexed(timPath, frqPath, fdmPath, docBase, ivtList, fdmList);
     }

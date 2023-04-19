@@ -152,8 +152,17 @@ public class NumericTrie {
         String upperString = NumberUtil.long2StringWithShift(lastLayerShift, upperBits);
         if(lowerString.compareTo(lastLayer[lastLayer.length-1].key) > 0) return result;
         if(upperString.compareTo(lastLayer[0].key) < 0 ) return result;
-        Node lowerNode = searchLower(lowerString);
-        Node upperNode = searchUpper(upperString);
+
+        Node lowerNode;
+        Node upperNode;
+        if(lower == Double.MIN_VALUE){
+            lowerNode = lastLayer[0];
+        }else {lowerNode = searchLower(lowerString);}
+        if(upper == Double.MAX_VALUE){
+            upperNode = lastLayer[lastLayerShift-1];
+        }else{
+            upperNode = searchUpper(upperString);
+        }
         //start search
         result.add(lowerNode);
         result.add(upperNode);
