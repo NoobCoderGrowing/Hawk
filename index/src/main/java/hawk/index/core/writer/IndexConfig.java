@@ -8,7 +8,7 @@ import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.lz4.LZ4FastDecompressor;
 
 @Data
-public class IndexWriterConfig {
+public class IndexConfig {
 
     private Analyzer analyzer;
 
@@ -26,21 +26,21 @@ public class IndexWriterConfig {
 
     private int precisionStep = 4;
 
-    public IndexWriterConfig(Analyzer analyzer) {
+    public IndexConfig(Analyzer analyzer) {
         // default 1GB
         // default core num according to hardware
         this(analyzer, 1024 * 1024 * 1024L, Constants.PROCESSOR_NUM);
     }
 
-    public IndexWriterConfig(Analyzer analyzer, long maxRamUsage) {
+    public IndexConfig(Analyzer analyzer, long maxRamUsage) {
         this(analyzer, maxRamUsage, Constants.PROCESSOR_NUM);
     }
 
-    public IndexWriterConfig(Analyzer analyzer, int indexerThreadNum) {
+    public IndexConfig(Analyzer analyzer, int indexerThreadNum) {
         this(analyzer, 1024 * 1024 * 1024, indexerThreadNum);
     }
 
-    public IndexWriterConfig(Analyzer analyzer, long maxRamUsage, int indexerThreadNum) {
+    public IndexConfig(Analyzer analyzer, long maxRamUsage, int indexerThreadNum) {
         this.analyzer = analyzer;
         this.maxRamUsage = maxRamUsage;
         this.indexerThreadNum = indexerThreadNum;

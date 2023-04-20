@@ -1,18 +1,27 @@
 package hawk.index.core.search;
 
+import hawk.index.core.document.Document;
+import hawk.index.core.field.DoubleField;
+import hawk.index.core.field.Field;
+import hawk.index.core.field.StringField;
 import hawk.index.core.reader.DataInput;
 import hawk.index.core.reader.DirectoryReader;
+import hawk.index.core.reader.FDXNode;
 import hawk.index.core.util.NumericTrie;
 import hawk.index.core.util.WrapInt;
+import hawk.index.core.writer.IndexConfig;
 import hawk.index.core.writer.Pair;
 import lombok.extern.slf4j.Slf4j;
+import net.jpountz.lz4.LZ4FastDecompressor;
 import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.fst.FST;
 import org.apache.lucene.util.fst.Util;
 
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Slf4j
@@ -20,11 +29,11 @@ public class Searcher {
 
     private DirectoryReader directoryReader;
 
-    private SearchConfig searchConfig;
+    private IndexConfig indexConfig;
 
-    public Searcher(DirectoryReader directoryReader, SearchConfig searchConfig) {
+    public Searcher(DirectoryReader directoryReader, IndexConfig indexConfig) {
         this.directoryReader = directoryReader;
-        this.searchConfig = searchConfig;
+        this.indexConfig = indexConfig;
     }
 
     public ScoreDoc[] searchTerm(TermQuery query){
@@ -128,7 +137,7 @@ public class Searcher {
             ScoreDoc[] hits;
             if(query instanceof TermQuery){
                 hits = searchTerm((TermQuery) query);
-            }else if(query instanceof TermQuery){
+            }else if(query instanceof NumericRangeQuery){
                 hits = searchNumericRange((NumericRangeQuery) query);
             } else {
                 hits = booleanSearch((BooleanQuery) query);
@@ -167,7 +176,7 @@ public class Searcher {
             ScoreDoc[] hits;
             if(query instanceof TermQuery){
                 hits = searchTerm((TermQuery) query);
-            }else if(query instanceof TermQuery){
+            }else if(query instanceof NumericRangeQuery){
                 hits = searchNumericRange((NumericRangeQuery) query);
             } else {
                 hits = booleanSearch((BooleanQuery) query);
@@ -202,12 +211,131 @@ public class Searcher {
         return retArray;
     }
 
+    public ScoreDoc[] topN(ScoreDoc[] scoreDocs, int n){
+        Arrays.sort(scoreDocs, new Comparator<ScoreDoc>() {
+            @Override
+            public int compare(ScoreDoc o1, ScoreDoc o2) {
+                if(o1.getScore() - o2.getScore() < 0){
+                    return -1;
+                } else if (o1.getScore() - o2.getScore() > 0) {
+                    return 1;
+                }
+                return 0;
+            }
+        });
+        return Arrays.copyOfRange(scoreDocs, 0, n);
+    }
 
+    // return a node whose key is the smallest greater or equal to docID
+    public byte[][] binarySearchFDXList(int docID, List<FDXNode> fdxNodeList){
+        byte[][] ret = new byte[2][];
+        int first = 0;
+        int last = fdxNodeList.size() - 1;
+        int mid = (first + last) / 2;
+        while (first <= last) {
+            FDXNode midNode = fdxNodeList.get(mid);
+            if (midNode.getKey() < docID) { // if mid is smaller, and mid + 1 is larger, return mid
+                if((mid + 1 < fdxNodeList.size()) && (fdxNodeList.get(mid + 1).getKey() > docID)){
+                    ret[0] = midNode.getOffset();
+                    ret[1] = fdxNodeList.get(mid + 1).getOffset();
+                    return ret;
+                }
+                first = mid + 1;
+            } else if (midNode.getKey() == docID) {
+                ret[0] = midNode.getOffset();
+                if(mid + 1 < fdxNodeList.size()){
+                    ret[1] = fdxNodeList.get(mid + 1).getOffset();
+                }else {
+                    ret[1] = null;
+                }
+                return ret;
+            } else if (midNode.getKey() > docID) { // if mid is larger, and mid - 1 is smaller, return mid - 1
+                if((mid - 1 >= 0) && (fdxNodeList.get(mid - 1).getKey() < docID)){
+                    ret[0] = fdxNodeList.get(mid - 1).getOffset();
+                    ret[1] = midNode.getOffset();
+                    return ret;
+                }
+                last = mid - 1;
+            }
+            mid = (first + last) / 2;
+        }
+        return null;
+    }
+
+    public Field createField(String fieldName, byte[] fieldValue){
+        HashMap<String, Pair<byte[], Float>> fdmMap = this.directoryReader.getFDMMap();
+        byte fieldType = fdmMap.get(fieldName).getLeft()[0];
+        if((fieldType & 0b00001000) != 0){ // String field
+            String value = new String(fieldValue,StandardCharsets.UTF_8);
+            return new StringField(fieldName, value);
+        } else if ((fieldType & 0b00000100)!= 0) { // double field
+            long longVal = DataInput.readLong(fieldValue);
+            double value = Double.longBitsToDouble(longVal);
+            return new DoubleField(fieldName, value);
+        }
+        return null;
+    }
+
+    public Document doc (ScoreDoc scoreDoc){
+        if(scoreDoc == null) return null;
+        int docID = scoreDoc.docID;
+        Document document = new Document();
+        List<FDXNode> fdxNodeList = this.directoryReader.getFDXList();
+        MappedByteBuffer fdtBuffer = this.directoryReader.getFDTBuffer();
+        // calculate fdt buffer offset
+        byte[][] vlongOffsets = binarySearchFDXList(docID, fdxNodeList);
+        int offsetLeft = (int)DataInput.readVlong(vlongOffsets[0]);
+        int offsetRight;
+        if(vlongOffsets[1] != null){
+            offsetRight = (int) DataInput.readVlong(vlongOffsets[1]);
+        }else {
+            offsetRight = fdtBuffer.limit();
+        }
+        int blockLength = offsetRight - offsetLeft;
+        byte[] fdtBloc = new byte[blockLength];
+        // read compressed bloc into buffer
+        fdtBuffer.get(fdtBloc,offsetLeft,blockLength);
+        byte[] unCompressedBloc = new byte[indexConfig.getBlocSize()];
+        LZ4FastDecompressor decompressor = indexConfig.getDecompressor();
+        // decompress buffer to unCompressedBloc
+        decompressor.decompress(fdtBloc, unCompressedBloc);
+        ByteBuffer buffer = ByteBuffer.wrap(unCompressedBloc);
+        //read unCompressd block until the document is found
+        while (buffer.position() < buffer.limit()){
+            int curDocID = DataInput.readVint(buffer);
+            int fieldCount = DataInput.readVint(buffer);
+            for (int i = 0; i < fieldCount; i++) {
+                int fieldLength = DataInput.readVint(buffer);
+                byte[] fieldName = new byte[fieldLength];
+                buffer.get(fieldName);
+                int valueLength = DataInput.readVint(buffer);
+                byte[] fieldValue = new byte[valueLength];
+                buffer.get(fieldValue);
+                if(docID == curDocID) {
+                    Field field = createField(new String(fieldName,StandardCharsets.UTF_8), fieldValue);
+                    document.add(field);
+                }
+            }
+            if(docID == curDocID) return document;
+        }
+        return null;
+    }
+
+    public void close(){
+        directoryReader.close();
+    }
 
     public ScoreDoc[] search(Query query){
         if(query instanceof TermQuery) return searchTerm((TermQuery) query);
         if(query instanceof BooleanQuery) return booleanSearch((BooleanQuery) query);
         return searchNumericRange((NumericRangeQuery) query);
+    }
+
+    public static void main(String[] args) {
+        byte[] bytes = new byte[]{1,2,3};
+        ByteBuffer buffer = ByteBuffer.wrap(bytes);
+        System.out.println(buffer.position());
+        System.out.println(buffer.limit());
     }
 
 

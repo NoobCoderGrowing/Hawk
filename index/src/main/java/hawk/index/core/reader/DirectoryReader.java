@@ -2,7 +2,6 @@ package hawk.index.core.reader;
 
 import hawk.index.core.directory.Directory;
 import hawk.index.core.directory.MMapDirectory;
-import hawk.index.core.util.AVLTree;
 import hawk.index.core.util.NumericTrie;
 import hawk.index.core.writer.Pair;
 import org.apache.lucene.util.BytesRef;
@@ -10,6 +9,7 @@ import org.apache.lucene.util.fst.FST;
 
 import java.nio.MappedByteBuffer;
 import java.util.HashMap;
+import java.util.List;
 
 public abstract class DirectoryReader {
 
@@ -24,7 +24,7 @@ public abstract class DirectoryReader {
 
     public abstract MappedByteBuffer getFRQBuffer();
 
-    public abstract AVLTree<byte[]> getFDXTree();
+    public abstract List<FDXNode> getFDXList();
 
     public abstract MappedByteBuffer getFDTBuffer();
 
@@ -33,4 +33,6 @@ public abstract class DirectoryReader {
     public abstract HashMap<String, Pair<byte[], Float>> getFDMMap();
 
     public abstract int getTotalDoc();
+
+    public abstract void close();
 }

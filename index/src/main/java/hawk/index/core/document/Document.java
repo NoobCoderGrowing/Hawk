@@ -8,6 +8,7 @@ import java.util.List;
 @Data
 public class Document {
     private int docID;
+    private float score;
     private List<Field> fields = new ArrayList<>();
 
     public Document() {}

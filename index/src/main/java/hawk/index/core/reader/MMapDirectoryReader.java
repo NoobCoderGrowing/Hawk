@@ -1,7 +1,7 @@
 package hawk.index.core.reader;
 
 import hawk.index.core.directory.Directory;
-import hawk.index.core.util.AVLTree;
+import hawk.index.core.directory.memory.UnMMap;
 import hawk.index.core.util.NumericTrie;
 import hawk.index.core.writer.Pair;
 import lombok.extern.slf4j.Slf4j;
@@ -17,14 +17,16 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 
 @Slf4j
 public class MMapDirectoryReader extends DirectoryReader {
 
     private Directory directory;
 
-    private AVLTree<byte[]> fdxTree;
+    private List<FDXNode> fdxList;
 
     private MappedByteBuffer fdtBuffer;
 
@@ -38,21 +40,21 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     public MMapDirectoryReader(Directory directory) {
         this.directory = directory;
-        this.fdxTree = new AVLTree<>();
+        this.fdxList = new ArrayList<>();
         this.fdmMap = new HashMap<>();
         this.numericTries = new HashMap<>();
         init();
     }
 
     public void init() {
-        constructFdxTree();
+        constructFdxList();
         loadFdt();
         constructFdmMap();
         loadFrq();
         constructFSTNumericTrie();
     }
 
-    public void constructFdxTree() {
+    public void constructFdxList() {
         String dirPath = directory.getPath().toAbsolutePath().toString();
         String fdxPath = dirPath + "/1.fdx";
         try {
@@ -62,8 +64,9 @@ public class MMapDirectoryReader extends DirectoryReader {
             fc.read(buffer, 0);
             while (buffer.position() < buffer.limit()) {
                 int key = DataInput.readVint(buffer);
-                byte[] value = DataInput.readVlongBytes(buffer);
-                fdxTree.insert(key, value);
+                byte[] offset = DataInput.readVlongBytes(buffer);
+                FDXNode fdxNode = new FDXNode(key, offset);
+                this.fdxList.add(fdxNode);
             }
             fc.close();
         } catch (FileNotFoundException e) {
@@ -74,6 +77,8 @@ public class MMapDirectoryReader extends DirectoryReader {
             System.exit(1);
         }
     }
+
+
 
     private void loadFdt() {
         String dirPath = directory.getPath().toAbsolutePath().toString();
@@ -207,8 +212,8 @@ public class MMapDirectoryReader extends DirectoryReader {
     }
 
     @Override
-    public AVLTree<byte[]> getFDXTree() {
-        return this.fdxTree;
+    public List<FDXNode> getFDXList() {
+        return this.fdxList;
     }
 
     @Override
@@ -229,6 +234,12 @@ public class MMapDirectoryReader extends DirectoryReader {
     @Override
     public int getTotalDoc() {
         return directory.getSegmentInfo().getPreMaxID();
+    }
+
+    @Override
+    public void close() {
+        UnMMap.unMMap(fdtBuffer);
+        UnMMap.unMMap(frqBuffer);
     }
 
 }

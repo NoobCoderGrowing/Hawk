@@ -90,6 +90,20 @@ public class NumberUtil {
         return ret;
     }
 
+    public static byte[] int2Vint(int input){
+        byte[] ret = new byte[1];
+        int j = 0;
+        while((input & ~0x7f) != 0){
+            ret[j] = (byte)((input & 0x7f) | 0x80);
+            input >>>= 7;
+            ret = ArrayUtil.growByteArray(ret);
+            j ++;
+        }
+        ret[j] = (byte) input;
+        return ret;
+    }
+
+
     public static int compareSortableBytes(byte[] a, byte[] b){
         int aInt, bInt;
         for (int i = 0; i < a.length && i < b.length; i++) {

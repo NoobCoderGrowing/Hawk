@@ -22,7 +22,7 @@ public class IndexWriter {
      *  Thread count used to do indexing
      *  Maximum memory allowed to do indexing
      *  **/
-    private final IndexWriterConfig config;
+    private final IndexConfig config;
 
     private final Directory directory;
 
@@ -49,7 +49,7 @@ public class IndexWriter {
 
     
 
-    public IndexWriter(IndexWriterConfig config, Directory directory) {
+    public IndexWriter(IndexConfig config, Directory directory) {
         this.config = config;
         this.directory = directory;
         this.ivt = new HashMap<>();

@@ -1,5 +1,5 @@
 block - > 16kb
-[docLength<Vint>, docID<Vint>, docContent<bytes>]
+[docID<Vint>, fieldCount<Vint>, [filedLength<vInt>, fieldName<bytes>, fieldValueLength, fieldValue<bytes>]
 
 #original data
 .fdt

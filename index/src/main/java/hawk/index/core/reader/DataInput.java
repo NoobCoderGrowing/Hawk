@@ -12,6 +12,16 @@ import java.nio.ByteBuffer;
 
 @Slf4j
 public class DataInput {
+    //first byte the most significant
+    public static long readLong(byte[] buffer){
+        long value = 0;
+        for (int i = 0; i < buffer.length; i++)
+        {
+            value = (value << 8) + (buffer[i] & 0xff);
+        }
+        return value;
+    }
+
 
     public static long readVlong(byte[] buffer){
         long ret = 0;

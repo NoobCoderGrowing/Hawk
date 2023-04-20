@@ -11,6 +11,11 @@ public class DoubleField extends Field{
 
     private double value;
 
+    public DoubleField(String name, double value) {
+        this.name = name;
+        this.value = value;
+    }
+
     public DoubleField(String name, double value, Enum<Field.Tokenized> isTokenized,
                        Enum<Field.Stored> isStored) {
         this.name = name;
@@ -22,10 +27,18 @@ public class DoubleField extends Field{
     @Override
     public byte[] getBytes() {
         byte[] nameByte = name.getBytes(StandardCharsets.UTF_8);
+        byte[] nameLength = NumberUtil.int2Vint(nameByte.length);
         byte[] valueByte = NumberUtil.long2Bytes(Double.doubleToLongBits(value));
-        byte[] result = new byte[nameByte.length + valueByte.length];
-        System.arraycopy(nameByte, 0, result, 0, nameByte.length);
-        System.arraycopy(valueByte, 0, result, nameByte.length, valueByte.length);
+        byte[] valueLength = new byte[]{0b00001000};
+        byte[] result = new byte[nameByte.length + valueByte.length + nameLength.length + valueLength.length];
+        int pos = 0;
+        System.arraycopy(nameLength, 0 ,result, pos, nameLength.length);
+        pos += nameLength.length;
+        System.arraycopy(nameByte,0, result, pos, nameByte.length);
+        pos += nameByte.length;
+        System.arraycopy(valueLength, 0, result, pos, valueLength.length );
+        pos += valueLength.length;
+        System.arraycopy(valueByte, 0, result ,pos, valueByte.length);
         return result;
     }
 

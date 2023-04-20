@@ -44,7 +44,7 @@ public class DocWriter implements Runnable {
 
     private Directory directory;
 
-    private IndexWriterConfig config;
+    private IndexConfig config;
 
     private HashMap<ByteReference, Pair<byte[], int[]>> fdm;
 
@@ -53,7 +53,7 @@ public class DocWriter implements Runnable {
 
     public DocWriter(AtomicInteger docIDAllocator, Document doc, List fdt, HashMap<FieldTermPair,
             int[][]> ivt, AtomicLong bytesUsed, long maxRamUsage, ReentrantLock ramUsageLock, Directory directory,
-                     IndexWriterConfig config, HashMap<ByteReference, Pair<byte[], int[]>> fdm) {
+                     IndexConfig config, HashMap<ByteReference, Pair<byte[], int[]>> fdm) {
         this.docIDAllocator = docIDAllocator;
         this.doc = doc;
         this.fdt = fdt;
@@ -125,8 +125,8 @@ public class DocWriter implements Runnable {
 
     // write fdt into a buffer of 16kb
     // return false if the buffer can't fit
-    public boolean insertChunk(int docID, byte[][] data, byte[] buffer, WrapInt pos){
-        int remains = buffer.length - pos.getValue();
+    public boolean insertBlock(int docID, byte[][] data, byte[] buffer, WrapInt pos){
+        int remains = buffer.length - pos.getValue(); // calculate bytes left in the buffer
         int need = 0;
         int notEmpty = 0;
         for (int i = 0; i < data.length; i++) {
@@ -138,12 +138,12 @@ public class DocWriter implements Runnable {
             }
         }
         if(need <= remains){
-            // write doc length
-            DataOutput.writeVInt(need + 4, buffer, pos);
             // write docID
-            DataOutput.writeInt(docID, buffer, pos);
+            DataOutput.writeVInt(docID, buffer, pos);
+            // write field count
+            DataOutput.writeVInt(notEmpty, buffer, pos);
             for (int i = 0; i < notEmpty; i++) {
-                //write doc data
+                //write each field
                 DataOutput.writeBytes(data[i], buffer, pos);
             }
             return true;
@@ -152,7 +152,7 @@ public class DocWriter implements Runnable {
     }
 
     // write a block into .fdt file
-    public void writeFDTBloc(byte[] buffer, byte[] compressedBuffer, int maxCompressedLength, FileChannel fdtChannel,
+    public void writeCompressedBloc(byte[] buffer, byte[] compressedBuffer, int maxCompressedLength, FileChannel fdtChannel,
                          WrapLong fdtPos, WrapInt bufferPos){
         //compress
         int compressedLength = config.getCompressor().compress(buffer, 0, buffer.length, compressedBuffer,
@@ -186,14 +186,14 @@ public class DocWriter implements Runnable {
             for (int i = 0; i < fdt.size(); i++) {
                 docID = (Integer) fdt.get(i).getLeft() + docBase;
                 byte[][] data = (byte[][]) fdt.get(i).getRight();
-                while(!insertChunk(docID, data, buffer, bufferPos)){ // if buffer is full, write to disk
+                while(!insertBlock(docID, data, buffer, bufferPos)){ // if buffer is full, write to disk
                     writeFDX(fdxChannel, docID, fdtPos, fdxPos);
-                    writeFDTBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
+                    writeCompressedBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
                 }
             } //last write
             if(bufferPos.getValue() > 0){
                 writeFDX(fdxChannel, docID, fdtPos, fdxPos);
-                writeFDTBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
+                writeCompressedBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
             }
             //close channel
             fdxChannel.force(false);
