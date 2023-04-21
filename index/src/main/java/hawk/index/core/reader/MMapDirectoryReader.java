@@ -62,6 +62,7 @@ public class MMapDirectoryReader extends DirectoryReader {
             int fcSize = (int) fc.size(); // .fdx must not exceed 4GB
             ByteBuffer buffer = ByteBuffer.allocate(fcSize);
             fc.read(buffer, 0);
+            buffer.flip();
             while (buffer.position() < buffer.limit()) {
                 int key = DataInput.readVint(buffer);
                 byte[] offset = DataInput.readVlongBytes(buffer);
@@ -104,6 +105,8 @@ public class MMapDirectoryReader extends DirectoryReader {
             FileChannel fc = new RandomAccessFile(fdmPath, "rw").getChannel();
             int fcSize = (int) fc.size(); // .fdx must not exceed 4GB
             ByteBuffer buffer = ByteBuffer.allocate(fcSize);
+            fc.read(buffer, 0);
+            buffer.flip();
             while (buffer.position() < buffer.limit()){
                 int length = buffer.getInt();
                 byte[] bytes = new byte[length];
@@ -152,27 +155,24 @@ public class MMapDirectoryReader extends DirectoryReader {
         String timPath = dirPath + "/1.tim";
         try {
             FileChannel fc = new RandomAccessFile(timPath, "rw").getChannel();
-            long fcSize = fc.size();
-            MappedByteBuffer buffer = fc.map(FileChannel.MapMode.READ_ONLY, 0, fcSize);
-            int fieldLength, termLength;
-            byte[] filedNameBytes, fieldValueBytes, offset;
-            String fieldName, fieldValue;
-            byte fieldType;
-            BytesRef bytesRef;
+            int fcSize = (int) fc.size();
+            ByteBuffer buffer = ByteBuffer.allocate(fcSize);
+            fc.read(buffer, 0);
+            buffer.flip();
             while (buffer.position() < buffer.limit()){
-                fieldLength = buffer.getInt();
-                filedNameBytes = new byte[fieldLength];
+                int fieldLength =  buffer.getInt();
+                byte[] filedNameBytes = new byte[fieldLength];
                 buffer.get(filedNameBytes);
-                fieldName = new String(filedNameBytes, StandardCharsets.UTF_8);
-                termLength = buffer.getInt();
-                fieldValueBytes = new byte[termLength];
+                String fieldName = new String(filedNameBytes, StandardCharsets.UTF_8);
+                int termLength = buffer.getInt();
+                byte[]  fieldValueBytes = new byte[termLength];
                 buffer.get(fieldValueBytes);
-                fieldValue = new String(fieldValueBytes,StandardCharsets.UTF_8);
-                offset = DataInput.readVlongBytes(buffer);
-                fieldType = fdmMap.get(fieldName).getLeft()[0];
+                String fieldValue = new String(fieldValueBytes,StandardCharsets.UTF_8);
+                byte[] offset = DataInput.readVlongBytes(buffer);
+                byte fieldType = fdmMap.get(fieldName).getLeft()[0];
                 if((fieldType & 0b00001000) != 0){ // String term
                     scratchBytes.copyChars(fieldName.concat(fieldValue));
-                    bytesRef = new BytesRef(offset);
+                    BytesRef bytesRef = new BytesRef(offset);
                     builder.add(Util.toIntsRef(scratchBytes.get(), scratchInts), bytesRef);
                 } else if ((fieldType & 0b00000100)!= 0) { // double term
                     constructNumericTrieMap(fieldName, fieldValueBytes, offset, 64 , 4);

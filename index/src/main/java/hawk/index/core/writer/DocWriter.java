@@ -210,23 +210,29 @@ public class DocWriter implements Runnable {
 
     public void writeFDM(FileChannel fc, ArrayList<Map.Entry<ByteReference, Pair<byte[], int[]>>> fdmList){
         WrapLong pos = new WrapLong(0);
+        log.info("start writting fdm");
         for (int i = 0; i < fdmList.size(); i++) {
             byte[] field = fdmList.get(i).getKey().getBytes();
             byte type = fdmList.get(i).getValue().getLeft()[0];
             int fieldLengthSum = fdmList.get(i).getValue().getRight()[0];
             int docCount = fdmList.get(i).getValue().getRight()[1];
             int length = field.length;
+            log.info("field name is " + new String(field) + ", fieldLength sum is " + fieldLengthSum +
+                    ", total doc count of this field is " + docCount);
             DataOutput.writeInt(length, fc, pos);
             DataOutput.writeBytes(field, fc, pos);
             DataOutput.writeByte(type, fc, pos);
             DataOutput.writeInt(fieldLengthSum,fc,pos);
             DataOutput.writeInt(docCount, fc, pos);
         }
+        log.info("end of writting fdm");
     }
 
     public void writeTIM(FileChannel fc, FieldTermPair fieldTermPair, WrapLong timPos, WrapLong frqPos){
         byte[] field = fieldTermPair.getField();
         byte[] term = fieldTermPair.getTerm();
+        log.info("tim writing ==> filed name is " + new String(field) + ", term is " + new String(term) +
+                ", frq offset is " + frqPos.getValue());
         DataOutput.writeInt(field.length, fc, timPos);
         DataOutput.writeBytes(field, fc, timPos);
         DataOutput.writeInt(term.length, fc, timPos);
@@ -236,8 +242,11 @@ public class DocWriter implements Runnable {
 
     public void writeFRQ(FileChannel fc, int[][] posting, WrapLong frqPos){
         int length = posting.length;
+        log.info("frq writing ==> " + "posting length is " + length);
         DataOutput.writeVInt(length, fc, frqPos);
         for (int i = 0; i < length; i++) {
+            log.info("frq writing ==> " + "doc id is " + posting[i][0] + ", frequency is " + posting[i][1] +
+                    ", field length is " + posting[i][2]);
             DataOutput.writeVInt(posting[i][0], fc, frqPos);
             DataOutput.writeVInt(posting[i][1], fc, frqPos);
             DataOutput.writeVInt(posting[i][2], fc, frqPos);
@@ -258,12 +267,14 @@ public class DocWriter implements Runnable {
             writeFDM(fdmChannel, fdmList);
             WrapLong frqPos = new WrapLong(0);
             WrapLong timPos = new WrapLong(0);
+            log.info("start writing tim and frq");
             for (int i = 0; i < ivtList.size(); i++) { // write .tim and .frq
                 FieldTermPair fieldTermPair = ivtList.get(i).getKey();
                 int[][] posting = ivtList.get(i).getValue();
                 writeTIM(timChannel, fieldTermPair, timPos, frqPos);
                 writeFRQ(frqChannel, posting, frqPos);
             }
+            log.info("end of writing tim and frq");
             timChannel.force(false);
             frqChannel.force(false);
             fdmChannel.force(false);
