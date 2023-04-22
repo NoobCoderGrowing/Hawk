@@ -155,13 +155,17 @@ public class NumericTrie {
 
         Node lowerNode;
         Node upperNode;
-        if(lower == Double.MIN_VALUE){
+        if(lowerString.compareTo(lastLayer[0].key) <= 0){
             lowerNode = lastLayer[0];
         }else {lowerNode = searchLower(lowerString);}
-        if(upper == Double.MAX_VALUE){
-            upperNode = lastLayer[lastLayerShift-1];
+        if(upperString.compareTo(lastLayer[lastLayer.length-1].key) >= 0){
+            upperNode = lastLayer[lastLayer.length-1];
         }else{
             upperNode = searchUpper(upperString);
+        }
+        if(lowerNode == upperNode){
+            result.add(lowerNode);
+            return result;
         }
         //start search
         result.add(lowerNode);

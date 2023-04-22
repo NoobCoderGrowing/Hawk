@@ -25,7 +25,7 @@ public class DoubleField extends Field{
     }
 
     @Override
-    public byte[] getBytes() {
+    public byte[] serialize() {
         byte[] nameByte = name.getBytes(StandardCharsets.UTF_8);
         byte[] nameLength = NumberUtil.int2Vint(nameByte.length);
         byte[] valueByte = NumberUtil.long2Bytes(Double.doubleToLongBits(value));
@@ -42,7 +42,8 @@ public class DoubleField extends Field{
         return result;
     }
 
-    public byte[] getNameBytes(){
+    @Override
+    public byte[] serializeName() {
         return this.name.getBytes(StandardCharsets.UTF_8);
     }
 }

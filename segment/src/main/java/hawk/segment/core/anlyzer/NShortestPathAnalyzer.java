@@ -31,7 +31,7 @@ public class NShortestPathAnalyzer implements Analyzer {
 
     private final static int PHRASE_MAX_LEN = 20;
 
-    private HashSet<String> NPathSet = new HashSet<String>(621949);
+    private HashSet<String> NPathSet = new HashSet<String>(621950);
 
     public NShortestPathAnalyzer( int n) {
         this.n = n;
@@ -180,7 +180,6 @@ public class NShortestPathAnalyzer implements Analyzer {
                 nPathsTable.add(new AbstractMap.SimpleEntry<Double, Vertex>(1.0, first));
                 continue;
             }else{
-                Double maxlength = Double.MAX_VALUE;
                 for (int j = 0; j < i; j++) {
                     Vertex preNode = graph.get(j);
                     if(current.getInEdges().containsKey(preNode.getId())){
@@ -194,11 +193,9 @@ public class NShortestPathAnalyzer implements Analyzer {
                             length += curEdge.getCost();
                             if(nPathsTable.size()<n){
                                 nPathsTable.add(new AbstractMap.SimpleEntry<>(length,preNode));
-                                maxlength = nPathsTable.peek().getKey();
-                            }else if(length < maxlength){
+                            }else if(length < nPathsTable.peek().getKey()){//这里
                                 nPathsTable.poll();
                                 nPathsTable.add(new AbstractMap.SimpleEntry<>(length,preNode));
-                                maxlength = nPathsTable.peek().getKey();
                             }
                         }
                     }
@@ -240,6 +237,9 @@ public class NShortestPathAnalyzer implements Analyzer {
     }
 
     public static void main(String[] args) throws InterruptedException {
+        Analyzer analyzer = new NShortestPathAnalyzer(1);
+        HashSet<Term> terms = analyzer.anlyze("今天天气不错", "title");
+        System.out.println(terms);
     }
 
 }

@@ -10,6 +10,7 @@ import org.apache.lucene.util.fst.FST;
 import java.nio.MappedByteBuffer;
 import java.util.HashMap;
 import java.util.List;
+import java.util.TreeMap;
 
 public abstract class DirectoryReader {
 
@@ -24,13 +25,13 @@ public abstract class DirectoryReader {
 
     public abstract MappedByteBuffer getFRQBuffer();
 
-    public abstract List<FDXNode> getFDXList();
-
     public abstract MappedByteBuffer getFDTBuffer();
 
     public abstract HashMap<String, NumericTrie> getNumericTrieMap();
 
     public abstract HashMap<String, Pair<byte[], Float>> getFDMMap();
+
+    public abstract TreeMap<Integer, byte[]> getFDXMap();
 
     public abstract int getTotalDoc();
 

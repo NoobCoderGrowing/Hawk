@@ -1,13 +1,13 @@
 package hawk.index.core.field;
 
 import hawk.index.core.util.NumberUtil;
-import hawk.index.core.writer.DataOutput;
 import lombok.Data;
 
 import java.nio.charset.StandardCharsets;
 
 @Data
 public class StringField extends Field{
+
     private String name;
 
     private String value;
@@ -25,12 +25,12 @@ public class StringField extends Field{
         this.isStored = isStored;
     }
 
-    public byte[] getNameBytes(){
+    public byte[] serializeName(){
         return this.name.getBytes(StandardCharsets.UTF_8);
     }
 
     @Override
-    public byte[] getBytes() {
+    public byte[] serialize() {
         byte[] nameByte = name.getBytes(StandardCharsets.UTF_8);
         byte[] nameLength = NumberUtil.int2Vint(nameByte.length);
         byte[] valueByte = value.getBytes(StandardCharsets.UTF_8);

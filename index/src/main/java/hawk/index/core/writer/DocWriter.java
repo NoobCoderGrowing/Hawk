@@ -34,7 +34,7 @@ public class DocWriter implements Runnable {
     private Document doc;
 
     private volatile HashMap<FieldTermPair, int[][]> ivt;
-    private volatile List<Pair> fdt;
+    private volatile List<Pair<Integer, byte[][]>> fdt;
 
     private AtomicLong bytesUsed;
 
@@ -137,7 +137,8 @@ public class DocWriter implements Runnable {
                 break;
             }
         }
-        if(need <= remains){
+
+        if(need + 10 <= remains){ // 10 bytes for docID and field count
             // write docID
             DataOutput.writeVInt(docID, buffer, pos);
             // write field count
@@ -167,6 +168,7 @@ public class DocWriter implements Runnable {
     }
 
     public void writeFDX(FileChannel fc, int docID, WrapLong fdtPos, WrapLong fdxPos){
+        log.info("fdx writing ===> " + "docID is " + docID + ", fdt offset is " + fdtPos.getValue());
         DataOutput.writeVInt(docID, fc, fdxPos);
         DataOutput.writeVLong(fdtPos, fc, fdxPos);
     }
@@ -182,19 +184,24 @@ public class DocWriter implements Runnable {
             WrapInt bufferPos = new WrapInt(0);
             WrapLong fdtPos = new WrapLong(0);
             WrapLong fdxPos = new WrapLong(0);
-            Integer docID = null;
-            for (int i = 0; i < fdt.size(); i++) {
-                docID = (Integer) fdt.get(i).getLeft() + docBase;
-                byte[][] data = (byte[][]) fdt.get(i).getRight();
-                while(!insertBlock(docID, data, buffer, bufferPos)){ // if buffer is full, write to disk
-                    writeFDX(fdxChannel, docID, fdtPos, fdxPos);
+            log.info("start writing fdx and fdt");
+            if(fdt.size() > 0) {
+                int docID = fdt.get(0).getLeft() + docBase;
+                writeFDX(fdxChannel, docID, fdtPos, fdxPos);// first fdx write
+                for (int i = 0; i < fdt.size(); i++) {
+                    docID = fdt.get(i).getLeft() + docBase;
+                    byte[][] data = (byte[][]) fdt.get(i).getRight();
+                    if(!insertBlock(docID, data, buffer, bufferPos)){ // if buffer is full, write to disk
+                        writeCompressedBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
+                        // current docID is the start id of next bloc
+                        writeFDX(fdxChannel, docID, fdtPos, fdxPos);
+                    }
+                } //last write
+                if(bufferPos.getValue() > 0){
                     writeCompressedBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
                 }
-            } //last write
-            if(bufferPos.getValue() > 0){
-                writeFDX(fdxChannel, docID, fdtPos, fdxPos);
-                writeCompressedBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
             }
+            log.info("end of writing fdx and fdt");
             //close channel
             fdxChannel.force(false);
             fdtChannel.force(false);
@@ -382,7 +389,7 @@ public class DocWriter implements Runnable {
         for (int i = 0; i < fields.size(); i++) {
             Field field = fields.get(i);
             if(field.isStored == Field.Stored.YES){
-                byte[] fieldBytes = field.getBytes();
+                byte[] fieldBytes = field.serialize();
                 if(bytePool.length < i + 1){
                     bytePool = ArrayUtil.bytePoolGrow(bytePool);
                 }
@@ -449,7 +456,7 @@ public class DocWriter implements Runnable {
         HashMap<ByteReference, Pair<byte[], Integer>> fieldTypeMap = (HashMap) pair.getLeft();
         HashMap<FieldTermPair, int[]> fieldTermMap = (HashMap) pair.getRight();
         byte termType = getFieldType(field);
-        byte[] filedName = field.getNameBytes();
+        byte[] filedName = field.serializeName();
         int filedLength = 0;
         if (field instanceof StringField){
             // since analyzer returns position information, terms in same field

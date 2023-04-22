@@ -6,7 +6,6 @@ import hawk.index.core.field.Field;
 import hawk.index.core.field.StringField;
 import hawk.index.core.reader.DataInput;
 import hawk.index.core.reader.DirectoryReader;
-import hawk.index.core.reader.FDXNode;
 import hawk.index.core.util.NumericTrie;
 import hawk.index.core.util.WrapInt;
 import hawk.index.core.writer.IndexConfig;
@@ -45,7 +44,7 @@ public class Searcher {
         MappedByteBuffer frqBuffer = directoryReader.getFRQBuffer();
         BytesRef value = null;
         try {
-            value = Util.get(termFST, new BytesRef(field.concat(term)));
+            value = Util.get(termFST, new BytesRef(field.concat(":").concat(term)));
         } catch (IOException e) {
             log.error("error searching fst");
             System.exit(1);
@@ -93,12 +92,6 @@ public class Searcher {
             }
         }
         ScoreDoc[] result = resultSet.toArray(new ScoreDoc[0]);
-        Arrays.sort(result, new Comparator<ScoreDoc>() {
-            @Override
-            public int compare(ScoreDoc o1, ScoreDoc o2) {
-                return o1.docID - o2.docID;
-            }
-        });
         return result;
     }
 
@@ -202,12 +195,6 @@ public class Searcher {
         for (Map.Entry<Integer, ScoreDoc> entry: result.entrySet()) {
             retArray[i] = entry.getValue();
         }
-        Arrays.sort(retArray, new Comparator<ScoreDoc>() {
-            @Override
-            public int compare(ScoreDoc o1, ScoreDoc o2) {
-                return o1.docID - o2.docID;
-            }
-        });
         return retArray;
     }
 
@@ -223,43 +210,7 @@ public class Searcher {
                 return 0;
             }
         });
-        return Arrays.copyOfRange(scoreDocs, 0, n);
-    }
-
-    // return a node whose key is the smallest greater or equal to docID
-    public byte[][] binarySearchFDXList(int docID, List<FDXNode> fdxNodeList){
-        byte[][] ret = new byte[2][];
-        int first = 0;
-        int last = fdxNodeList.size() - 1;
-        int mid = (first + last) / 2;
-        while (first <= last) {
-            FDXNode midNode = fdxNodeList.get(mid);
-            if (midNode.getKey() < docID) { // if mid is smaller, and mid + 1 is larger, return mid
-                if((mid + 1 < fdxNodeList.size()) && (fdxNodeList.get(mid + 1).getKey() > docID)){
-                    ret[0] = midNode.getOffset();
-                    ret[1] = fdxNodeList.get(mid + 1).getOffset();
-                    return ret;
-                }
-                first = mid + 1;
-            } else if (midNode.getKey() == docID) {
-                ret[0] = midNode.getOffset();
-                if(mid + 1 < fdxNodeList.size()){
-                    ret[1] = fdxNodeList.get(mid + 1).getOffset();
-                }else {
-                    ret[1] = null;
-                }
-                return ret;
-            } else if (midNode.getKey() > docID) { // if mid is larger, and mid - 1 is smaller, return mid - 1
-                if((mid - 1 >= 0) && (fdxNodeList.get(mid - 1).getKey() < docID)){
-                    ret[0] = fdxNodeList.get(mid - 1).getOffset();
-                    ret[1] = midNode.getOffset();
-                    return ret;
-                }
-                last = mid - 1;
-            }
-            mid = (first + last) / 2;
-        }
-        return null;
+        return Arrays.copyOfRange(scoreDocs, 0, Math.min(n, scoreDocs.length));
     }
 
     public Field createField(String fieldName, byte[] fieldValue){
@@ -276,14 +227,25 @@ public class Searcher {
         return null;
     }
 
+    public byte[][] searchFDTOffset(int docID, TreeMap<Integer, byte[]> fdxMap){
+        int leftKey = fdxMap.floorKey(docID);
+        byte[] left = fdxMap.get(leftKey);
+        Map.Entry<Integer, byte[]> rightEntry = fdxMap.higherEntry(leftKey);
+        if(rightEntry != null){
+            return new byte[][]{left, rightEntry.getValue()};
+        }
+        return new byte[][]{left, null};
+    }
+
     public Document doc (ScoreDoc scoreDoc){
         if(scoreDoc == null) return null;
         int docID = scoreDoc.docID;
-        Document document = new Document();
-        List<FDXNode> fdxNodeList = this.directoryReader.getFDXList();
+        Document document = new Document(docID,scoreDoc.getScore());
+        TreeMap<Integer, byte[]> fdxMap = this.directoryReader.getFDXMap();
         MappedByteBuffer fdtBuffer = this.directoryReader.getFDTBuffer();
         // calculate fdt buffer offset
-        byte[][] vlongOffsets = binarySearchFDXList(docID, fdxNodeList);
+        byte[][] vlongOffsets = searchFDTOffset(docID, fdxMap);
+
         int offsetLeft = (int)DataInput.readVlong(vlongOffsets[0]);
         int offsetRight;
         if(vlongOffsets[1] != null){
@@ -295,6 +257,7 @@ public class Searcher {
         byte[] fdtBloc = new byte[blockLength];
         // read compressed bloc into buffer
         fdtBuffer.get(fdtBloc,offsetLeft,blockLength);
+        fdtBuffer.rewind();
         byte[] unCompressedBloc = new byte[indexConfig.getBlocSize()];
         LZ4FastDecompressor decompressor = indexConfig.getDecompressor();
         // decompress buffer to unCompressedBloc
@@ -332,10 +295,9 @@ public class Searcher {
     }
 
     public static void main(String[] args) {
-        byte[] bytes = new byte[]{1,2,3};
-        ByteBuffer buffer = ByteBuffer.wrap(bytes);
-        System.out.println(buffer.position());
-        System.out.println(buffer.limit());
+        TreeMap<Integer, Integer> treeMap = new TreeMap<>();
+        treeMap.put(1, 6);
+
     }
 
 

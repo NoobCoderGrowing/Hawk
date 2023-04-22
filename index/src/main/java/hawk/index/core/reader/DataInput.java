@@ -118,7 +118,7 @@ public class DataInput {
 
 
     public static byte[] readVlongBytes(ByteBuffer buffer){
-        byte[] vLong = new byte[0];
+        byte[] vLong = new byte[1];
         byte b;
         int index = 0;
         while ((b = buffer.get()) < 0){
@@ -126,6 +126,7 @@ public class DataInput {
             vLong[index] = b;
             index ++;
         }
+        vLong[index] = b;
         return vLong;
     }
 

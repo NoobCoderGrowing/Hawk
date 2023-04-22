@@ -13,6 +13,11 @@ public class Document {
 
     public Document() {}
 
+    public Document(int docID, float score) {
+        this.docID = docID;
+        this.score = score;
+    }
+
     public void add(Field field){
         this.fields.add(field);
     }

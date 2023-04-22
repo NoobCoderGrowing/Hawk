@@ -10,19 +10,25 @@ public abstract class Field{
     public Enum<Field.Stored> isStored;
 
     public enum Stored{
-        YES,
+        YES("Yes"),
 
-        NO
+        NO("No");
+
+        Stored(String label) {
+        }
     }
 
     public enum Tokenized{
-        YES,
+        YES("Yes"),
 
-        NO
+        NO("No");
+
+        Tokenized(String label) {
+        }
     }
 
-    public abstract byte[] getBytes();
+    public abstract byte[] serialize();
 
-    public abstract byte[] getNameBytes();
+    public abstract byte[] serializeName();
 
 }

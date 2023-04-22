@@ -20,13 +20,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.TreeMap;
 
 @Slf4j
 public class MMapDirectoryReader extends DirectoryReader {
 
     private Directory directory;
 
-    private List<FDXNode> fdxList;
+    private TreeMap<Integer, byte[]> fdxMap;
 
     private MappedByteBuffer fdtBuffer;
 
@@ -40,21 +41,21 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     public MMapDirectoryReader(Directory directory) {
         this.directory = directory;
-        this.fdxList = new ArrayList<>();
+        this.fdxMap = new TreeMap<>();
         this.fdmMap = new HashMap<>();
         this.numericTries = new HashMap<>();
         init();
     }
 
     public void init() {
-        constructFdxList();
+        constructFdxMap();
         loadFdt();
         constructFdmMap();
         loadFrq();
         constructFSTNumericTrie();
     }
 
-    public void constructFdxList() {
+    public void constructFdxMap() {
         String dirPath = directory.getPath().toAbsolutePath().toString();
         String fdxPath = dirPath + "/1.fdx";
         try {
@@ -66,8 +67,7 @@ public class MMapDirectoryReader extends DirectoryReader {
             while (buffer.position() < buffer.limit()) {
                 int key = DataInput.readVint(buffer);
                 byte[] offset = DataInput.readVlongBytes(buffer);
-                FDXNode fdxNode = new FDXNode(key, offset);
-                this.fdxList.add(fdxNode);
+                this.fdxMap.put(key, offset);
             }
             fc.close();
         } catch (FileNotFoundException e) {
@@ -78,8 +78,6 @@ public class MMapDirectoryReader extends DirectoryReader {
             System.exit(1);
         }
     }
-
-
 
     private void loadFdt() {
         String dirPath = directory.getPath().toAbsolutePath().toString();
@@ -153,6 +151,7 @@ public class MMapDirectoryReader extends DirectoryReader {
 
         String dirPath = directory.getPath().toAbsolutePath().toString();
         String timPath = dirPath + "/1.tim";
+        log.info("start constructing FST and numericTrie");
         try {
             FileChannel fc = new RandomAccessFile(timPath, "rw").getChannel();
             int fcSize = (int) fc.size();
@@ -171,7 +170,9 @@ public class MMapDirectoryReader extends DirectoryReader {
                 byte[] offset = DataInput.readVlongBytes(buffer);
                 byte fieldType = fdmMap.get(fieldName).getLeft()[0];
                 if((fieldType & 0b00001000) != 0){ // String term
-                    scratchBytes.copyChars(fieldName.concat(fieldValue));
+                    log.info("FST building ==> " + "filed name is " + fieldName +", field value is " +
+                            fieldValue + ", offset is " + DataInput.readLong(offset));
+                    scratchBytes.copyChars(fieldName.concat(":").concat(fieldValue));
                     BytesRef bytesRef = new BytesRef(offset);
                     builder.add(Util.toIntsRef(scratchBytes.get(), scratchInts), bytesRef);
                 } else if ((fieldType & 0b00000100)!= 0) { // double term
@@ -180,6 +181,7 @@ public class MMapDirectoryReader extends DirectoryReader {
             }
             this.termFST = builder.finish();
             fc.close();
+            log.info("end of constructing FST and numericTrie");
         } catch (FileNotFoundException e) {
             log.error("tim file does not exist");
             System.exit(1);
@@ -212,11 +214,6 @@ public class MMapDirectoryReader extends DirectoryReader {
     }
 
     @Override
-    public List<FDXNode> getFDXList() {
-        return this.fdxList;
-    }
-
-    @Override
     public MappedByteBuffer getFDTBuffer() {
         return this.fdtBuffer;
     }
@@ -229,6 +226,11 @@ public class MMapDirectoryReader extends DirectoryReader {
     @Override
     public HashMap<String, Pair<byte[], Float>> getFDMMap() {
         return this.fdmMap;
+    }
+
+    @Override
+    public TreeMap<Integer, byte[]> getFDXMap() {
+        return this.fdxMap;
     }
 
     @Override

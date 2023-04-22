@@ -22,9 +22,8 @@ public class SearchIndex {
         IndexConfig indexConfig = new IndexConfig(analyzer);
         Searcher searcher = new Searcher(directoryReader, indexConfig);
         Query query = new TermQuery("title", "剃须刀");
-//        Query query2 = new NumericRangeQuery("price", 1, 30);
-//        Query query3 = new BooleanQuery(BooleanQuery.Operation.MUST);
         ScoreDoc[] hits = searcher.search(query);
+        hits = searcher.topN(hits, 10);
         Document doc = searcher.doc(hits[0]);
         System.out.println(JSON.toJSONString(doc));
         searcher.close();

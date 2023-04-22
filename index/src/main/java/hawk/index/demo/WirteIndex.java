@@ -2,11 +2,8 @@ package hawk.index.demo;
 
 import hawk.index.core.directory.MMapDirectory;
 import hawk.index.core.document.Document;
-import hawk.index.core.field.DoubleField;
 import hawk.index.core.field.Field;
 import hawk.index.core.field.StringField;
-import hawk.index.core.search.Query;
-import hawk.index.core.search.TermQuery;
 import hawk.index.core.writer.IndexWriter;
 import hawk.index.core.writer.IndexConfig;
 import hawk.segment.core.anlyzer.Analyzer;
