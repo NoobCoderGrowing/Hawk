@@ -1,9 +1,11 @@
-package hawk.index.core.writer;
+package hawk.index.core.util;
 
 
 import hawk.index.core.util.NumberUtil;
 import hawk.index.core.util.WrapInt;
 import hawk.index.core.util.WrapLong;
+import hawk.index.core.writer.ByteReference;
+import hawk.index.core.writer.Pair;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;

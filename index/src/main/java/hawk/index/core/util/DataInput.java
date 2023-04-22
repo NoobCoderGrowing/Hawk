@@ -1,10 +1,6 @@
-package hawk.index.core.reader;
+package hawk.index.core.util;
 
 
-import hawk.index.core.util.NumberUtil;
-import hawk.index.core.util.WrapInt;
-import hawk.index.core.writer.DataOutput;
-import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import java.nio.ByteBuffer;
 

@@ -2,6 +2,7 @@ package hawk.index.core.reader;
 
 import hawk.index.core.directory.Directory;
 import hawk.index.core.directory.memory.UnMMap;
+import hawk.index.core.util.DataInput;
 import hawk.index.core.util.NumericTrie;
 import hawk.index.core.writer.Pair;
 import lombok.extern.slf4j.Slf4j;
@@ -17,9 +18,7 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.TreeMap;
 
 @Slf4j

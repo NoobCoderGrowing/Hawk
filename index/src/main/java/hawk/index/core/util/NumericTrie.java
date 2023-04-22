@@ -1,6 +1,5 @@
 package hawk.index.core.util;
 
-import hawk.index.core.reader.DataInput;
 import lombok.Data;
 
 import java.nio.charset.StandardCharsets;
@@ -12,20 +11,20 @@ public class NumericTrie {
     @Data
     public class Node {
         String key;
-        byte[] offset;
+        byte[][] offsets;
         Node left;
         Node right;
         Node parent;
         Node[] children;
-        int shift;
+
 
         public Node() {
         }
 
-        public Node(String key, byte[] offset, int shift) {
+        public Node(String key, byte[] offset) {
             this.key = key;
-            this.offset = offset;
-            this.shift = shift;
+            this.offsets = new byte[1][];
+            this.offsets[0] = offset;
         }
 
         @Override
@@ -78,12 +77,21 @@ public class NumericTrie {
     }
 
     public void add(String key, byte[] offset){
+        //
+        if(nodeMap.containsKey(key)){ // if already contains the node, concatenate old frq offsets with the new one
+            Node old  = nodeMap.get(key);
+            byte[][] oldOffsets = old.getOffsets();
+            oldOffsets = ArrayUtil.bytePoolGrow(oldOffsets);
+            oldOffsets[oldOffsets.length - 1] = offset;
+            old.setOffsets(oldOffsets);
+            return;
+        }
         byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
         int shift = keyBytes[0] & 0xff;
-        Node newNode = new Node(key,offset, shift);
+        Node newNode = new Node(key,offset);
         if(shift == 0){
             addChild(root, newNode, shift);
-        }else{
+        }else{//calculate parent shift, mask out last precision step bits, and lastly assemble them to get parentKey
             byte parentShift = (byte) ((shift - 1) & 0xff);
             long parentValue = DataInput.read7bitBytes2Long(keyBytes, 1);
             long mask = NumberUtil.getLongMask(precisionStep * shift);
@@ -191,48 +199,15 @@ public class NumericTrie {
 
     public static void main(String[] args) {
         NumericTrie numericTrie = new NumericTrie(64, 4);
-        HashSet<String> set = new HashSet<>();
-        for (int i = 0; i < 10000; i++) {
-            double value = i + 0.5;
-            long sortable = NumberUtil.double2SortableLong(value);
-            String[] strings = NumberUtil.long2PrefixString(sortable,4);
-            set.addAll(Arrays.asList(strings));
-        }
-        ArrayList<String> list = new ArrayList<>(set);
-        Collections.sort(list);
-        for (int i = 0; i < list.size(); i++) {
-            numericTrie.add(list.get(i),null);
-        }
-        List<Node> nodes = numericTrie.rangeSearch(0.5 , 10000.5);
-        Collections.sort(nodes,(a,b)->{
-            byte[] abytes  = a.key.getBytes();
-            byte[] bytes = b.key.getBytes();
-            int aShift = abytes[0] & 0xff;
-            int bShift = bytes[0] & 0xff;
-            if(aShift != bShift){
-                return aShift - bShift;
-            }
-            long aLong = DataInput.read7bitBytes2Long(abytes,1);
-            long bLong = DataInput.read7bitBytes2Long(bytes, 1);
-            double aDouble = NumberUtil.sortableLong2Double(aLong);
-            double bDouble = NumberUtil.sortableLong2Double(bLong);
-            if(aDouble > bDouble){
-                return 1;
-            } else if (aDouble < bDouble) {
-                return -1;
-            }
-            return 0;
-        });
+        double a = 0.5;
+        long b = NumberUtil.double2SortableLong(a);
+        String c = NumberUtil.long2StringWithShift(0, b);
+        numericTrie.add(c, new byte[]{1});
+        System.out.println(numericTrie.nodeMap.get(c).offsets.length);
 
-        for (int i = 0; i < nodes.size(); i++) {
-            String key = nodes.get(i).key;
-            byte[] bytes = key.getBytes();
-            System.out.println(bytes[0]&0xff);
-            long k = DataInput.read7bitBytes2Long(bytes,1);
-            System.out.println(Long.toUnsignedString(k,2));
-            Double j = NumberUtil.sortableLong2Double(k);
-            System.out.println(j);
-        }
 
+        String d = NumberUtil.long2StringWithShift(0, b);
+        numericTrie.add(d, new byte[]{2});
+        System.out.println(numericTrie.nodeMap.get(d).offsets.length);
     }
 }

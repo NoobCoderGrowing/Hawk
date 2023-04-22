@@ -1,7 +1,7 @@
 package hawk.index.core.directory;
 
 import hawk.index.core.util.WrapLong;
-import hawk.index.core.writer.DataOutput;
+import hawk.index.core.util.DataOutput;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
@@ -9,11 +9,8 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.attribute.PosixFilePermission;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.text.Format;
 import java.text.SimpleDateFormat;
 import java.util.Date;

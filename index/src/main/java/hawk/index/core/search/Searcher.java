@@ -4,7 +4,7 @@ import hawk.index.core.document.Document;
 import hawk.index.core.field.DoubleField;
 import hawk.index.core.field.Field;
 import hawk.index.core.field.StringField;
-import hawk.index.core.reader.DataInput;
+import hawk.index.core.util.DataInput;
 import hawk.index.core.reader.DirectoryReader;
 import hawk.index.core.util.NumericTrie;
 import hawk.index.core.util.WrapInt;
@@ -78,17 +78,20 @@ public class Searcher {
         HashSet<ScoreDoc> resultSet = new HashSet<>(); // same docID may be in different nodes' payload
         for (int i = 0; i < nodes.size(); i++) {
             NumericTrie.Node node = nodes.get(i);
-            byte[] offset = node.getOffset();
-            int frqOffset = (int) DataInput.readVlong(offset);
-            WrapInt frqOffsetWrapper = new WrapInt(frqOffset);
-            int length = DataInput.readVintAtIndex(frqBuffer, frqOffsetWrapper);
-            for (int j = 0; j < length; j++) {
-                int docID = DataInput.readVintAtIndex(frqBuffer, frqOffsetWrapper);
-                int docFrequency = DataInput.readVintAtIndex(frqBuffer,frqOffsetWrapper);
-                int docFieldLength = DataInput.readVintAtIndex(frqBuffer,frqOffsetWrapper);
-                float score = 0;
-                ScoreDoc hit = new ScoreDoc(score, docID);
-                resultSet.add(hit);
+            byte[][] offsets = node.getOffsets();
+            for (int j = 0; j < offsets.length; j++) {
+                byte[] offset = offsets[j];
+                int frqOffset = (int) DataInput.readVlong(offset);
+                WrapInt frqOffsetWrapper = new WrapInt(frqOffset);
+                int length = DataInput.readVintAtIndex(frqBuffer, frqOffsetWrapper);
+                for (int k = 0; k < length; k++) {
+                    int docID = DataInput.readVintAtIndex(frqBuffer, frqOffsetWrapper);
+                    int docFrequency = DataInput.readVintAtIndex(frqBuffer,frqOffsetWrapper);
+                    int docFieldLength = DataInput.readVintAtIndex(frqBuffer,frqOffsetWrapper);
+                    float score = 0;
+                    ScoreDoc hit = new ScoreDoc(score, docID);
+                    resultSet.add(hit);
+                }
             }
         }
         ScoreDoc[] result = resultSet.toArray(new ScoreDoc[0]);
