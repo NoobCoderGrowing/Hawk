@@ -9,7 +9,6 @@ import org.apache.lucene.util.fst.FST;
 
 import java.nio.MappedByteBuffer;
 import java.util.HashMap;
-import java.util.List;
 import java.util.TreeMap;
 
 public abstract class DirectoryReader {

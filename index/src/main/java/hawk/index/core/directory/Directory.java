@@ -20,7 +20,7 @@ public abstract class Directory {
 
     public SegmentInfo segmentInfo;
 
-    public abstract void updateSegInfo();
+    public abstract void updateSegInfo(int lastDodID);
 
     public abstract int getDocBase();
 

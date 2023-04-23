@@ -17,7 +17,7 @@ public class SearchIndex {
 
     public static void main(String[] args) throws IOException {
         Directory directory = MMapDirectory.open(Paths.get("/opt/temp"));
-        DirectoryReader directoryReader =DirectoryReader.open(directory);
+        DirectoryReader directoryReader = DirectoryReader.open(directory);
         Analyzer analyzer = new NShortestPathAnalyzer(1);
         IndexConfig indexConfig = new IndexConfig(analyzer);
         Searcher searcher = new Searcher(directoryReader, indexConfig);

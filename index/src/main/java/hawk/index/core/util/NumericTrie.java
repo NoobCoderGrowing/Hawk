@@ -1,11 +1,13 @@
 package hawk.index.core.util;
 
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Data
+@Slf4j
 public class NumericTrie {
 
     @Data
@@ -77,7 +79,6 @@ public class NumericTrie {
     }
 
     public void add(String key, byte[] offset){
-        //
         if(nodeMap.containsKey(key)){ // if already contains the node, concatenate old frq offsets with the new one
             Node old  = nodeMap.get(key);
             byte[][] oldOffsets = old.getOffsets();
@@ -89,6 +90,13 @@ public class NumericTrie {
         byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
         int shift = keyBytes[0] & 0xff;
         Node newNode = new Node(key,offset);
+
+        //debug info
+        long sortableLong = DataInput.read7bitBytes2Long(keyBytes, 1);
+        double doubelValue = NumberUtil.sortableLong2Double(sortableLong);
+        log.info("NumericTrie Construction ===> " + "shift is " + shift + ", value is " + doubelValue);
+
+
         if(shift == 0){
             addChild(root, newNode, shift);
         }else{//calculate parent shift, mask out last precision step bits, and lastly assemble them to get parentKey
@@ -198,16 +206,16 @@ public class NumericTrie {
     }
 
     public static void main(String[] args) {
-        NumericTrie numericTrie = new NumericTrie(64, 4);
-        double a = 0.5;
-        long b = NumberUtil.double2SortableLong(a);
-        String c = NumberUtil.long2StringWithShift(0, b);
-        numericTrie.add(c, new byte[]{1});
-        System.out.println(numericTrie.nodeMap.get(c).offsets.length);
+        long val = NumberUtil.double2SortableLong(2.0);
+        System.out.println(Long.toBinaryString(val));
 
+        val = NumberUtil.double2SortableLong(8.0);
+        System.out.println(Long.toBinaryString(val));
 
-        String d = NumberUtil.long2StringWithShift(0, b);
-        numericTrie.add(d, new byte[]{2});
-        System.out.println(numericTrie.nodeMap.get(d).offsets.length);
+        val = NumberUtil.double2SortableLong(11.5);
+        System.out.println(Long.toBinaryString(val));
+
+        val = NumberUtil.double2SortableLong(12.5);
+        System.out.println(Long.toBinaryString(val));
     }
 }

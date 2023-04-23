@@ -21,7 +21,7 @@ public class SearchNumericIndex {
         Analyzer analyzer = new NShortestPathAnalyzer(1);
         IndexConfig indexConfig = new IndexConfig(analyzer);
         Searcher searcher = new Searcher(directoryReader, indexConfig);
-        NumericRangeQuery query = new NumericRangeQuery("price", 11.0, 12.5);
+        NumericRangeQuery query = new NumericRangeQuery("price", 11.6, 12.56);
         ScoreDoc[] hits = searcher.search(query);
         hits = searcher.topN(hits, 10);
         for (int i = 0; i < hits.length; i++) {

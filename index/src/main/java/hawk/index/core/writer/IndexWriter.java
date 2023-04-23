@@ -89,7 +89,7 @@ public class IndexWriter {
                     ramUsageLock, directory, config, fdm);
             lastDocWriter.flush();
         }
-        directory.updateSegInfo();
+        directory.updateSegInfo(docIDAllocator.get());
     }
 
     public static void main(String[] args) {

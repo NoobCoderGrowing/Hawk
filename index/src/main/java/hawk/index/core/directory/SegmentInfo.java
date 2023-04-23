@@ -47,18 +47,19 @@ public class SegmentInfo {
     public void read(Path path){
         try {
             FileChannel fc = FileChannel.open(path);
-            ByteBuffer buffer = ByteBuffer.allocate(8);
-            fc.read(buffer, 0);
-            buffer.flip();
-            this.timeStamp = new String(buffer.array(), StandardCharsets.UTF_8);
+            ByteBuffer dateBuffer = ByteBuffer.allocate(8);
+            ByteBuffer segCountBuffer = ByteBuffer.allocate(4);
+            ByteBuffer preMaxIDBuffer = ByteBuffer.allocate(4);
+            fc.read(dateBuffer, 0);
+            this.timeStamp = new String(dateBuffer.array(), StandardCharsets.UTF_8);
 
-            fc.read(buffer, 8);
-            buffer.flip();
-            this.segCount = buffer.getInt();
+            fc.read(segCountBuffer, 8);
+            segCountBuffer.flip();
+            this.segCount = segCountBuffer.getInt();
 
-            fc.read(buffer, 12);
-            buffer.flip();
-            this.preMaxID = buffer.getInt();
+            fc.read(preMaxIDBuffer, 12);
+            preMaxIDBuffer.flip();
+            this.preMaxID = preMaxIDBuffer.getInt();
             fc.close();
         } catch (IOException e) {
             log.error("sth wrong reading segment.info");
@@ -102,13 +103,13 @@ public class SegmentInfo {
         }
     }
 
-    public void update(){
+    public void update(int lastDocID){
         FileChannel fc = null;
         try {
             fc = new RandomAccessFile(segmentInfoPath.toString(),"rw").getChannel();
             writeDate(fc);
-            writeSegCount(fc, this.segCount);
-            writePreMaxID(fc, this.preMaxID);
+            writeSegCount(fc, this.segCount + 1);
+            writePreMaxID(fc, lastDocID);
             fc.force(false);
             fc.close();
         } catch (IOException e) {

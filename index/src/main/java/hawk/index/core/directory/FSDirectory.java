@@ -37,8 +37,8 @@ public class FSDirectory extends Directory{
     }
 
     @Override
-    public void updateSegInfo() {
-        segmentInfo.update();
+    public void updateSegInfo(int lastDocID) {
+        segmentInfo.update(lastDocID);
     }
 
     @Override
@@ -50,7 +50,6 @@ public class FSDirectory extends Directory{
     public String[] generateSegFiles() {
         int segCount = segmentInfo.getSegCount();
         int curSeg = segCount + 1;
-        segmentInfo.setSegCount(curSeg);
         String prfix = path.toString() + "/";
         String[] fileNames = new String[]{prfix + curSeg + ".fdt", prfix + curSeg + ".fdx",
                 prfix + curSeg + ".tim", prfix + curSeg + ".frq", prfix +curSeg + ".fdm"};

@@ -3,6 +3,7 @@ package hawk.index.core.reader;
 import hawk.index.core.directory.Directory;
 import hawk.index.core.directory.memory.UnMMap;
 import hawk.index.core.util.DataInput;
+import hawk.index.core.util.NumberUtil;
 import hawk.index.core.util.NumericTrie;
 import hawk.index.core.writer.Pair;
 import lombok.extern.slf4j.Slf4j;
@@ -192,12 +193,13 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     public void  constructNumericTrieMap(String fieldName, byte[] fieldValueBytes, byte[] offset, int length,
                                       int precisionStep){
+        String key = new String(fieldValueBytes);
         if(numericTries.containsKey(fieldName)){
             NumericTrie trie = numericTries.get(fieldName);
-            trie.add(new String(fieldValueBytes), offset);
+            trie.add(key, offset);
         }else {
             NumericTrie trie = new NumericTrie(length, precisionStep);
-            trie.add(new String(fieldValueBytes), offset);
+            trie.add(key, offset);
             numericTries.put(fieldName, trie);
         }
     }
