@@ -194,6 +194,15 @@ public class MMapDirectoryReader extends DirectoryReader {
     public void  constructNumericTrieMap(String fieldName, byte[] fieldValueBytes, byte[] offset, int length,
                                       int precisionStep){
         String key = new String(fieldValueBytes);
+
+//        debug info
+        long sortableLong = DataInput.read7bitBytes2Long(fieldValueBytes, 1);
+        double doubelValue = NumberUtil.sortableLong2Double(sortableLong);
+        int shift = fieldValueBytes[0] & 0xff;
+        log.info("NumericTrie Construction ===> " + "field name is " + fieldName + ", shift is " + shift + ", value is "
+                + doubelValue);
+
+
         if(numericTries.containsKey(fieldName)){
             NumericTrie trie = numericTries.get(fieldName);
             trie.add(key, offset);

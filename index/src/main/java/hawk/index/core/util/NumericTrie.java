@@ -90,13 +90,6 @@ public class NumericTrie {
         byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
         int shift = keyBytes[0] & 0xff;
         Node newNode = new Node(key,offset);
-
-        //debug info
-        long sortableLong = DataInput.read7bitBytes2Long(keyBytes, 1);
-        double doubelValue = NumberUtil.sortableLong2Double(sortableLong);
-        log.info("NumericTrie Construction ===> " + "shift is " + shift + ", value is " + doubelValue);
-
-
         if(shift == 0){
             addChild(root, newNode, shift);
         }else{//calculate parent shift, mask out last precision step bits, and lastly assemble them to get parentKey
