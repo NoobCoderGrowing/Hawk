@@ -41,7 +41,8 @@ public class Searcher {
         HashMap<String, Pair<byte[], Float>> fdmMap = directoryReader.getFDMMap();
         float averageDocLength = fdmMap.get(field).getRight();
         FST<BytesRef> termFST = directoryReader.getTermFST();
-        MappedByteBuffer frqBuffer = directoryReader.getFRQBuffer();
+        MappedByteBuffer frqMappedBuffer = directoryReader.getFRQBuffer();
+        ByteBuffer frqBuffer = frqMappedBuffer.asReadOnlyBuffer();
         BytesRef value = null;
         try {
             value = Util.get(termFST, new BytesRef(field.concat(":").concat(term)));
@@ -63,7 +64,6 @@ public class Searcher {
             ScoreDoc hit = new ScoreDoc(score, docID);
             hits[i] = hit;
         }
-
         return hits;
     }
 
@@ -72,7 +72,8 @@ public class Searcher {
         double lower = query.getLower();
         double upper = query.getUpper();
         HashMap<String, NumericTrie> trieMap = directoryReader.getNumericTrieMap();
-        MappedByteBuffer frqBuffer = directoryReader.getFRQBuffer();
+        MappedByteBuffer frqMappedBuffer = directoryReader.getFRQBuffer();
+        ByteBuffer frqBuffer = frqMappedBuffer.asReadOnlyBuffer();
         NumericTrie trie = trieMap.get(field);
         List<NumericTrie.Node> nodes = trie.rangeSearch(lower,upper);
         HashSet<ScoreDoc> resultSet = new HashSet<>(); // same docID may be in different nodes' payload
@@ -91,7 +92,9 @@ public class Searcher {
                     float score = 0;
                     ScoreDoc hit = new ScoreDoc(score, docID);
                     resultSet.add(hit);
-                }
+                }//reset frqBuffer position after reading each frq record
+                //[frq length<vint>, [docID<vint>, frq<vint>, fieldLength<vint>]]
+                frqBuffer.rewind();
             }
         }
         ScoreDoc[] result = resultSet.toArray(new ScoreDoc[0]);
@@ -245,7 +248,9 @@ public class Searcher {
         int docID = scoreDoc.docID;
         Document document = new Document(docID,scoreDoc.getScore());
         TreeMap<Integer, byte[]> fdxMap = this.directoryReader.getFDXMap();
-        MappedByteBuffer fdtBuffer = this.directoryReader.getFDTBuffer();
+        MappedByteBuffer fdtMappedBuffer = this.directoryReader.getFDTBuffer();
+        // create a duplicate of mappedBuffer, position, limit and mark are independent
+        ByteBuffer fdtBuffer  = fdtMappedBuffer.asReadOnlyBuffer();
         // calculate fdt buffer offset
         byte[][] vlongOffsets = searchFDTOffset(docID, fdxMap);
 
@@ -260,7 +265,6 @@ public class Searcher {
         byte[] fdtBloc = new byte[blockLength];
         // read compressed bloc into buffer
         fdtBuffer.get(fdtBloc,offsetLeft,blockLength);
-        fdtBuffer.rewind();
         byte[] unCompressedBloc = new byte[indexConfig.getBlocSize()];
         LZ4FastDecompressor decompressor = indexConfig.getDecompressor();
         // decompress buffer to unCompressedBloc

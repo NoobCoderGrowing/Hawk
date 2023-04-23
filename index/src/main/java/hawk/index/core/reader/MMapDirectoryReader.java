@@ -82,7 +82,7 @@ public class MMapDirectoryReader extends DirectoryReader {
         String dirPath = directory.getPath().toAbsolutePath().toString();
         String fdtPath = dirPath + "/1.fdt";
         try {
-            FileChannel fc = new RandomAccessFile(fdtPath, "rw").getChannel();
+            FileChannel fc = new RandomAccessFile(fdtPath, "r").getChannel();
             long fcSize = fc.size();
             MappedByteBuffer buffer = fc.map(FileChannel.MapMode.READ_ONLY, 0, fcSize);// .fdt must not exceed 4GB
             buffer.load(); // force load buffer content into memory
@@ -129,7 +129,7 @@ public class MMapDirectoryReader extends DirectoryReader {
         String dirPath = directory.getPath().toAbsolutePath().toString();
         String frqPath = dirPath + "/1.frq";
         try {
-            FileChannel fc = new RandomAccessFile(frqPath, "rw").getChannel();
+            FileChannel fc = new RandomAccessFile(frqPath, "r").getChannel();
             long fcSize = fc.size();
             MappedByteBuffer buffer = fc.map(FileChannel.MapMode.READ_ONLY, 0, fcSize);// .frq must not exceed 4GB
             buffer.load(); // force load buffer content into memory
