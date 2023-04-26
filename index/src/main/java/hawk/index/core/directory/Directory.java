@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.ArrayList;
 import java.util.Set;
 
 @Slf4j
@@ -16,13 +17,11 @@ public abstract class Directory {
 
     public Path path;
 
-    public Set<String> files;
+    public ArrayList<String> files;
 
     public SegmentInfo segmentInfo;
 
-    public abstract void updateSegInfo(int lastDodID);
-
-    public abstract int getDocBase();
+    public abstract void updateSegInfo(int lastDodID, int segCountInc);
 
     // fdt, fdx, tim, frq
     public abstract String[] generateSegFiles();

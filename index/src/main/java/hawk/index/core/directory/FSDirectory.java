@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -22,11 +23,11 @@ public class FSDirectory extends Directory{
             createDirectory(path);
         }
         this.path = path;
-        this.files = new HashSet<>();
+        this.files = new ArrayList<>();
         File folder = path.toFile();
         File[] fileList= folder.listFiles();
         for (int i = 0; i < fileList.length; i++) {
-            files.add(fileList[i].getName());
+            files.add(fileList[i].toPath().toString());
         }
 
         this.segmentInfo = new SegmentInfo(path.toAbsolutePath(), files);
@@ -37,13 +38,8 @@ public class FSDirectory extends Directory{
     }
 
     @Override
-    public void updateSegInfo(int lastDocID) {
-        segmentInfo.update(lastDocID);
-    }
-
-    @Override
-    public int getDocBase() {
-        return segmentInfo.getPreMaxID();
+    public void updateSegInfo(int lastDocID, int segCountInc) {
+        segmentInfo.update(lastDocID, segCountInc);
     }
 
     @Override
@@ -56,7 +52,7 @@ public class FSDirectory extends Directory{
         for (int i = 0; i < fileNames.length; i++) {
             Path path = Paths.get(fileNames[i]);
             createFile(path);
-            this.files.add(path.getFileName().toString());
+            this.files.add(fileNames[i]);
         }
         return fileNames;
     }

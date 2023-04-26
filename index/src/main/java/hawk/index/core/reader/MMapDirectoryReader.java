@@ -1,7 +1,7 @@
 package hawk.index.core.reader;
 
 import hawk.index.core.directory.Directory;
-import hawk.index.core.directory.memory.UnMMap;
+import hawk.index.core.directory.memory.MMap;
 import hawk.index.core.util.DataInput;
 import hawk.index.core.util.NumberUtil;
 import hawk.index.core.util.NumericTrie;
@@ -250,8 +250,8 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     @Override
     public void close() {
-        UnMMap.unMMap(fdtBuffer);
-        UnMMap.unMMap(frqBuffer);
+        MMap.unMMap(fdtBuffer);
+        MMap.unMMap(frqBuffer);
     }
 
 }

@@ -27,6 +27,42 @@ public class DataInput {
         return ret;
     }
 
+    public static long readVlong(ByteBuffer buffer){
+        byte b = buffer.get();
+        if(b >= 0) return b ;
+        long i = b & 0x7fL;
+        b = buffer.get();
+        i |= ((b & 0x7fL) << 7);
+        if(b >= 0) return i;
+        b = buffer.get();
+        i |= ((b & 0x7fL) << 14);
+        if(b > 0) return i;
+        b = buffer.get();
+        i |= ((b & 0x7fL) << 21);
+        if(b >= 0) return i;
+        b = buffer.get();
+        i |= ((b & 0x7fL) << 28);
+        if(b > 0) return i;
+        b = buffer.get();
+        i |= ((b & 0x7fL) << 35);
+        if(b >= 0) return i;
+        b = buffer.get();
+        i |= ((b & 0x7fL) << 42);
+        if(b >= 0) return i;
+        b = buffer.get();
+        i |= ((b & 0x7fL) << 49);
+        if(b >= 0) return i;
+        b = buffer.get();
+        i |= ((b & 0x7fL) << 56);
+        if(b >= 0) return i;
+        b = buffer.get();
+        i |= ((b & 0x7fL) << 63);
+        if((b & 0x2L) == 0) return i;
+        log.error("too many bits");
+        System.exit(1);
+        return -1;
+    }
+
 
     public static int readVint(ByteBuffer buffer){
         byte b = buffer.get();
@@ -48,6 +84,38 @@ public class DataInput {
         System.exit(1);
         return -1;
     }
+
+    public static int readVintAtIndex(ByteBuffer buffer, int index){
+        byte b = buffer.get(index++);
+        if(b >= 0) {
+            return b;
+        }
+        int i = b & 0x7f;
+        b = buffer.get(index++);
+        i |= ((b & 0x7f) << 7);
+        if(b >= 0){
+            return i;
+        }
+        b = buffer.get(index++);
+        i |= ((b & 0x7f) << 14);
+        if(b > 0){
+            return i;
+        }
+        b = buffer.get(index++);
+        i |= ((b & 0x7f) << 21);
+        if(b >= 0){
+            return i;
+        }
+        b = buffer.get(index++);
+        i |= ((b & 0x7f) << 28);
+        if((b & 0xF0) == 0){
+            return i;
+        }
+        log.error("too many bits");
+        System.exit(1);
+        return -1;
+    }
+
 
     public static int readVintAtIndex(ByteBuffer buffer, WrapInt indexWrapper){
         int index = indexWrapper.getValue();
@@ -112,7 +180,6 @@ public class DataInput {
         return ret;
     }
 
-
     public static byte[] readVlongBytes(ByteBuffer buffer){
         byte[] vLong = new byte[1];
         byte b;
@@ -127,10 +194,7 @@ public class DataInput {
     }
 
     public static void main(String[] args) {
-        long a = 11111;
-        byte[] vlong = NumberUtil.long2Vlong(a);
-        System.out.println(DataInput.readVlong(vlong));
-    }
 
+    }
 
 }

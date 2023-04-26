@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.Format;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.Set;
 
@@ -31,10 +32,10 @@ public class SegmentInfo {
 
     private int preMaxID;
 
-    public SegmentInfo(Path directoryPath, Set<String> dirFiles){
+    public SegmentInfo(Path directoryPath, ArrayList<String> dirFiles){
         String strPath = directoryPath.toString() + "/segment.info";
         Path path = Paths.get(strPath);
-        if(dirFiles.contains("segment.info")){
+        if(dirFiles.contains(strPath)){
             read(path);
         }else{ // create segment.info
             Directory.createFile(path);
@@ -67,7 +68,7 @@ public class SegmentInfo {
         }
     }
 
-    public void writeDate(FileChannel fc){
+    public String writeDate(FileChannel fc){
         Date date = new Date();
         Format formatter = new SimpleDateFormat("yyyyMMdd");
         String dateStr = formatter.format(date);
@@ -75,10 +76,12 @@ public class SegmentInfo {
         ByteBuffer byteBuffer = ByteBuffer.wrap(dateBytes);
         try {
             fc.write(byteBuffer, 0);
+            return new String(dateBytes, StandardCharsets.UTF_8);
         } catch (IOException e) {
             log.error("sth wrong with segment.info write date ");
             System.exit(1);
         }
+        return null;
     }
 
     public void writeSegCount(FileChannel fc, int count){
@@ -103,13 +106,16 @@ public class SegmentInfo {
         }
     }
 
-    public void update(int lastDocID){
+    public void update(int lastDocID, int segCountInc){
         FileChannel fc = null;
         try {
             fc = new RandomAccessFile(segmentInfoPath.toString(),"rw").getChannel();
-            writeDate(fc);
-            writeSegCount(fc, this.segCount + 1);
+            int newSegCount = this.segCount + segCountInc;
+            writeSegCount(fc, newSegCount);
             writePreMaxID(fc, lastDocID);
+            this.timeStamp = writeDate(fc);
+            this.segCount = newSegCount;
+            this.preMaxID = lastDocID;
             fc.force(false);
             fc.close();
         } catch (IOException e) {

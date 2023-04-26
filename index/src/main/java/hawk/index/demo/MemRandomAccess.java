@@ -1,6 +1,6 @@
 package hawk.index.demo;
 
-import hawk.index.core.directory.memory.UnMMap;
+import hawk.index.core.directory.memory.MMap;
 
 import java.io.*;
 import java.nio.MappedByteBuffer;
@@ -38,7 +38,7 @@ public class MemRandomAccess {
             System.out.format("0x%x",output[i]);
         }
         mappedByteBuffer.force();
-        UnMMap.unMMap(mappedByteBuffer);
+        MMap.unMMap(mappedByteBuffer);
         fileChannel.close();
     }
 }

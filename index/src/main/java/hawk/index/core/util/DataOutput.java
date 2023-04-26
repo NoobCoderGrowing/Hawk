@@ -49,6 +49,14 @@ public class DataOutput {
         writeByte((byte)(input), buffer, pos);
     }
 
+    public static void writeVLong(long i, FileChannel fc, WrapLong pos){
+        while ((i & ~0x7FL) != 0L) {
+            writeByte((byte)((i & 0x7FL) | 0x80L), fc, pos);
+            i >>>= 7;
+        }
+        writeByte((byte) i, fc, pos);
+    }
+
 
     public static void writeVLong(WrapLong input, FileChannel fc, WrapLong pos){
         long i = input.getValue();
