@@ -29,11 +29,20 @@ public class DataInput {
         return ret;
     }
 
+    public static byte[] readBytes(ByteBuffer buffer, int offset, int length){
+        byte[] ret = new byte[length];
+        for (int i = 0; i < length; i++) {
+            ret[i] = buffer.get(offset++);
+        }
+        return ret;
+    }
+
     public static byte[] readBytes(ByteBuffer buffer, int length){
         byte[] ret = new byte[length];
         buffer.get(ret);
         return ret;
     }
+
 
 
     public static long readVlong(ByteBuffer buffer){

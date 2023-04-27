@@ -161,11 +161,11 @@ public class MMapDirectoryReader extends DirectoryReader {
             while (buffer.position() < buffer.limit()){
                 int fieldLength =  buffer.getInt();
                 byte[] filedNameBytes = new byte[fieldLength];
-                buffer.get(filedNameBytes, buffer.position(), fieldLength);
+                buffer.get(filedNameBytes);
                 String fieldName = new String(filedNameBytes, StandardCharsets.UTF_8);
                 int termLength = buffer.getInt();
                 byte[]  fieldValueBytes = new byte[termLength];
-                buffer.get(fieldValueBytes, buffer.position(), termLength);
+                buffer.get(fieldValueBytes);
                 String fieldValue = new String(fieldValueBytes,StandardCharsets.UTF_8);
                 byte[] offset = DataInput.readVlongBytes(buffer);
                 byte fieldType = fdmMap.get(fieldName).getLeft()[0];

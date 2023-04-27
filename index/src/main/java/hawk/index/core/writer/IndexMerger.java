@@ -268,7 +268,7 @@ public class IndexMerger {
     public void mergeIndexed(ArrayList<String> files){
         MappedByteBuffer seg1TimBuffer = null, seg1FrqBuffer = null, seg1FdmBuffer = null, seg2TimBuffer = null,
                 seg2FrqBuffer = null, seg2FdmBuffer = null;
-        FileChannel seg3Tim = null, seg3Frq = null, seg3Fdm;
+        FileChannel seg3Tim = null, seg3Frq = null, seg3Fdm = null;
         String seg3TimPath = directory.generateSegFile("3.tim");
         String seg3FrqPath = directory.generateSegFile("3.frq");
         String seg3FdmPath = directory.generateSegFile("3.fdm");
@@ -321,9 +321,9 @@ public class IndexMerger {
         this.directory.updateSegInfo(docIDAllocator.get() + this.docBase, -1);
     }
 
-    public void mergeFDX(ArrayList<int[]> seg2FDX, FileChannel seg1FdxFC){
+    public void mergeFDX(ArrayList<int[]> seg2FDX, FileChannel seg1FdxFC, FileChannel seg1FdtFC){
         try {
-            long limit = seg1FdxFC.size();
+            long limit = seg1FdtFC.size();
             for (int i = 0; i < seg2FDX.size(); i++) {
                 int[] item = seg2FDX.get(i);
                 int docID = item[0];
@@ -371,30 +371,30 @@ public class IndexMerger {
     public void mergeStored(ArrayList<String> files){
         try {
             FileChannel seg1FdtFC = null, seg1FdxFC = null;
-            MappedByteBuffer seg2FDTBuffer = null ,seg2FDXBuffer = null;
+            MappedByteBuffer seg2FdtBuffer = null ,seg2FdxBuffer = null;
             for (int i = 0; i < files.size(); i++) {
                 if(files.get(i).contains("1.fdx")){
                     seg1FdxFC = new RandomAccessFile(files.get(i), "rw").getChannel();
                 } else if (files.get(i).contains("1.fdt")) {
                     seg1FdtFC = new RandomAccessFile(files.get(i), "rw").getChannel();
                 } else if (files.get(i).contains("2.fdx")) {
-                    seg2FDXBuffer = MMap.mmapFile(files.get(i));
+                    seg2FdxBuffer = MMap.mmapFile(files.get(i));
                 } else if (files.get(i).contains("2.fdt")) {
-                    seg2FDTBuffer = MMap.mmapFile(files.get(i));
+                    seg2FdtBuffer = MMap.mmapFile(files.get(i));
                 }
             }
             ArrayList<int[]> seg2FDX = new ArrayList<>();
-            while (seg2FDXBuffer.position() < seg2FDXBuffer.limit()){
-                int seg2DocID = DataInput.readVint(seg2FDXBuffer);
-                int seg2FDToffset = (int) DataInput.readVlong(seg2FDXBuffer);
+            while (seg2FdxBuffer.position() < seg2FdxBuffer.limit()){
+                int seg2DocID = DataInput.readVint(seg2FdxBuffer);
+                int seg2FDToffset = (int) DataInput.readVlong(seg2FdxBuffer);
                 seg2FDX.add(new int[]{seg2DocID, seg2FDToffset});
             }
-            mergeFDX(seg2FDX, seg1FdxFC);
-            mergeFDT(seg1FdtFC, seg2FDTBuffer, seg2FDX);
+            mergeFDX(seg2FDX, seg1FdxFC, seg1FdtFC);
+            mergeFDT(seg1FdtFC, seg2FdtBuffer, seg2FDX);
             seg1FdxFC.close();
             seg1FdtFC.close();
-            MMap.unMMap(seg2FDXBuffer);
-            MMap.unMMap(seg2FDTBuffer);
+            MMap.unMMap(seg2FdxBuffer);
+            MMap.unMMap(seg2FdtBuffer);
         } catch (FileNotFoundException e) {
             log.error("file not found during mergeStored");
             System.exit(1);

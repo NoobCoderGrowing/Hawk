@@ -25,15 +25,15 @@ public class WriteNumericIndex {
         indexWriter.addDoc(doc);
 
 
-        Document doc2 = new Document();
-        DoubleField field2 = new DoubleField("price", 11.5, Field.Tokenized.YES, Field.Stored.YES);
-        doc2.add(field2);
-        indexWriter.addDoc(doc2);
-
-        Document doc3 = new Document();
-        DoubleField field3 = new DoubleField("price", 12.6, Field.Tokenized.YES, Field.Stored.YES);
-        doc3.add(field3);
-        indexWriter.addDoc(doc3);
+//        Document doc2 = new Document();
+//        DoubleField field2 = new DoubleField("price", 11.5, Field.Tokenized.YES, Field.Stored.YES);
+//        doc2.add(field2);
+//        indexWriter.addDoc(doc2);
+//
+//        Document doc3 = new Document();
+//        DoubleField field3 = new DoubleField("price", 12.6, Field.Tokenized.YES, Field.Stored.YES);
+//        doc3.add(field3);
+//        indexWriter.addDoc(doc3);
 
         indexWriter.commit();
     }

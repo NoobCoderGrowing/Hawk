@@ -262,9 +262,9 @@ public class Searcher {
             offsetRight = fdtBuffer.limit();
         }
         int blockLength = offsetRight - offsetLeft;
-        byte[] fdtBloc = new byte[blockLength];
         // read compressed bloc into buffer
-        fdtBuffer.get(fdtBloc,offsetLeft,blockLength);
+        byte[] fdtBloc = DataInput.readBytes(fdtBuffer, offsetLeft, blockLength);
+
         byte[] unCompressedBloc = new byte[indexConfig.getBlocSize()];
         LZ4FastDecompressor decompressor = indexConfig.getDecompressor();
         // decompress buffer to unCompressedBloc
