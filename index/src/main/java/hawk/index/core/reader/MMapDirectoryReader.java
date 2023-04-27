@@ -83,12 +83,9 @@ public class MMapDirectoryReader extends DirectoryReader {
         String dirPath = directory.getPath().toAbsolutePath().toString();
         String fdtPath = dirPath + "/1.fdt";
         try {
-            FileChannel fc = new RandomAccessFile(fdtPath, "r").getChannel();
-            long fcSize = fc.size();
-            MappedByteBuffer buffer = fc.map(FileChannel.MapMode.READ_ONLY, 0, fcSize);// .fdt must not exceed 4GB
+            MappedByteBuffer buffer = MMap.mmapFile(fdtPath);// .fdt must not exceed 4GB
             buffer.load(); // force load buffer content into memory
             this.fdtBuffer = buffer;
-            fc.close();
         } catch (FileNotFoundException e) {
             throw new RuntimeException(e);
         } catch (IOException e) {
@@ -130,16 +127,15 @@ public class MMapDirectoryReader extends DirectoryReader {
         String dirPath = directory.getPath().toAbsolutePath().toString();
         String frqPath = dirPath + "/1.frq";
         try {
-            FileChannel fc = new RandomAccessFile(frqPath, "r").getChannel();
-            long fcSize = fc.size();
-            MappedByteBuffer buffer = fc.map(FileChannel.MapMode.READ_ONLY, 0, fcSize);// .frq must not exceed 4GB
+            MappedByteBuffer buffer = MMap.mmapFile(frqPath);// .frq must not exceed 4GB
             buffer.load(); // force load buffer content into memory
             this.frqBuffer = buffer;
-            fc.close();
         } catch (FileNotFoundException e) {
-            throw new RuntimeException(e);
+            log.error("frq file not found during load frq");
+            System.exit(1);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            log.error("frq file IOException during load frq");
+            System.exit(1);
         }
     }
 
@@ -153,11 +149,7 @@ public class MMapDirectoryReader extends DirectoryReader {
         String timPath = dirPath + "/1.tim";
         log.info("start constructing FST and numericTrie");
         try {
-            FileChannel fc = new RandomAccessFile(timPath, "rw").getChannel();
-            int fcSize = (int) fc.size();
-            ByteBuffer buffer = ByteBuffer.allocate(fcSize);
-            fc.read(buffer, 0);
-            buffer.flip();
+            MappedByteBuffer buffer = MMap.mmapFile(timPath);
             while (buffer.position() < buffer.limit()){
                 int fieldLength =  buffer.getInt();
                 byte[] filedNameBytes = new byte[fieldLength];
@@ -180,7 +172,7 @@ public class MMapDirectoryReader extends DirectoryReader {
                 }
             }
             this.termFST = builder.finish();
-            fc.close();
+            MMap.unMMap(buffer);
             log.info("end of constructing FST and numericTrie");
         } catch (FileNotFoundException e) {
             log.error("tim file does not exist");
