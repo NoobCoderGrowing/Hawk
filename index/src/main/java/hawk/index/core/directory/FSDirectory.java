@@ -56,4 +56,14 @@ public class FSDirectory extends Directory{
         }
         return fileNames;
     }
+
+    @Override
+    public String generateSegFile(String fileName) {
+        String prfix = path.toString() + "/";
+        fileName = prfix.concat(fileName);
+        Path path = Paths.get(fileName);
+        createFile(path);
+        this.files.add(fileName);
+        return fileName;
+    }
 }

@@ -45,9 +45,6 @@ public class DocWriter implements Runnable {
 
     private HashMap<ByteReference, Pair<byte[], int[]>> fdm;
 
-
-
-
     public DocWriter(AtomicInteger docIDAllocator, Document doc, List fdt, HashMap<FieldTermPair,
             int[][]> ivt, AtomicLong bytesUsed, long maxRamUsage, ReentrantLock ramUsageLock, Directory directory,
                      IndexConfig config, HashMap<ByteReference, Pair<byte[], int[]>> fdm) {
@@ -83,9 +80,6 @@ public class DocWriter implements Runnable {
         assembleFDT(docFDT, docID);
         assembleFDM(docFDM);
         assembleIVT(docIVT, docID);
-//        fdt.add(docFDT);
-//        assembleFDM(docFDM);
-//        assembleIVT(docIVT);
         bytesUsed.addAndGet(bytesCurDoc.getValue() + 8); //8bytes for 2 docID in FDM and IVT
         ramUsageLock.unlock();
     }
@@ -124,21 +118,6 @@ public class DocWriter implements Runnable {
         }
     }
 
-
-//    public void  assembleIVT(HashMap<FieldTermPair, int[]> docIVT){
-//        for (Map.Entry<FieldTermPair, int[] > entry : docIVT.entrySet()) {
-//            FieldTermPair fieldTermPair = entry.getKey();
-//            //assemble ivt
-////            int[] IDFreqLength = entry.getValue();
-//            int[][] IDFreqLength = new int[][]{entry.getValue()};
-//            int[][] oldVal = ivt.putIfAbsent(fieldTermPair, IDFreqLength);
-//            if(oldVal != null){ // if already a posting exists, concatenates old and new
-//                oldVal = ArrayUtil.grow2DIntArray(oldVal);
-//                oldVal[oldVal.length-1] = entry.getValue();
-//            }
-//        }
-//    }
-
     public void reset(){
         bytesUsed.set(0);
         ivt.clear();
@@ -148,7 +127,7 @@ public class DocWriter implements Runnable {
 
     // write fdt into a buffer of 16kb
     // return false if the buffer can't fit
-    public boolean insertBlock(int docID, byte[][] data, byte[] buffer, WrapInt pos, WrapInt docCount){
+    public boolean insertBlock(int docID, byte[][] data, byte[] buffer, WrapInt pos){
         int remains = buffer.length - pos.getValue(); // calculate bytes left in the buffer
         int need = 0;
         int notEmpty = 0;
@@ -170,7 +149,6 @@ public class DocWriter implements Runnable {
                 //write each field
                 DataOutput.writeBytes(data[i], buffer, pos);
             }
-            docCount.setValue(docCount.getValue()+1);
             return true;
         }
         return false;
@@ -178,9 +156,7 @@ public class DocWriter implements Runnable {
 
     // write a block into .fdt file
     public void writeCompressedBloc(byte[] buffer, byte[] compressedBuffer, int maxCompressedLength, FileChannel fdtChannel,
-                         WrapLong fdtPos, WrapInt bufferPos, WrapInt docCount){
-        //write doc count in the bloc
-        DataOutput.writeVInt(docCount.getValue(), fdtChannel, fdtPos);
+                                    WrapLong fdtPos, WrapInt bufferPos){
         //compress
         int compressedLength = config.getCompressor().compress(buffer, 0, buffer.length, compressedBuffer,
                 0, maxCompressedLength);
@@ -191,8 +167,6 @@ public class DocWriter implements Runnable {
         Arrays.fill(buffer, (byte) 0);
         bufferPos.setValue(0);
         Arrays.fill(compressedBuffer, (byte) 0);
-        //reset doc count
-        docCount.setValue(0);
     }
 
     public void writeFDX(FileChannel fc, int docID, WrapLong fdtPos, WrapLong fdxPos){
@@ -215,21 +189,19 @@ public class DocWriter implements Runnable {
             log.info("start writing fdx and fdt");
             if(fdt.size() > 0) {
                 int docID = fdt.get(0).getLeft() + docBase;
-                WrapInt docCount = new WrapInt(0);
                 writeFDX(fdxChannel, docID, fdtPos, fdxPos);// first fdx write
                 for (int i = 0; i < fdt.size(); i++) {
                     docID = fdt.get(i).getLeft() + docBase;
                     byte[][] data = (byte[][]) fdt.get(i).getRight();
-                    if(!insertBlock(docID, data, buffer, bufferPos, docCount)){ // if buffer is full, write to disk
+                    if(!insertBlock(docID, data, buffer, bufferPos)){ // if buffer is full, write to disk
                         writeCompressedBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos,
-                                bufferPos, docCount);
+                                bufferPos);
                         // current docID is the start id of next bloc
                         writeFDX(fdxChannel, docID, fdtPos, fdxPos);
                     }
                 } //last write
                 if(bufferPos.getValue() > 0){
-                    writeCompressedBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos,
-                            docCount);
+                    writeCompressedBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
                 }
             }
             log.info("end of writing fdx and fdt");
@@ -342,19 +314,6 @@ public class DocWriter implements Runnable {
         });
     }
 
-    public void sortPosting(ArrayList<Map.Entry<FieldTermPair, int[][]>> ivtList){
-        for (int i = 0; i < ivtList.size(); i++) {
-            int[][] posting = ivtList.get(i).getValue();
-            Arrays.sort(posting, new Comparator<int[]>() {
-                @Override
-                public int compare(int[] o1, int[] o2) {
-                    return o1[0] - o2[0];
-                }
-            });
-        }
-    }
-
-
     public void sortIVTList(ArrayList<Map.Entry<FieldTermPair, int[][]>> ivtList){
         Collections.sort(ivtList,(a, b)->{
             FieldTermPair aP = a.getKey();
@@ -389,7 +348,7 @@ public class DocWriter implements Runnable {
         int segCount = directory.getSegmentInfo().getSegCount();
         if(segCount > 1) {
             log.info("merge start now," + " cur segment count is " + segCount + ", cur file number is " +
-                    directory.getFiles().size() + "cur maxDocID is " + directory.getSegmentInfo().getPreMaxID());
+                    directory.getFiles().size() + ", cur maxDocID is " + directory.getSegmentInfo().getPreMaxID());
             IndexMerger indexMerger = new IndexMerger(directory, config, docIDAllocator, docBase);
             indexMerger.merge();
             log.info("merge end now," + "cur segment count is " + directory.getSegmentInfo().getSegCount() +
@@ -419,7 +378,8 @@ public class DocWriter implements Runnable {
         // sort ivt ( sort field first and then term lexicographically)
         ArrayList<Map.Entry<FieldTermPair, int[][]>> ivtList = new ArrayList<>(ivt.entrySet());
         sortIVTList(ivtList);
-        sortPosting(ivtList);
+        //posting is already sorted
+//        sortPosting(ivtList);
         flushStored(fdtPath, fdxPath, docBase);
         flushIndexed(timPath, frqPath, fdmPath, ivtList, fdmList, docBase);
         directory.updateSegInfo(docIDAllocator.get() + docBase, 1);
@@ -443,26 +403,6 @@ public class DocWriter implements Runnable {
         return bytePool;
     }
 
-
-
-//    public Pair<Integer, byte[][]> processStoredFields(Document doc, int docID, WrapLong bytesCurDoc){
-//        List<Field> fields = doc.getFields();
-//        byte[][] bytePool = new byte[10][];
-//        for (int i = 0; i < fields.size(); i++) {
-//            Field field = fields.get(i);
-//            if(field.isStored == Field.Stored.YES){
-//                byte[] fieldBytes = field.serialize();
-//                if(bytePool.length < i + 1){
-//                    bytePool = ArrayUtil.bytePoolGrow(bytePool);
-//                }
-//                bytePool[i] = fieldBytes;
-//                bytesCurDoc.setValue(bytesCurDoc.getValue() + fieldBytes.length);
-//            }
-//        }
-//        Pair<Integer, byte[][]> docFDT = new Pair<>(docID, bytePool);
-//        return docFDT;
-//    }
-
     public Pair processIndexedFields(Document doc, WrapLong bytesCurDoc){
         Pair<HashMap<ByteReference, Pair<byte[], Integer>>, HashMap<FieldTermPair, int[]>> ret = new Pair<>(new HashMap<>(),
                 new HashMap<>());
@@ -474,18 +414,6 @@ public class DocWriter implements Runnable {
         }
         return ret;
     }
-
-//    public Pair processIndexedFields(Document doc, int docID, WrapLong bytesCurDoc){
-//        Pair<HashMap<ByteReference, Pair<byte[], Integer>>, HashMap<FieldTermPair, int[]>> ret = new Pair<>(new HashMap<>(),
-//                new HashMap<>());
-//        for (int i = 0; i < doc.getFields().size(); i++) {
-//            Field field = doc.getFields().get(i);
-//            if(field.isTokenized == Field.Tokenized.YES){
-//                processIndexedField(field, ret, docID, bytesCurDoc);
-//            }
-//        }
-//        return ret;
-//    }
 
     public byte getFieldType(Field field){
         byte termType = 0b00000000;
@@ -502,8 +430,6 @@ public class DocWriter implements Runnable {
         }
         return termType;
     }
-
-
 
     public void assembleFieldTypeMap(HashMap<ByteReference, Pair<byte[], Integer>> fieldTypeMap, byte[] fieldName, byte[] type,
                                      int fieldLegnth, WrapLong bytesCurDoc){
@@ -524,18 +450,6 @@ public class DocWriter implements Runnable {
             bytesCurDoc.setValue(bytesCurDoc.getValue() + filedName.length + filedValue.length + 8);
         }
     }
-
-//    public void assembleFieldTermMap(HashMap<FieldTermPair, int[]> fieldTermMap, byte[] filedName, byte[] filedValue,
-//                                     int docID, WrapLong bytesCurDoc, int fieldLength){
-//        FieldTermPair fieldTermPair = new FieldTermPair(filedName, filedValue);
-//        int[] preValue = fieldTermMap.putIfAbsent(fieldTermPair, new int[]{docID, 1, fieldLength});
-//        if(preValue != null){
-//            fieldTermMap.put(fieldTermPair, new int[]{docID, preValue[1] + 1, fieldLength});
-//        }else{// 12 bytes from docID, frequency and fieldLength
-//            bytesCurDoc.setValue(bytesCurDoc.getValue() + filedName.length + filedValue.length + 12);
-//        }
-//    }
-
 
     public void processIndexedField(Field field, Pair pair,
                                     WrapLong bytesCurDoc){
@@ -567,41 +481,6 @@ public class DocWriter implements Runnable {
         }
         assembleFieldTypeMap(fieldTypeMap, filedName, new byte[]{termType},filedLength, bytesCurDoc);
     }
-
-
-
-
-
-//    public void processIndexedField(Field field, Pair pair, int docID,
-//                                    WrapLong bytesCurDoc){
-//        //key: filed name, value1:field type, value2: field value length
-//        HashMap<ByteReference, Pair<byte[], Integer>> fieldTypeMap = (HashMap) pair.getLeft();
-//        //key: field term pair, value: docID, doc frequency, field value length
-//        HashMap<FieldTermPair, int[]> fieldTermMap = (HashMap) pair.getRight();
-//        byte termType = getFieldType(field);
-//        byte[] filedName = field.serializeName();
-//        int filedLength = 0;
-//        if (field instanceof StringField){
-//            // since analyzer returns position information, terms in same field
-//            //with same value may be identified as different terms as their positions differ
-//            HashSet<Term> termSet = config.getAnalyzer().anlyze(((StringField) field).getValue(),
-//                    ((StringField) field).getName());
-//            for (Term t : termSet) {
-//                byte[] filedValue = t.getValue().getBytes(StandardCharsets.UTF_8);
-//                filedLength = ((StringField) field).getValue().length();
-//                assembleFieldTermMap(fieldTermMap,filedName,filedValue,docID,bytesCurDoc, filedLength);
-//            }
-//        } else if (field instanceof DoubleField) {
-//            double value = ((DoubleField) field).getValue();
-//            long sortableLong = NumberUtil.double2SortableLong(value);// double to sort
-//            String[] prefixString = NumberUtil.long2PrefixString(sortableLong,config.getPrecisionStep());
-//            filedLength = 1;
-//            for (int i = 0; i < prefixString.length; i++) {
-//                assembleFieldTermMap(fieldTermMap, filedName,prefixString[i].getBytes(StandardCharsets.UTF_8), docID, bytesCurDoc, filedLength);
-//            }
-//        }
-//        assembleFieldTypeMap(fieldTypeMap, filedName, new byte[]{termType},filedLength, bytesCurDoc);
-//    }
 
     public static void main(String[] args) {
     }

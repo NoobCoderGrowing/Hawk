@@ -3,7 +3,7 @@ block - > 16kb
 
 #original data
 .fdt
-[docCount<vint>, bloc<bytes>]
+[bloc<bytes>]
 no need to store block length, as .fdx stores every block start offset
 
 #index of original data

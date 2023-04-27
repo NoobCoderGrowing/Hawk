@@ -2,6 +2,8 @@ package hawk.index.core.util;
 
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.encrypt.BytesEncryptor;
+
 import java.nio.ByteBuffer;
 
 
@@ -26,6 +28,13 @@ public class DataInput {
         }
         return ret;
     }
+
+    public static byte[] readBytes(ByteBuffer buffer, int length){
+        byte[] ret = new byte[length];
+        buffer.get(ret);
+        return ret;
+    }
+
 
     public static long readVlong(ByteBuffer buffer){
         byte b = buffer.get();
