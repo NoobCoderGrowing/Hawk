@@ -7,14 +7,12 @@ import java.util.List;
 
 @Data
 public class Document {
-    private int docID;
     private float score;
     private List<Field> fields = new ArrayList<>();
 
     public Document() {}
 
-    public Document(int docID, float score) {
-        this.docID = docID;
+    public Document(float score) {
         this.score = score;
     }
 

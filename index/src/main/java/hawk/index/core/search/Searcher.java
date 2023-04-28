@@ -233,6 +233,7 @@ public class Searcher {
         return null;
     }
 
+    // return: left offset + right offset
     public byte[][] searchFDTOffset(int docID, TreeMap<Integer, byte[]> fdxMap){
         int leftKey = fdxMap.floorKey(docID);
         byte[] left = fdxMap.get(leftKey);
@@ -246,7 +247,7 @@ public class Searcher {
     public Document doc (ScoreDoc scoreDoc){
         if(scoreDoc == null) return null;
         int docID = scoreDoc.docID;
-        Document document = new Document(docID,scoreDoc.getScore());
+        Document document = new Document(scoreDoc.getScore());
         TreeMap<Integer, byte[]> fdxMap = this.directoryReader.getFDXMap();
         MappedByteBuffer fdtMappedBuffer = this.directoryReader.getFDTBuffer();
         // create a duplicate of mappedBuffer, position, limit and mark are independent
