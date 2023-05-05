@@ -4,4 +4,5 @@
 !/z-nacos2/target
 /z-nacos/logs
 /z-nacos2/logs
+/core/src/main/resources/goods.csv
 **/*.iml
