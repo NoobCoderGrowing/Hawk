@@ -1,4 +1,4 @@
-package hawk.index.distribute.config;
+package hawk.indexer.config;
 
 import directory.MMapDirectory;
 import hawk.segment.core.anlyzer.Analyzer;

@@ -1,0 +1,12 @@
+server:
+  port: 9003
+spring:
+  application:
+    name: recall
+  cloud:
+    nacos:
+      discovery:
+        register-enabled: false
+
+index:
+  path: /opt/temp/shard1

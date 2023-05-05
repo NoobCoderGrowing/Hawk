@@ -111,7 +111,7 @@ public class StringTools {
                 char pre = value.charAt(i-1);
                 char cur = value.charAt(i);
                 boolean isDiffCat = charCat(pre) != charCat(cur);
-                boolean isPreBarOrDot = (pre == '_' || pre == '.');
+                boolean isPreBarOrDot = (pre == '-' || pre == '.');
                 if(isDiffCat && !isPreBarOrDot){
                     sb.append(",").append(cur);
                 }else{
@@ -131,14 +131,22 @@ public class StringTools {
             phrase.setValue(arr[i]);
             phrase.setPos(pos);
             pos += arr[i].length();
-            if (charCat(arr[i].charAt(0)) == 0){//中文
-                hanPinDigSeg.getHanZiList().add(phrase);
-            }else if(charCat(arr[i].charAt(0)) == 1){//数字
-                hanPinDigSeg.getDigitList().add(phrase);
-            }else{
-                hanPinDigSeg.getPinYinList().add(phrase);//拼音
+            if(arr[i].length()!=0){
+                if (charCat(arr[i].charAt(0)) == 0){//中文
+                    hanPinDigSeg.getHanZiList().add(phrase);
+                }else if(charCat(arr[i].charAt(0)) == 1){//数字
+                    hanPinDigSeg.getDigitList().add(phrase);
+                }else{
+                    hanPinDigSeg.getPinYinList().add(phrase);//拼音
+                }
             }
         }
         return pos;
+    }
+
+    public static void main(String[] args) {
+        StringTools stringTools = new StringTools();
+        String nomalized = stringTools.normalizeString("服装设计创意构思与效果图绘制 彩铅+水彩+马克笔+Procreate+Photoshop 崔晓宇,葛星 著 美术技法 艺术 电子工业出版社 图书");
+        System.out.println(nomalized);
     }
 }

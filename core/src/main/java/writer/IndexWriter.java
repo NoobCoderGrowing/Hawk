@@ -71,7 +71,7 @@ public class IndexWriter {
         futures.add(future);
     }
 
-
+    // true: shutdown threadPool
     public void commit(boolean shutdown){
         for (int i = 0; i < futures.size(); i++) {
             try {
@@ -80,6 +80,7 @@ public class IndexWriter {
                 log.info("wait task " + i + "successful");
             } catch (ExecutionException e) {
                 log.error("something wrong with task " + i);
+                e.printStackTrace();
                 System.exit(1);
             }
         }

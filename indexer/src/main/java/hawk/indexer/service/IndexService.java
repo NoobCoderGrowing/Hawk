@@ -1,4 +1,4 @@
-package hawk.index.distribute.service;
+package hawk.indexer.service;
 
 import directory.MMapDirectory;
 import document.Document;

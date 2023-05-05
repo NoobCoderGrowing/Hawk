@@ -17,8 +17,12 @@ public class BooleanQuery extends Query{
         this.operation = operation;
     }
 
+    public void addQuery(Query query){
+        queries.add(query);
+    }
+
     public enum Operation {
-        MUST,
-        SHOULD
+        MUST, // and query
+        SHOULD // or query
     }
 }

@@ -4,6 +4,8 @@ import document.Document;
 import field.DoubleField;
 import field.Field;
 import field.StringField;
+import hawk.segment.core.Term;
+import hawk.segment.core.anlyzer.Analyzer;
 import lombok.extern.slf4j.Slf4j;
 import net.jpountz.lz4.LZ4FastDecompressor;
 import org.apache.lucene.util.BytesRef;
@@ -35,6 +37,26 @@ public class Searcher {
         this.indexConfig = indexConfig;
     }
 
+    public ScoreDoc[] searchString(StringQuery query){
+        Analyzer analyzer = indexConfig.getAnalyzer();
+        HashSet<Term> terms = analyzer.anlyze(query.getValue(), query.getField());
+        ScoreDoc[][] scoreDocs = new ScoreDoc[terms.size()][];
+        int i = 0;
+        BooleanQuery andQuery = new BooleanQuery(BooleanQuery.Operation.MUST);
+        BooleanQuery orQuery = new BooleanQuery(BooleanQuery.Operation.SHOULD);
+        for (Term term: terms) {
+            String field = term.getFieldName();
+            String termStr = term.getValue();
+            TermQuery termQuery = new TermQuery(field, termStr);
+            andQuery.addQuery(termQuery);
+            orQuery.addQuery(termQuery);
+        }
+        ScoreDoc[] andSearchRet = booleanSearch(andQuery);
+        if(andSearchRet!=null && andSearchRet.length != 0) return andSearchRet;
+        ScoreDoc[] orSearchRet = booleanSearch(orQuery);
+        return orSearchRet;
+    }
+
     public ScoreDoc[] searchTerm(TermQuery query){
         String field = query.getField();
         String term = query.getTerm();
@@ -50,6 +72,7 @@ public class Searcher {
             log.error("error searching fst");
             System.exit(1);
         }
+        if(value == null) return null;
         byte[] frqOffsetBytes = value.bytes;
         long frqOffset = DataInput.readVlong(frqOffsetBytes);
         WrapInt frqOffsetWrapper = new WrapInt((int) frqOffset);
@@ -104,9 +127,7 @@ public class Searcher {
 
     public ScoreDoc[] booleanSearch(BooleanQuery query){
         Enum<BooleanQuery.Operation> operationEnum = query.getOperation();
-        if(operationEnum == BooleanQuery.Operation.MUST){
-            return andSearch(query);
-        }
+        if(operationEnum == BooleanQuery.Operation.MUST) return andSearch(query);
         return orSearch(query);
     }
 
@@ -144,15 +165,19 @@ public class Searcher {
             if(hits == null) return null;
             hitsList.add(hits);
         }// sort recall result by their length
-        Collections.sort(hitsList, Comparator.comparingInt(a -> a.length));
-        List<ScoreDoc> result = Arrays.asList(hitsList.get(0));
+        if(hitsList.size() == 0) return null;
+        Collections.sort(hitsList, Comparator.comparingInt(a -> a.length));;
+        List<ScoreDoc> result = new ArrayList<>();
+        for (int i = 0; i < hitsList.get(0).length; i++) {
+            result.add(hitsList.get(0)[i]);
+        }
         ArrayList<ScoreDoc> needDelete = new ArrayList<>();
+        // binary search shorter list in longer list to find intersection
         for (int i = 1; i < hitsList.size(); i++) { // start intersection
             if(result.size() == 0) return null; // if result list size becomes 0 during intersection, immediately retrun
             ScoreDoc[] hits = hitsList.get(i);
-
             for (int j = 0; j < result.size(); j++) { // binary search shorter list in the longer list
-                ScoreDoc target = result.get(i);
+                ScoreDoc target = result.get(j);
                 ScoreDoc match = binarySearch(hits, target);
                 if(match != null){ // if match happens, add score
                     target.setScore(target.getScore() + match.score);
@@ -170,6 +195,7 @@ public class Searcher {
     public ScoreDoc[] orSearch(BooleanQuery booleanQuery){
         List<Query> queries = booleanQuery.getQueries();
         List<ScoreDoc[]> hitsList = new ArrayList<>();
+        HashSet<ScoreDoc> retSet = new HashSet<>();
         for (int i = 0; i < queries.size(); i++) { // recall each term
             Query query = queries.get(i);
             ScoreDoc[] hits;
@@ -183,35 +209,25 @@ public class Searcher {
             if(hits != null) hitsList.add(hits);
         }
         if(hitsList.size() == 0) return null;
-        HashMap<Integer , ScoreDoc> result = new HashMap<>();
-        for (int i = 0; i < hitsList.get(0).length; i++) {
-            ScoreDoc hit = hitsList.get(0)[i];
-            result.put(hit.getDocID(), hit);
-        }
 
-        for (int i = 1; i < hitsList.size(); i++) {
+        for (int i = 0; i < hitsList.size(); i++) {
             for (int j = 0; j < hitsList.get(i).length; j++) {
-                ScoreDoc hit = hitsList.get(i)[j];
-                ScoreDoc origin = result.putIfAbsent(hit.getDocID(), hit);
-                if(origin != null) origin.setScore(origin.getScore() + hit.getScore());
+                retSet.add(hitsList.get(i)[j]);
             }
         }
-        ScoreDoc[] retArray = new ScoreDoc[result.size()];
-        int i = 0;
-        for (Map.Entry<Integer, ScoreDoc> entry: result.entrySet()) {
-            retArray[i] = entry.getValue();
-        }
-        return retArray;
+
+        return new ArrayList<>(retSet).toArray(new ScoreDoc[0]);
     }
 
     public ScoreDoc[] topN(ScoreDoc[] scoreDocs, int n){
+        if(scoreDocs == null || scoreDocs.length == 0) return new ScoreDoc[0];
         Arrays.sort(scoreDocs, new Comparator<ScoreDoc>() {
             @Override
             public int compare(ScoreDoc o1, ScoreDoc o2) {
                 if(o1.getScore() - o2.getScore() < 0){
-                    return -1;
-                } else if (o1.getScore() - o2.getScore() > 0) {
                     return 1;
+                } else if (o1.getScore() - o2.getScore() > 0) {
+                    return -1;
                 }
                 return 0;
             }
@@ -296,10 +312,18 @@ public class Searcher {
         directoryReader.close();
     }
 
-    public ScoreDoc[] search(Query query){
-        if(query instanceof TermQuery) return searchTerm((TermQuery) query);
-        if(query instanceof BooleanQuery) return booleanSearch((BooleanQuery) query);
-        return searchNumericRange((NumericRangeQuery) query);
+    public ScoreDoc[] search(Query query, int topN){
+        ScoreDoc[] result = null;
+        if(query instanceof TermQuery){
+            result = searchTerm((TermQuery) query);
+        } else if (query instanceof BooleanQuery) {
+            result = booleanSearch((BooleanQuery) query);
+        } else if (query instanceof StringQuery) {
+            result = searchString((StringQuery) query);
+        } else if (query instanceof NumericRangeQuery ){
+            result = searchNumericRange((NumericRangeQuery) query);
+        }
+        return topN(result, topN);
     }
 
     public static void main(String[] args) {

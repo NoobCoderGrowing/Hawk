@@ -193,8 +193,6 @@ public class MMapDirectoryReader extends DirectoryReader {
         int shift = fieldValueBytes[0] & 0xff;
         log.info("NumericTrie Construction ===> " + "field name is " + fieldName + ", shift is " + shift + ", value is "
                 + doubelValue);
-
-
         if(numericTries.containsKey(fieldName)){
             NumericTrie trie = numericTries.get(fieldName);
             trie.add(key, offset);

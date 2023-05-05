@@ -80,6 +80,7 @@ public class DocWriter implements Runnable {
         assembleFDM(docFDM);
         assembleIVT(docIVT, docID);
         bytesUsed.addAndGet(bytesCurDoc.getValue() + 8); //8bytes for 2 docID in FDM and IVT
+        log.info("current bytes used： " + bytesUsed.get());
         ramUsageLock.unlock();
     }
 
@@ -112,7 +113,8 @@ public class DocWriter implements Runnable {
             int[][] oldVal = ivt.putIfAbsent(fieldTermPair, value);
             if(oldVal != null){ // if already a posting exists, concatenates old and new
                 oldVal = ArrayUtil.grow2DIntArray(oldVal);
-                oldVal[oldVal.length-1] = entry.getValue();
+                oldVal[oldVal.length-1] = IDFreqLength;
+                ivt.put(fieldTermPair, oldVal);
             }
         }
     }
@@ -186,23 +188,28 @@ public class DocWriter implements Runnable {
             WrapLong fdtPos = new WrapLong(0);
             WrapLong fdxPos = new WrapLong(0);
             log.info("start writing fdx and fdt");
-            if(fdt.size() > 0) {
-                int docID = fdt.get(0).getLeft() + docBase;
-                writeFDX(fdxChannel, docID, fdtPos, fdxPos);// first fdx write
+            if(fdt.size()>0){
+                int blockStartID = fdt.get(0).getLeft() + docBase;
                 for (int i = 0; i < fdt.size(); i++) {
-                    docID = fdt.get(i).getLeft() + docBase;
+                    int docID = fdt.get(i).getLeft() + docBase;
                     byte[][] data = (byte[][]) fdt.get(i).getRight();
                     if(!insertBlock(docID, data, buffer, bufferPos)){ // if buffer is full, write to disk
+                        writeFDX(fdxChannel, blockStartID, fdtPos, fdxPos);
                         writeCompressedBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos,
                                 bufferPos);
-                        // current docID is the start id of next bloc
-                        writeFDX(fdxChannel, docID, fdtPos, fdxPos);
+
+                        insertBlock(docID, data, buffer, bufferPos);
+                        blockStartID = docID;
                     }
-                } //last write
+                }
+                // last write
                 if(bufferPos.getValue() > 0){
-                    writeCompressedBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos, bufferPos);
+                    writeFDX(fdxChannel, blockStartID, fdtPos, fdxPos);
+                    writeCompressedBloc(buffer, compressedBuffer, maxCompressedLength, fdtChannel, fdtPos,
+                            bufferPos);
                 }
             }
+
             log.info("end of writing fdx and fdt");
             //close channel
             fdxChannel.force(false);

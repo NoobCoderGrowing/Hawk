@@ -7,6 +7,7 @@ public class ArrayUtil {
         return newArray;
     }
 
+    //not inplace grow
     public static int[][] grow2DIntArray(int[][] array){
         int[][] newArray = new int[array.length + 1][];
         System.arraycopy(array,0, newArray, 0, array.length);

@@ -1,4 +1,4 @@
-package hawk.index.distribute.config;
+package hawk.indexer.config;
 
 
 import directory.MMapDirectory;
@@ -14,7 +14,7 @@ public class DirectoryConfig {
 
     @Bean
     public MMapDirectory initDirectory(){
-        MMapDirectory mMapDirectory = new MMapDirectory(Paths.get("/opt/shard1"));
+        MMapDirectory mMapDirectory = new MMapDirectory(Paths.get("/opt/"));
         return mMapDirectory;
     }
 }

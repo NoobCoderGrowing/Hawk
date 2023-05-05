@@ -1,5 +1,5 @@
 package hawk.segment.core.anlyzer;
-import com.mysql.cj.util.StringUtils;
+import com.mysql.jdbc.StringUtils;
 import hawk.segment.core.*;
 import hawk.segment.core.graph.Edge;
 import hawk.segment.core.graph.Vertex;
@@ -53,6 +53,9 @@ public class NShortestPathAnalyzer implements Analyzer {
 
     public HashSet<Term> anlyze(String value, String fieldName){
         HashSet<Term> result = new HashSet<>();
+        if(value==null || value.length() == 0){ // check for empty str
+            return result;
+        }
         value = stringTools.normalizeString(value);
         String[] strArr = value.split(" ");
         HanPinDigSeg hanPinDigSeg = new HanPinDigSeg();
@@ -231,7 +234,7 @@ public class NShortestPathAnalyzer implements Analyzer {
 
     public static void main(String[] args) throws InterruptedException {
         Analyzer analyzer = new NShortestPathAnalyzer(1);
-        HashSet<Term> terms = analyzer.anlyze("今天天气不错", "title");
+        HashSet<Term> terms = analyzer.anlyze("适用于丰田皇冠锐志发动机机脚胶机脚支架脚垫机脚胶垫", "title");
         System.out.println(terms);
     }
 

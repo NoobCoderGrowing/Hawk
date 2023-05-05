@@ -1,0 +1,5 @@
+indexer-shard-leader 要保证有且只有一个
+recall-shard* 要保证至少有一个
+
+
+indexer-shard-follower-map
