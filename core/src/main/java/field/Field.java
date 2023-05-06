@@ -3,7 +3,7 @@ package field;
 import lombok.Data;
 
 @Data
-public abstract class Field{
+public abstract class Field<T>{
 
     public Enum<Field.Tokenized> isTokenized;
 
@@ -30,5 +30,7 @@ public abstract class Field{
     public abstract byte[] serialize();
 
     public abstract byte[] serializeName();
+
+    public abstract String getName();
 
 }

@@ -4,12 +4,14 @@ import field.Field;
 import lombok.Data;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 @Data
 public class Document {
     private float score;
-    private List<Field> fields = new ArrayList<>();
+
+    private HashMap<String, Field> fieldMap = new HashMap<>();
 
     public Document() {}
 
@@ -18,6 +20,7 @@ public class Document {
     }
 
     public void add(Field field){
-        this.fields.add(field);
+        String fieldName = field.getName();
+        fieldMap.put(fieldName, field);
     }
 }

@@ -65,7 +65,6 @@ public class DocWriter implements Runnable {
         // parallel tokenization here
         byte[][]  docFDT = processStoredFields(doc, bytesCurDoc);
         Pair docFDMIVT =  processIndexedFields(doc, bytesCurDoc);
-//        Pair docFDMIVT =  processIndexedFields(doc, docID, bytesCurDoc);
         HashMap<ByteReference, Pair<byte[], Integer>> docFDM = (HashMap<ByteReference, Pair<byte[], Integer>>) docFDMIVT.getLeft();
         HashMap<FieldTermPair, int[]> docIVT = (HashMap<FieldTermPair, int[]>) docFDMIVT.getRight();
         // flush when ram usage exceeds configuration
@@ -385,26 +384,27 @@ public class DocWriter implements Runnable {
         ArrayList<Map.Entry<FieldTermPair, int[][]>> ivtList = new ArrayList<>(ivt.entrySet());
         sortIVTList(ivtList);
         //posting is already sorted
-//        sortPosting(ivtList);
         flushStored(fdtPath, fdxPath, docBase);
         flushIndexed(timPath, frqPath, fdmPath, ivtList, fdmList, docBase);
         directory.updateSegInfo(docIDAllocator.get() + docBase, 1);
         mergetest(docBase);
     }
 
-    public byte[][] processStoredFields(Document doc, WrapLong bytesCurDoc){
-        List<Field> fields = doc.getFields();
+    public byte[][] processStoredFields(Document doc, WrapLong bytesCurDoc) {
         byte[][] bytePool = new byte[10][];
-        for (int i = 0; i < fields.size(); i++) {
-            Field field = fields.get(i);
-            if(field.isStored == Field.Stored.YES){
+        HashMap<String, Field> fieldMap = doc.getFieldMap();
+        int i = 0;
+        for (Map.Entry<String, Field> entry : fieldMap.entrySet()) {
+            Field field = entry.getValue();
+            if (field.isStored == Field.Stored.YES) {
                 byte[] fieldBytes = field.serialize();
-                if(bytePool.length < i + 1){
+                if (bytePool.length < i + 1) {
                     bytePool = ArrayUtil.bytePoolGrow(bytePool);
                 }
                 bytePool[i] = fieldBytes;
                 bytesCurDoc.setValue(bytesCurDoc.getValue() + fieldBytes.length);
             }
+            i++;
         }
         return bytePool;
     }
@@ -412,8 +412,9 @@ public class DocWriter implements Runnable {
     public Pair processIndexedFields(Document doc, WrapLong bytesCurDoc){
         Pair<HashMap<ByteReference, Pair<byte[], Integer>>, HashMap<FieldTermPair, int[]>> ret = new Pair<>(new HashMap<>(),
                 new HashMap<>());
-        for (int i = 0; i < doc.getFields().size(); i++) {
-            Field field = doc.getFields().get(i);
+        HashMap<String, Field> fieldMap = doc.getFieldMap();
+        for (Map.Entry<String, Field> entry : fieldMap.entrySet()) {
+            Field field = entry.getValue();
             if(field.isTokenized == Field.Tokenized.YES){
                 processIndexedField(field, ret, bytesCurDoc);
             }

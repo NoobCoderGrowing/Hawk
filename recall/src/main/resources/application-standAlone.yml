@@ -7,6 +7,5 @@ spring:
     nacos:
       discovery:
         register-enabled: false
-
-index:
-  path: /opt/temp/shard1
+        metadata:
+          shard: 1

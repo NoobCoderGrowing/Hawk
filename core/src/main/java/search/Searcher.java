@@ -320,8 +320,9 @@ public class Searcher {
             result = booleanSearch((BooleanQuery) query);
         } else if (query instanceof StringQuery) {
             result = searchString((StringQuery) query);
-        } else if (query instanceof NumericRangeQuery ){
+        } else if(query instanceof NumericRangeQuery){
             result = searchNumericRange((NumericRangeQuery) query);
+            return result;
         }
         return topN(result, topN);
     }
