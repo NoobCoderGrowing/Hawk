@@ -60,12 +60,11 @@ public class NumericTrie {
     }
 
     public void addChild(Node parent, Node child, int shift){
-        Node[] children = parent.children;
-        if(children != null){
-            children = ArrayUtil.growNumericNodeArray(children);
-            children[children.length - 1] = child;
-            child.left = children[children.length - 2];
-            children[children.length - 2].right = child;
+        if(parent.children != null){
+            parent.children = ArrayUtil.growNumericNodeArray(parent.children);
+            parent.children[parent.children.length - 1] = child;
+            child.left = parent.children[parent.children.length - 2];
+            parent.children[parent.children.length - 2].right = child;
         }else{
             parent.children = new Node[1];
             parent.children[0] = child;
@@ -199,6 +198,8 @@ public class NumericTrie {
     }
 
     public static void main(String[] args) {
+        NumericTrie numericTrie = new NumericTrie(64, 4);
+
         long val = NumberUtil.double2SortableLong(2.0);
         System.out.println(Long.toBinaryString(val));
 

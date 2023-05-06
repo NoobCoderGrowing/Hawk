@@ -24,7 +24,7 @@ public class WriteIndexFromFile {
         Analyzer analyzer = new NShortestPathAnalyzer(1);
         IndexConfig indexConfig = new IndexConfig(analyzer);
         IndexWriter indexWriter = new IndexWriter(indexConfig, mMapDirectory);
-        URL resource = ClassLoader.getSystemResource("goods.csv");
+        URL resource = ClassLoader.getSystemResource("goods-short.csv");
         String path = resource.getPath();
         BufferedReader bufferedReader = new BufferedReader(new FileReader(path));
         String line;
@@ -34,9 +34,9 @@ public class WriteIndexFromFile {
             float price = Float.parseFloat(strings[2]);
             double doublePrice = (double) price;
             Document document = new Document();
-            StringField stringField = new StringField("title", title, Field.Tokenized.YES, Field.Stored.YES);
+//            StringField stringField = new StringField("title", title, Field.Tokenized.YES, Field.Stored.YES);
             DoubleField doubleField = new DoubleField("price", doublePrice, Field.Tokenized.YES, Field.Stored.YES);
-            document.add(stringField);
+//            document.add(stringField);
             document.add(doubleField);
             indexWriter.addDoc(document);
         }
