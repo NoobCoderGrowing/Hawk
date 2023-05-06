@@ -1,0 +1,13 @@
+server:
+  port: 9001
+spring:
+  application:
+    name: shard-control
+  cloud:
+    nacos:
+      discovery:
+        # 配置中心服务器地址，也就是Nacos地址,这里用nginx做LB
+        #        server-addr: 192.168.2.101:80
+        server-addr: 127.0.0.0:8801
+        service: shard-control
+        ephemeral: false

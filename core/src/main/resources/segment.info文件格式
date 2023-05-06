@@ -1,0 +1,3 @@
+date<byte>(YYYYMMDD, UTF-8) 8bytes
+segment count<int>
+pre maxDocID<int>

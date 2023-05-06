@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="bdb13e59-8531-4e2d-9ffe-555a23d2ff5d" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/../core/pom.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../core/src/main/java/directory/FSDirectory.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../core/src/main/java/util/DateUtil.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/hawk/index/distribute/IndexApplication.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/hawk/index/distribute/config/DirectoryConfig.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/hawk/index/distribute/config/IndexerConfig.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/hawk/index/distribute/controller/CloudIndex.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/hawk/index/distribute/service/IndexClient.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/java/hawk/index/distribute/service/IndexService.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/main/resources/application.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/directory/Constants.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/directory/Constants.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/directory/Directory.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/directory/Directory.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/directory/FSDirectory.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/directory/MMapDirectory.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/directory/MMapDirectory.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/directory/SegmentInfo.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/directory/SegmentInfo.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/directory/memory/MMap.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/directory/memory/MMap.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/document/Document.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/document/Document.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/field/DoubleField.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/field/DoubleField.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/field/Field.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/field/Field.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/field/StringField.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/field/StringField.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/reader/DirectoryReader.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/reader/DirectoryReader.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/reader/MMapDirectoryReader.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/reader/MMapDirectoryReader.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/search/BooleanQuery.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/search/BooleanQuery.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/search/NumericRangeQuery.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/search/NumericRangeQuery.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/search/Query.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/search/Query.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/search/ScoreDoc.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/search/ScoreDoc.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/search/SearchConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/search/SearchConfig.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/search/Searcher.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/search/Searcher.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/search/Similarity.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/search/Similarity.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/search/TermQuery.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/search/TermQuery.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/util/AVLTree.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/util/AVLTree.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/util/ArrayUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/util/ArrayUtil.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/util/DataInput.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/util/DataInput.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/util/DataOutput.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/util/DataOutput.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/util/NumberUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/util/NumberUtil.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/util/NumericTrie.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/util/NumericTrie.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/util/WrapInt.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/util/WrapInt.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/util/WrapLong.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/util/WrapLong.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/writer/ByteReference.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/writer/ByteReference.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/writer/DocWriter.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/writer/DocWriter.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/writer/FdmRecord.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/writer/FdmRecord.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/writer/FieldTermPair.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/writer/FieldTermPair.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/writer/IndexConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/writer/IndexConfig.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/writer/IndexMerger.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/writer/IndexMerger.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/writer/IndexWriter.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/writer/IndexWriter.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/writer/Pair.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/writer/Pair.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/core/writer/PrefixedNumber.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/writer/PrefixedNumber.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/demo/FSTBuild.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/demo/FSTBuild.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/demo/MemRandomAccess.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/demo/MemRandomAccess.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/demo/SearchIndex.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/demo/SearchIndex.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/demo/SearchNumericIndex.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/demo/SearchNumericIndex.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/demo/WirteIndex.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/demo/WirteIndex.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/demo/WriteNumericIndex.java" beforeDir="false" afterPath="$PROJECT_DIR$/../core/src/main/java/demo/WriteNumericIndex.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/mapper/GoodsMapper.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/hawk/index/mapper/GoodsMapper.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/service/GoodsService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/hawk/index/service/GoodsService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/java/hawk/index/service/impl/GoodsServiceImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/hawk/index/service/impl/GoodsServiceImpl.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/resources/.fdt和.fdx文件格式" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/.fdt和.fdx文件格式" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/resources/application.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../index/src/main/resources/segment.info文件格式" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/segment.info文件格式" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/../pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../recall/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/../recall/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../segment/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/../segment/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../segment/src/main/java/hawk/segment/core/anlyzer/NShortestPathAnalyzer.java" beforeDir="false" afterPath="$PROJECT_DIR$/../segment/src/main/java/hawk/segment/core/anlyzer/NShortestPathAnalyzer.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../z-nacos/conf/application.properties" beforeDir="false" afterPath="$PROJECT_DIR$/../z-nacos/conf/application.properties" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../z-nacos/data/config-data/DEFAULT_GROUP/index-dev.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../z-nacos2/conf/application.properties" beforeDir="false" afterPath="$PROJECT_DIR$/../z-nacos2/conf/application.properties" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ComposerSettings">
+    <execution />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/.." />
+  </component>
+  <component name="MavenImportPreferences">
+    <option name="generalSettings">
+      <MavenGeneralSettings>
+        <option name="useMavenConfig" value="true" />
+      </MavenGeneralSettings>
+    </option>
+  </component>
+  <component name="ProjectId" id="2PF54UKfz6ZWTE6xmFEgLPOkVZE" />
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "WebServerToolWindowFactoryState": "false",
+    "last_opened_file_path": "/home/wenjun/java_projects/hawk-2.0"
+  }
+}]]></component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="bdb13e59-8531-4e2d-9ffe-555a23d2ff5d" name="Changes" comment="" />
+      <created>1683039797809</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1683039797809</updated>
+      <workItem from="1683039798885" duration="5000" />
+      <workItem from="1683039811081" duration="105000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>
