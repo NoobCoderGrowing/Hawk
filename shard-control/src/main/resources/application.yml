@@ -11,3 +11,7 @@ spring:
         server-addr: 127.0.0.0:8801
         service: shard-control
         ephemeral: false
+
+shard:
+  count: 2
+  limit: 5000

@@ -10,8 +10,4 @@ public class MMapDirectory extends FSDirectory {
     public static MMapDirectory open(Path path) {
         return new MMapDirectory(path);
     }
-
-    public static void main(String[] args) {
-        System.out.println(31 - Integer.numberOfTrailingZeros(1 << 28));
-    }
 }

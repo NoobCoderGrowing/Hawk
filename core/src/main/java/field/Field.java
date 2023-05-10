@@ -1,19 +1,21 @@
 package field;
 
-import lombok.Data;
 
-@Data
-public abstract class Field<T>{
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.JsonTypeName;
 
-    public Enum<Field.Tokenized> isTokenized;
-
-    public Enum<Field.Stored> isStored;
-
+@JsonTypeInfo(use=JsonTypeInfo.Id.CLASS, include=JsonTypeInfo.As.PROPERTY, property="type")
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = DoubleField.class, name = "DoubleField"),
+        @JsonSubTypes.Type(value = StringField.class, name = "StringField"),
+})
+public interface Field{
     public enum Stored{
         YES("Yes"),
 
         NO("No");
-
         Stored(String label) {
         }
     }
@@ -22,15 +24,18 @@ public abstract class Field<T>{
         YES("Yes"),
 
         NO("No");
-
         Tokenized(String label) {
         }
     }
 
-    public abstract byte[] serialize();
+    public Enum<Field.Tokenized> isTokenized();
 
-    public abstract byte[] serializeName();
+    public Enum<Field.Stored> isStored();
 
-    public abstract String getName();
+    public byte[] customSerialize();
+
+    public byte[] serializeName();
+
+    public String getName();
 
 }

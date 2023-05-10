@@ -1,0 +1,8 @@
+2023-05-07 03:14:03,354 INFO serviceName: DEFAULT_GROUP@@recall {OTHER} {IP-ENABLED} pre-valid: 192.168.2.104:9003@DEFAULT in 1, msg: tcp:ok+
+
+2023-05-07 03:21:40,257 INFO serviceName: DEFAULT_GROUP@@recall {OTHER} {IP-ENABLED} pre-valid: 192.168.2.104:9003@DEFAULT in 1, msg: tcp:ok+
+
+2023-05-07 03:21:45,254 INFO serviceName: DEFAULT_GROUP@@recall {OTHER} {IP-ENABLED} pre-valid: 192.168.2.104:9003@DEFAULT in 2, msg: tcp:ok+
+
+2023-05-07 03:22:59,529 ERROR [UPDATE-DOMAIN] Exception while taking item from LinkedBlockingDeque.
+

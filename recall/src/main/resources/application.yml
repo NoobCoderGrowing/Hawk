@@ -3,3 +3,5 @@ spring:
     active: standAlone
 base:
   path: /opt/index
+ssh:
+  password: renzhe2zhuzhu

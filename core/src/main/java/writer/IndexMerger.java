@@ -361,15 +361,6 @@ public class IndexMerger {
             log.error("create mapping failed during mergeStored");
             System.exit(1);
         }
-
-
-
     }
 
-    public static void main(String[] args) {
-        String a = "1.dmf";
-        String[] b = a.split("\\.");
-        System.out.println(b[0]);
-        System.out.println(b[1]);
-    }
 }

@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -42,12 +43,9 @@ public class IndexWriter {
 
     //documentID, increase linearly from 0 since every time an indexWriter is opened
     private AtomicInteger docIDAllocator;
-
-    private List<Future> futures;
+    private ConcurrentLinkedQueue<Future> futures;
 
     private HashMap<ByteReference, Pair<byte[], int[]>> fdm;
-
-    
 
     public IndexWriter(IndexConfig config, Directory directory) {
         this.config = config;
@@ -60,7 +58,7 @@ public class IndexWriter {
         this.threadPoolExecutor =  new ThreadPoolExecutor( config.getIndexerThreadNum(),
                 config.getIndexerThreadNum(), 0, TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>());
-        this.futures = new ArrayList<>();
+        this.futures = new ConcurrentLinkedQueue<>();
         this.fdm = new HashMap<>();
     }
 
@@ -71,29 +69,22 @@ public class IndexWriter {
         futures.add(future);
     }
 
-    // true: shutdown threadPool
-    public void commit(boolean shutdown){
+    // must call after all addDoc
+    public void commit(){
         for (int i = 0; i < futures.size(); i++) {
             try {
-                futures.get(i).get();
+                futures.poll().get();
             } catch (InterruptedException e) {
-                log.info("wait task " + i + "successful");
+                log.info("met InterruptedException during commit ");
             } catch (ExecutionException e) {
-                log.error("something wrong with task " + i);
-                e.printStackTrace();
-                System.exit(1);
+                log.error("met ExecutionException during commit");
             }
         }
-        if(shutdown){
-            threadPoolExecutor.shutdown();
-        }
-        if(ivt.size() != 0 || fdt.size() != 0){
+        threadPoolExecutor.shutdown();
+        if(ivt.size() != 0 || fdt.size() != 0) {
             DocWriter lastDocWriter = new DocWriter(docIDAllocator, null, fdt, ivt, bytesUsed, config.getMaxRamUsage(),
                     ramUsageLock, directory, config, fdm);
             lastDocWriter.flush();
         }
-    }
-
-    public static void main(String[] args) {
     }
 }

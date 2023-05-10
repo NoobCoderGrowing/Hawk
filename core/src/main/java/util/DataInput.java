@@ -211,8 +211,4 @@ public class DataInput {
         return vLong;
     }
 
-    public static void main(String[] args) {
-
-    }
-
 }

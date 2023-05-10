@@ -42,12 +42,4 @@ public class ArrayUtil {
         }
         return ret;
     }
-
-    public static void main(String[] args) {
-        double a = 9999.5;
-        System.out.println(Long.toBinaryString(NumberUtil.double2SortableLong(a)));
-
-        long parent = Long.parseUnsignedLong("1100000011000011100001110000000000000000000000000000000000000000", 2);
-        System.out.println(NumberUtil.sortableLong2Double(parent));
-    }
 }

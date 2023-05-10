@@ -190,11 +190,4 @@ public class NumberUtil {
         }
         return retString;
     }
-
-
-    public static void main(String[] args) {
-        long2PrefixString(123,4);
-    }
-
-
 }

@@ -2,9 +2,7 @@ package hawk.segment.core;
 
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.BufferedReader;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
+import java.io.*;
 import java.net.URL;
 import java.util.HashSet;
 import java.util.Set;
@@ -23,8 +21,8 @@ public class StringTools {
     public void loadPunctuationSet(){
 
         try {
-            URL fileUrl = getClass().getClassLoader().getResource(puntuationPath);
-            BufferedReader reader = new BufferedReader(new FileReader(fileUrl.getPath()));
+            InputStream fileStream = getClass().getClassLoader().getResourceAsStream(puntuationPath);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(fileStream));
             String line = reader.readLine();
             while(line != null){
                 puntuationSet.add(line);
@@ -142,11 +140,5 @@ public class StringTools {
             }
         }
         return pos;
-    }
-
-    public static void main(String[] args) {
-        StringTools stringTools = new StringTools();
-        String nomalized = stringTools.normalizeString("服装设计创意构思与效果图绘制 彩铅+水彩+马克笔+Procreate+Photoshop 崔晓宇,葛星 著 美术技法 艺术 电子工业出版社 图书");
-        System.out.println(nomalized);
     }
 }

@@ -396,8 +396,8 @@ public class DocWriter implements Runnable {
         int i = 0;
         for (Map.Entry<String, Field> entry : fieldMap.entrySet()) {
             Field field = entry.getValue();
-            if (field.isStored == Field.Stored.YES) {
-                byte[] fieldBytes = field.serialize();
+            if (field.isStored() == Field.Stored.YES) {
+                byte[] fieldBytes = field.customSerialize();
                 if (bytePool.length < i + 1) {
                     bytePool = ArrayUtil.bytePoolGrow(bytePool);
                 }
@@ -415,7 +415,7 @@ public class DocWriter implements Runnable {
         HashMap<String, Field> fieldMap = doc.getFieldMap();
         for (Map.Entry<String, Field> entry : fieldMap.entrySet()) {
             Field field = entry.getValue();
-            if(field.isTokenized == Field.Tokenized.YES){
+            if(field.isTokenized() == Field.Tokenized.YES){
                 processIndexedField(field, ret, bytesCurDoc);
             }
         }
@@ -424,10 +424,10 @@ public class DocWriter implements Runnable {
 
     public byte getFieldType(Field field){
         byte termType = 0b00000000;
-        if(field.isStored == Field.Stored.YES){
+        if(field.isStored() == Field.Stored.YES){
             termType |= 0b00000001;
         }
-        if(field.isTokenized == Field.Tokenized.YES){
+        if(field.isTokenized() == Field.Tokenized.YES){
             termType |= 0b00000010;
         }
         if(field instanceof DoubleField){
@@ -487,9 +487,6 @@ public class DocWriter implements Runnable {
             }
         }
         assembleFieldTypeMap(fieldTypeMap, filedName, new byte[]{termType},filedLength, bytesCurDoc);
-    }
-
-    public static void main(String[] args) {
     }
 
 }

@@ -1,19 +1,5 @@
-#server:
-#  port: 9003
 spring:
-  application:
-    name: indexer
-    # 目前写在nacos配置里
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/index_source
-    username: root
-    password: renzhe2zhuzhu
-  cloud:
-    nacos:
-      discovery:
-        # 配置中心服务器地址，也就是Nacos地址,这里用nginx做LB
-#        server-addr: 192.168.2.101:80
-        server-addr: 127.0.0.0:8801
-        ephemeral: false
-        service: indexer
+#  profiles:
+#    active: standAlone
+base:
+  path: /opt/index

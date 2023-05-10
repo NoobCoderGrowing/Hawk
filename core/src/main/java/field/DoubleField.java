@@ -1,11 +1,24 @@
 package field;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.JsonTypeName;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import util.NumberUtil;
 import lombok.Data;
 
 import java.nio.charset.StandardCharsets;
 
 @Data
-public class DoubleField extends Field{
+@JsonTypeInfo(use=JsonTypeInfo.Id.CLASS, include=JsonTypeInfo.As.PROPERTY, property="type")
+@JsonTypeName("DoubleField")
+public class DoubleField implements Field{
+
+    @JsonDeserialize(as = Field.Tokenized.class)
+    private Enum<Field.Tokenized> isTokenized;
+
+    @JsonDeserialize(as = Field.Stored.class)
+    private Enum<Field.Stored> isStored;
 
     private String name;
 
@@ -16,6 +29,7 @@ public class DoubleField extends Field{
         this.value = value;
     }
 
+    @JsonCreator
     public DoubleField(String name, double value, Enum<Field.Tokenized> isTokenized,
                        Enum<Field.Stored> isStored) {
         this.name = name;
@@ -25,7 +39,17 @@ public class DoubleField extends Field{
     }
 
     @Override
-    public byte[] serialize() {
+    public Enum<Tokenized> isTokenized() {
+        return isTokenized;
+    }
+
+    @Override
+    public Enum<Stored> isStored() {
+        return isStored;
+    }
+
+    @Override
+    public byte[] customSerialize() {
         byte[] nameByte = name.getBytes(StandardCharsets.UTF_8);
         byte[] nameLength = NumberUtil.int2Vint(nameByte.length);
         byte[] valueByte = NumberUtil.long2Bytes(Double.doubleToLongBits(value));
