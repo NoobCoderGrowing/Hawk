@@ -4,21 +4,33 @@ import directory.MMapDirectory;
 import document.Document;
 import hawk.segment.core.anlyzer.Analyzer;
 import hawk.segment.core.anlyzer.NShortestPathAnalyzer;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.reactive.function.BodyInserter;
+import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 import util.DateUtil;
 import writer.IndexConfig;
 import writer.IndexWriter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.PostConstruct;
+import java.io.File;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @Service
+@Slf4j
 public class IndexService {
 
     @Value("${base.path}")
@@ -30,6 +42,8 @@ public class IndexService {
     private IndexWriter indexWriter;
 
     private ReentrantReadWriteLock writerLock = new ReentrantReadWriteLock();
+
+    WebClient webClient = WebClient.create();
 
 //    @PostConstruct
     public void refreshIndexWriter(){
@@ -71,5 +85,20 @@ public class IndexService {
     }
 
     public void clearDir(){
+    }
+
+    public String uploadIndex(String recallHost, int recallPort){
+        MultipartBodyBuilder builder = new MultipartBodyBuilder();
+        String indexPath = getIndexPath();
+        File indexDir = new File(indexPath);
+        File[] files = indexDir.listFiles();
+        for (int i = 0; i < files.length; i++) {
+            builder.part("file", new FileSystemResource(files[i]));
+        }
+        String url = "http://".concat(recallHost).concat(":").concat(Integer.toString(recallPort)).
+                concat("/cloud-control/upload-index");
+        return webClient.post().uri(url).contentType(MediaType.MULTIPART_FORM_DATA).
+                body(BodyInserters.fromMultipartData(builder.build())).retrieve().bodyToMono(String.class).
+                block();
     }
 }

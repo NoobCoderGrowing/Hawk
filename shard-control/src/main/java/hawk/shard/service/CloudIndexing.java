@@ -46,16 +46,12 @@ public class CloudIndexing {
     Random random = new Random(42);
 
     public void refreshIndexWriter(ConcurrentHashMap<String, List<ServiceInstance>> indexerMap){
-        long start = System.currentTimeMillis();
         List<CompletableFuture<String>> refreshWriterResult = new ArrayList<>();
         sendRefreshIndexerWriterRequest(indexerMap, refreshWriterResult);
         batchBlocking(refreshWriterResult, "refresh index writer");
-        long end = System.currentTimeMillis();
-        log.info("refresh index writer takes " + (end-start) + " milliseconds");
     }
 
-    public void cloudIndexingFromFileData(ConcurrentHashMap<String, List<ServiceInstance>> indexerMap){
-        long start = System.currentTimeMillis();
+    public void cloudAddDocFromFileData(ConcurrentHashMap<String, List<ServiceInstance>> indexerMap){
         List<CompletableFuture<String>> memIndexingResult = new ArrayList<>();
         List<List<Document>> documentSharding = createDocSharding();
         InputStream inputStream = getClass().getClassLoader().getResourceAsStream("goods-short.csv");
@@ -90,17 +86,12 @@ public class CloudIndexing {
             System.exit(1);
         }
         batchBlocking(memIndexingResult, "indexing task");
-        long end = System.currentTimeMillis();
-        log.info("cloud add doc takes " + (end-start) + " milliseconds");
     }
 
     public void cloudCommit(ConcurrentHashMap<String, List<ServiceInstance>> indexerMap){
-        long start = System.currentTimeMillis();
         List<CompletableFuture<String>> commitResult = new ArrayList<>();
         sendCommitRequest(indexerMap, commitResult);
         batchBlocking(commitResult, "commit task");
-        long end = System.currentTimeMillis();
-        log.info("cloud commit takes " + (end-start) + " milliseconds");
     }
 
     public void cloudPullIndex(ConcurrentHashMap<String, List<ServiceInstance>> recallMap,
@@ -111,7 +102,7 @@ public class CloudIndexing {
             List<ServiceInstance> recallInstances = entry.getValue();
             List<ServiceInstance> indexerInstances = indexerMap.get(shardName);
             for (int i = 0; i < recallInstances.size(); i++) {
-                int indexerIndex = random.nextInt(indexerInstances.size() - 1);
+                int indexerIndex = random.nextInt(indexerInstances.size());
                 ServiceInstance indexer = recallInstances.get(indexerIndex);
                 String indexerHost = indexer.getHost();
                 int indexerPort = indexer.getPort();
@@ -126,6 +117,31 @@ public class CloudIndexing {
             }
         }
         batchBlocking(pullResult, "pull index task");
+    }
+
+    public void cloudUploadIndex(ConcurrentHashMap<String, List<ServiceInstance>> recallMap,
+                               ConcurrentHashMap<String, List<ServiceInstance>> indexerMap){
+        List<CompletableFuture<String>> pullResult = new ArrayList<>();
+        for (Map.Entry<String, List<ServiceInstance>> entry : recallMap.entrySet()) {
+            String shardName = entry.getKey();
+            List<ServiceInstance> recallInstances = entry.getValue();
+            List<ServiceInstance> indexerInstances = indexerMap.get(shardName);
+            for (int i = 0; i < recallInstances.size(); i++) {
+                int indexerIndex = random.nextInt(indexerInstances.size());
+                ServiceInstance indexer = indexerInstances.get(indexerIndex);
+                String indexerHost = indexer.getHost();
+                int indexerPort = indexer.getPort();
+                String recallHost = recallInstances.get(i).getHost();
+                int recallPort = recallInstances.get(i).getPort();
+                String url = "http://".concat(indexerHost).concat(":").concat(Integer.toString(indexerPort)).
+                        concat("/cloud-control/upload-index/").concat(recallHost).concat("/").
+                        concat(Integer.toString(recallPort));
+                CompletableFuture<String> ret = webClient.get().uri(url).retrieve().bodyToMono(String.class).
+                        subscribeOn(Schedulers.single()).toFuture();
+                pullResult.add(ret);
+            }
+        }
+        batchBlocking(pullResult, "upload index task");
     }
 
     public void cloudSwitchSearchEngine(ConcurrentHashMap<String, List<ServiceInstance>> recallMap){
@@ -148,11 +164,11 @@ public class CloudIndexing {
     public void batchBlocking(List<CompletableFuture<String>> result, String taskName){
         for (int i = 0; i < result.size(); i++) {
             try {
-                log.info(taskName + "===>>>" + result.get(i).get());;
+                log.info(taskName + " ===>>> " + result.get(i).get());;
             } catch (InterruptedException e) {
-                log.info("receive InterruptedException during cloud indexing");
+                log.info("receive InterruptedException during cloud indexing " + taskName);
             } catch (ExecutionException e) {
-                log.info("receive ExecutionException during cloud indexing");
+                log.info("receive ExecutionException during cloud indexing" + taskName);
             }
         }
     }
@@ -174,7 +190,7 @@ public class CloudIndexing {
                 String host = instances.get(i).getHost();
                 int port = instances.get(i).getPort();
                 String url = "http://".concat(host).concat(":").concat(Integer.toString(port)).
-                        concat("/cloud-control/refreshIndexWriter");
+                        concat("/cloud-control/refresh-index-writer");
                 CompletableFuture<String> ret = webClient.get().uri(url).retrieve().bodyToMono(String.class).
                         subscribeOn(Schedulers.single()).toFuture();
                 result.add(ret);
@@ -216,5 +232,4 @@ public class CloudIndexing {
             }
         }
     }
-
 }

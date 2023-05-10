@@ -1,5 +1,7 @@
 package hawk.recall.service;
 
+import directory.Directory;
+import hawk.recall.config.HostInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.session.ClientSession;
@@ -9,12 +11,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
 import util.DateUtil;
 
-import java.io.File;
+import javax.annotation.Resource;
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,15 +27,13 @@ import java.time.Duration;
 @Slf4j
 public class IndexService {
 
-    private String ip = InetAddress.getLocalHost().getHostAddress();
+    @Resource
+    HostInfo hostInfo;
 
-    @Value("server.port")
-    private String port;
-
-    @Value("base.path")
+    @Value("${base.path}")
     private String basePath;
 
-    @Value("ssh.password")
+    @Value("${ssh.password}")
     private String sshPassword;
 
     @Autowired
@@ -52,12 +52,12 @@ public class IndexService {
                 timeout(Duration.ofSeconds(3L)).block();
         Path indexPath = Paths.get(getIndexPath());
         if(Files.exists(indexPath)){
-            String logInfo = "recallHost: " + ip + ", recallPort: " + port + "already has index";
+            String logInfo = "recallHost: " + hostInfo.getIp() + ", recallPort: " + hostInfo.getPort() + "already has index";
             return logInfo;
         }
         scpDownload(tagetPath, indexPath, indexerHost, "root");
         long end = System.currentTimeMillis();
-        String logInfo = "recallHost: " + ip + ", recallPort: " + port + "indxer host: " + indexerHost +
+        String logInfo = "recallHost: " + hostInfo.getIp() + ", recallPort: " + hostInfo.getPort() + "indxer host: " + indexerHost +
                 ", indexer port： " + indexerPort + ", pull index takes " + (end - start) + " milliseconds";
         log.info(logInfo);
 
@@ -97,5 +97,23 @@ public class IndexService {
         } catch (IOException e) {
             log.error("met IOException while doing scp");
         }
+    }
+
+    public boolean storeIndex(MultipartFile[] multipartFiles){
+        String indexPath = getIndexPath();
+        Path uploadPath = Paths.get(indexPath);
+        if(Files.exists(uploadPath)){
+            return false;
+        }
+        Directory.createDirectory(uploadPath);
+        try {
+            for (MultipartFile file : multipartFiles) {
+                file.transferTo(Paths.get(indexPath + "/" + file.getOriginalFilename()));
+            }
+            return true;
+        } catch (IOException e) {
+            log.info(" met IOException during storeIndex");
+        }
+        return false;
     }
 }
