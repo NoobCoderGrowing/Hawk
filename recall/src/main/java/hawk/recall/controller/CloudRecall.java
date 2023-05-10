@@ -16,13 +16,13 @@ public class CloudRecall {
     @Resource
     SearchService searchService;
 
-    @RequestMapping(value = "/search/{query}", method = RequestMethod.GET)
+    @RequestMapping(value = "/recall/{query}", method = RequestMethod.GET)
     @ResponseBody
     public List<Document> search(@PathVariable String query){
         return searchService.search(query);
     }
 
-    @RequestMapping(value = "/search/range/{left}/{right}", method = RequestMethod.GET)
+    @RequestMapping(value = "/recall/range/{left}/{right}", method = RequestMethod.GET)
     @ResponseBody
     public List<Document> rangeSearch(@PathVariable Double left, @PathVariable Double right) {
         return searchService.rangeSearch(left, right);

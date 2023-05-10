@@ -25,29 +25,42 @@ public class CloudShardController {
     CloudIndexing cloudIndexing;
 
 
-    @RequestMapping("/cloud-indexing")
+    @RequestMapping("/cloud-indexing-flow")
     @ResponseBody
     @Scheduled(cron = "0 10 0 * * *")
-    public String cloudIndexingAndPullAndSwitch(){
+    public String cloudIndexingFlow(){
         ConcurrentHashMap<String, List<ServiceInstance>> indexerMap = shardMapWatcher.refreshIndexShardMap();
         long start = System.currentTimeMillis();
         cloudIndexing.refreshIndexWriter(indexerMap);
-        cloudIndexing.cloudIndexingFromFileData(indexerMap);
-        cloudIndexing.cloudCommit(indexerMap);
         long end = System.currentTimeMillis();
-        log.info("cloud indexing takes " + (end - start) + " milliseconds");
+        log.info("refresh index writer takes " + (end-start) + " milliseconds");
+
+        start = System.currentTimeMillis();
+        cloudIndexing.cloudAddDocFromFileData(indexerMap);
+        end = System.currentTimeMillis();
+        log.info("cloud add doc takes " + (end-start) + " milliseconds");
+
+        start = System.currentTimeMillis();
+        cloudIndexing.cloudCommit(indexerMap);
+        end = System.currentTimeMillis();
+        log.info("cloud commit takes " + (end-start) + " milliseconds");
 
         start = System.currentTimeMillis();
         ConcurrentHashMap<String, List<ServiceInstance>> recallMap = shardMapWatcher.refreshRecallShardMap();
-        cloudIndexing.cloudPullIndex(recallMap, indexerMap);
+        cloudIndexing.cloudUploadIndex(recallMap, indexerMap);
         end = System.currentTimeMillis();
-        log.info("cloud pull index takes " + (end - start) + " milliseconds");
+        log.info("cloud upload index takes " + (end - start) + " milliseconds");
 
         start = System.currentTimeMillis();
         cloudIndexing.cloudSwitchSearchEngine(recallMap);
         end = System.currentTimeMillis();
-        log.info("cloud switch searcher " + (end - start) + " milliseconds");
+        log.info("cloud switch searcher takes " + (end - start) + " milliseconds");
 
+//        start = System.currentTimeMillis();
+//        ConcurrentHashMap<String, List<ServiceInstance>> recallMap = shardMapWatcher.refreshRecallShardMap();
+//        cloudIndexing.cloudPullIndex(recallMap, indexerMap);
+//        end = System.currentTimeMillis();
+//        log.info("cloud pull index takes " + (end - start) + " milliseconds");
         return "success";
     }
 }

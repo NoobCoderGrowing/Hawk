@@ -47,6 +47,8 @@ public class IndexWriter {
 
     private HashMap<ByteReference, Pair<byte[], int[]>> fdm;
 
+    private LinkedBlockingQueue<Runnable> blockingQueue;
+
     public IndexWriter(IndexConfig config, Directory directory) {
         this.config = config;
         this.directory = directory;
@@ -55,14 +57,15 @@ public class IndexWriter {
         this.bytesUsed = new AtomicLong(0);
         this.ramUsageLock = new ReentrantLock();
         this.docIDAllocator = new AtomicInteger(0);
+        this.blockingQueue = new LinkedBlockingQueue<>();
         this.threadPoolExecutor =  new ThreadPoolExecutor( config.getIndexerThreadNum(),
                 config.getIndexerThreadNum(), 0, TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>());
+                this.blockingQueue);
         this.futures = new ConcurrentLinkedQueue<>();
         this.fdm = new HashMap<>();
     }
 
-// indexing is by default multithreaded. User specified multi-thread-indexing leads to unpredictable outcome.
+// indexing is by default multithreaded.
     public void addDoc(Document doc){
         Future<?> future = threadPoolExecutor.submit(new DocWriter(docIDAllocator, doc, fdt, ivt, bytesUsed,
                 config.getMaxRamUsage(), ramUsageLock, directory, config, fdm));

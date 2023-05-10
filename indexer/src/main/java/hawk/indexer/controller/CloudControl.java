@@ -62,4 +62,11 @@ public class CloudControl {
         indexService.clearDir();
     }
 
+    @RequestMapping("/upload-index/{recallHost}/{recallPort}")
+    @ResponseBody
+    public String uploadIndex(@PathVariable String recallHost, @PathVariable int recallPort){
+        String result = indexService.uploadIndex(recallHost, recallPort);
+        return result;
+    }
+
 }
