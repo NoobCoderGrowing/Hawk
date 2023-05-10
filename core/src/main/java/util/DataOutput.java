@@ -143,15 +143,4 @@ public class DataOutput {
         byte[] bytes = NumberUtil.int2Bytes(i);
         writeBytes(bytes, fc, pos);
     }
-
-    public static void main(String[] args) {
-        ByteReference byteReference = new ByteReference(new byte[]{1});
-        HashMap<ByteReference, Pair<byte[], Integer>> map = new HashMap<>();
-        map.put(byteReference, new Pair<>(new byte[0], 1));
-        System.out.println(map.get(byteReference).getRight());
-        Pair pair = map.get(byteReference);
-        pair.setRight(2);
-        System.out.println(map.get(byteReference).getRight());
-    }
-
 }

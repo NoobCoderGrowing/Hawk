@@ -56,10 +56,4 @@ public class FieldTermPair {
             return term.length - bTerm.length;
         }
     }
-
-    public static void main(String[] args) {
-        FieldTermPair a = new FieldTermPair("今天".getBytes(StandardCharsets.UTF_8), "天气1".getBytes(StandardCharsets.UTF_8));
-        FieldTermPair b = new FieldTermPair("今天".getBytes(StandardCharsets.UTF_8), "天气1".getBytes(StandardCharsets.UTF_8));
-        System.out.println(a.compareTo(b));
-    }
 }

@@ -196,20 +196,4 @@ public class NumericTrie {
         }
         return result;
     }
-
-    public static void main(String[] args) {
-        NumericTrie numericTrie = new NumericTrie(64, 4);
-
-        long val = NumberUtil.double2SortableLong(2.0);
-        System.out.println(Long.toBinaryString(val));
-
-        val = NumberUtil.double2SortableLong(8.0);
-        System.out.println(Long.toBinaryString(val));
-
-        val = NumberUtil.double2SortableLong(11.5);
-        System.out.println(Long.toBinaryString(val));
-
-        val = NumberUtil.double2SortableLong(12.5);
-        System.out.println(Long.toBinaryString(val));
-    }
 }

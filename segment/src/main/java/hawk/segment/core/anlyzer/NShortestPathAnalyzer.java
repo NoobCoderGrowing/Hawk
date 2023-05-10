@@ -6,10 +6,8 @@ import hawk.segment.core.graph.Vertex;
 import hawk.segment.core.Term;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import java.io.BufferedReader;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.net.URL;
+
+import java.io.*;
 import java.util.*;
 
 
@@ -33,8 +31,8 @@ public class NShortestPathAnalyzer implements Analyzer {
 
     public void loadNPathDic(){
         try {
-            URL fileUrl = getClass().getClassLoader().getResource("data/npathword.data");
-            BufferedReader reader = new BufferedReader(new FileReader(fileUrl.getPath()));
+            InputStream inputStream = getClass().getClassLoader().getResourceAsStream("data/npathword.data");
+            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
             String line = reader.readLine();
             while(line != null){
                 line = line.trim();
@@ -232,10 +230,10 @@ public class NShortestPathAnalyzer implements Analyzer {
         }
     }
 
-    public static void main(String[] args) throws InterruptedException {
-        Analyzer analyzer = new NShortestPathAnalyzer(1);
-        HashSet<Term> terms = analyzer.anlyze("适用于丰田皇冠锐志发动机机脚胶机脚支架脚垫机脚胶垫", "title");
-        System.out.println(terms);
-    }
+//    public static void main(String[] args) throws InterruptedException {
+//        Analyzer analyzer = new NShortestPathAnalyzer(1);
+//        HashSet<Term> terms = analyzer.anlyze("适用于丰田皇冠锐志发动机机脚胶机脚支架脚垫机脚胶垫", "title");
+//        System.out.println(terms);
+//    }
 
 }

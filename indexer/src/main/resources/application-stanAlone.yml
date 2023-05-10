@@ -1,0 +1,11 @@
+server:
+  port: 8001
+spring:
+  application:
+    name: indexer
+  cloud:
+    nacos:
+      discovery:
+        register-enabled: false
+        metadata:
+          shard: 1

@@ -326,12 +326,4 @@ public class Searcher {
         }
         return topN(result, topN);
     }
-
-    public static void main(String[] args) {
-        TreeMap<Integer, Integer> treeMap = new TreeMap<>();
-        treeMap.put(1, 6);
-
-    }
-
-
 }
