@@ -41,7 +41,7 @@ public class SearchService {
 
     public void initDemoSearchEngine(){
         String shard = env.getProperty("spring.cloud.nacos.discovery.metadata.shard");
-        String indexPath = basePath.concat("/").concat("/").concat(shard);
+        String indexPath = basePath.concat("/").concat(shard);
         Directory directory = MMapDirectory.open(Paths.get(indexPath));
         DirectoryReader directoryReader = DirectoryReader.open(directory);
         Analyzer analyzer = new NShortestPathAnalyzer(1);
