@@ -1,5 +1,5 @@
 server:
-  port: 9002
+  port: 9003
 spring:
   application:
     name: recall
@@ -8,9 +8,14 @@ spring:
       discovery:
         # 配置中心服务器地址，也就是Nacos地址,这里用nginx做LB
         server-addr: 127.0.0.1:80
-#        server-addr: 192.168.0.166:8802
+#        server-addr: 192.168.0.166:8801
         ephemeral: true
-        group: shard_2
-        cluster-name: Beijing
+        group: shard_1
+        cluster-name: Shanghai
         metadata:
           leader: false
+          nodeId: 3
+zookeeper:
+  address: 127.0.0.1:2181
+
+

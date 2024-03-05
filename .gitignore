@@ -1,8 +1,0 @@
-/.idea
-**/target
-!/z-nacos/target
-!/z-nacos2/target
-/z-nacos/logs
-/z-nacos2/logs
-/demo/src/main/resources/goods.csv
-**/*.iml

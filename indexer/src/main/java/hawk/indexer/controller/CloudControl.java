@@ -17,7 +17,7 @@ import java.util.List;
 public class CloudControl {
 
     private String ip = InetAddress.getLocalHost().getHostAddress();
-    @Value("server.port")
+    @Value("${server.port}")
     private String port;
 
     @Resource
