@@ -1,5 +1,6 @@
 package hawk.segment.core;
 
+import com.alibaba.fastjson.JSON;
 import lombok.Data;
 
 import java.util.Objects;
@@ -25,5 +26,10 @@ public class Term {
     @Override
     public int hashCode() {
         return Objects.hash(value, pos, fieldName);
+    }
+
+    @Override
+    public String toString(){
+        return JSON.toJSONString(this);
     }
 }

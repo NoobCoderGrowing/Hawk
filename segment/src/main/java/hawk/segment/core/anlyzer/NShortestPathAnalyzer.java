@@ -4,6 +4,8 @@ import hawk.segment.core.*;
 import hawk.segment.core.graph.Edge;
 import hawk.segment.core.graph.Vertex;
 import hawk.segment.core.Term;
+import hawk.segment.demo.DemoEdge;
+import hawk.segment.demo.DemoVertex;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
@@ -23,6 +25,10 @@ public class NShortestPathAnalyzer implements Analyzer {
     private final static int PHRASE_MAX_LEN = 20;
 
     private HashSet<String> NPathSet = new HashSet<String>(621950);
+
+    public NShortestPathAnalyzer() {
+        loadNPathDic();
+    }
 
     public NShortestPathAnalyzer( int n) {
         this.n = n;
@@ -49,7 +55,31 @@ public class NShortestPathAnalyzer implements Analyzer {
         }
     }
 
+
+
     public HashSet<Term> anlyze(String value, String fieldName){
+        HashSet<Term> result = new HashSet<>();
+        if(value==null || value.length() == 0){ // check for empty str
+            return result;
+        }
+        value = stringTools.normalizeString(value);
+        String[] strArr = value.split(" ");
+        HanPinDigSeg hanPinDigSeg = new HanPinDigSeg();
+        int pos = 0;
+        for (int i = 0; i < strArr.length; i++) {
+            if(i > 0) {
+                pos ++;
+            }
+            //分割汉字、数字、英语字母成三个list
+            strArr[i] = stringTools.splitChineseDigitEnglishByComma(strArr[i]);
+            pos = stringTools.collectHanPinDigit(strArr[i], hanPinDigSeg, pos);
+        }
+        tokenize(hanPinDigSeg, result, fieldName);
+        return result;
+    }
+
+    public HashSet<Term> anlyze(String value, String fieldName, int n){
+        this.n = n;
         HashSet<Term> result = new HashSet<>();
         if(value==null || value.length() == 0){ // check for empty str
             return result;
@@ -168,33 +198,29 @@ public class NShortestPathAnalyzer implements Analyzer {
     public void computeNShortestPath(List<Vertex> graph){
         for (int i = 1; i < graph.size(); i++) {
             Vertex current = graph.get(i);
-            PriorityQueue<Map.Entry<Double,Vertex>> nPathsTable = current.getNPathsTable();
-            if(i==1){
-                Vertex first = graph.get(0);
-                nPathsTable.add(new AbstractMap.SimpleEntry<Double, Vertex>(1.0, first));
-                continue;
-            }else{
-                for (int j = 0; j < i; j++) {
-                    Vertex preNode = graph.get(j);
-                    if(current.getInEdges().containsKey(preNode.getId())){
-                        Edge curEdge = current.getInEdges().get(preNode.getId());
-                        PriorityQueue<Map.Entry<Double,Vertex>> preNodePathsTable = preNode.getNPathsTable();
-                        if(preNodePathsTable.size()==0){// 和原点相连的词
-                            nPathsTable.add(new AbstractMap.SimpleEntry<>(1.0, preNode));
-                        }
-                        for (Map.Entry<Double, Vertex> entry : preNodePathsTable) {
-                            Double length = entry.getKey();
-                            length += curEdge.getCost();
-                            if(nPathsTable.size()<n){
-                                nPathsTable.add(new AbstractMap.SimpleEntry<>(length,preNode));
-                            }else if(length < nPathsTable.peek().getKey()){//这里
-                                nPathsTable.poll();
-                                nPathsTable.add(new AbstractMap.SimpleEntry<>(length,preNode));
-                            }
+            ArrayList<Triple<Double, Integer, Integer>>  nPathsTable = current.getNPathsTable();
+            for (int j = 0; j < i; j++) {
+                Vertex preNode = graph.get(j);
+                if(current.getInEdges().containsKey(preNode.getId())){
+                    Edge curEdge = current.getInEdges().get(preNode.getId());
+                    ArrayList<Triple<Double, Integer, Integer>> preNodePathsTable = preNode.getNPathsTable();
+                    if(preNodePathsTable.size()==0){// 和原点相连的词
+                        nPathsTable.add(new Triple<>(1.0, preNode.getId(), 0));
+                    }
+                    for (int k = 0; k < preNodePathsTable.size(); k++) {
+                        Double length = preNodePathsTable.get(k).getLeft();
+                        length += curEdge.getCost();
+                        Collections.sort(nPathsTable);
+                        if(nPathsTable.size()< n){
+                            nPathsTable.add(new Triple<>(length, preNode.getId(), k));
+                        }else if(length < nPathsTable.get(nPathsTable.size()-1).getLeft()){
+                            nPathsTable.remove(nPathsTable.size()-1);
+                            nPathsTable.add(new Triple<>(length, preNode.getId(), k));
                         }
                     }
                 }
             }
+
         }
     }
 
@@ -202,32 +228,54 @@ public class NShortestPathAnalyzer implements Analyzer {
     public void retriveNShortestPath(List<Vertex> graph, int pos,
                                                HashSet<Term> termSet, String fieldName){
         Vertex curNode = graph.get(graph.size()-1);
-        getTerm(curNode, graph, termSet, pos, fieldName);
+        getEdge(curNode, graph, termSet, pos, fieldName);
     }
 
     // 回溯时间复杂度为nN^2, n为字符数，N为最短路径数
-    public void getTerm(Vertex curNode, List<Vertex> graph, HashSet<Term> termSet, int pos,
+    public void getEdge(Vertex curNode, List<Vertex> graph, HashSet<Term> termSet, int pos,
                         String fieldName){
         if(curNode == graph.get(0)){
             return;
         }
-        PriorityQueue<Map.Entry<Double, Vertex>> nPathsTable = curNode.getNPathsTable();
-        Iterator<Map.Entry<Double, Vertex>> it = nPathsTable.iterator();
-        while(it.hasNext()){
-            Map.Entry<Double, Vertex> entry = it.next();
-            Vertex prevNode = entry.getValue();
-            Edge edge = curNode.getInEdges().get(prevNode.getId());
+        ArrayList<Triple<Double, Integer, Integer>>  nPathsTable = curNode.getNPathsTable();
+        while(nPathsTable.size()!=0){
+            Triple<Double, Integer, Integer> entry = nPathsTable.get(0);
+            Integer prevNodeID = entry.getMid();
+            Integer prevEntry = entry.getRight();
+            Edge edge = curNode.getInEdges().get(prevNodeID);
             //计算token的起始位置
-            int startPos = prevNode.getId();
+            int startPos = prevNodeID;
             startPos += pos;
             Term term = new Term();
             term.setValue(edge.getWord());
             term.setPos(startPos);
             term.setFieldName(fieldName);
             termSet.add(term);
-            it.remove();
-            getTerm(prevNode, graph, termSet, pos,fieldName);
+            nPathsTable.remove(0);
+            helper(graph, prevNodeID, prevEntry, pos, fieldName, termSet);
         }
+    }
+
+    public void helper(List<Vertex> graph, Integer curNodeID, Integer curEntry, int pos, String fieldName,
+                       HashSet<Term> termSet){
+        if(curNodeID == 0){
+            return;
+        }
+        Vertex curNode = graph.get(curNodeID);
+        ArrayList<Triple<Double, Integer, Integer>>  nPathsTable = curNode.getNPathsTable();
+        Triple<Double, Integer, Integer> entry = nPathsTable.get(curEntry);
+        Integer prevNodeID = entry.getMid();
+        Integer prevEntry = entry.getRight();
+        Edge edge = curNode.getInEdges().get(prevNodeID);
+        int startPos = prevNodeID;
+        startPos += pos;
+
+        Term term = new Term();
+        term.setValue(edge.getWord());
+        term.setPos(startPos);
+        term.setFieldName(fieldName);
+        termSet.add(term);
+        helper(graph, prevNodeID, prevEntry, pos, fieldName, termSet);
     }
 
 //    public static void main(String[] args) throws InterruptedException {
