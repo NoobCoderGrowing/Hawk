@@ -2,8 +2,7 @@ package hawk.recall.reader;
 
 import directory.Directory;
 import directory.MMapDirectory;
-import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.fst.FST;
+import io.github.noobcodergrowing.JFST.FST;
 import util.NumericTrie;
 import common.Pair;
 
@@ -20,7 +19,7 @@ public abstract class DirectoryReader {
         return null;
     }
 
-    public abstract FST<BytesRef> getTermFST();
+    public abstract FST getTermFST();
 
     public abstract MappedByteBuffer getFRQBuffer();
 

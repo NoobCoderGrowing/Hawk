@@ -1,39 +1,43 @@
 package demo;
 
-import org.apache.lucene.util.*;
-import org.apache.lucene.util.fst.*;
+import io.github.noobcodergrowing.JFST.FST;
+import io.github.noobcodergrowing.JFST.fstNode;
+import io.github.noobcodergrowing.JFST.fstPair;
 
-import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
-
 
 public class FSTBuild {
 
-    public static void main(String[] args) throws IOException {
-        //构造FST
-        // Input values (keys). These must be provided to Builder in Unicode sorted order!
-        String inputValues[] = {"cat","da","daa", "daaa","daaaa","daaaaa","daaaaaaaa","daaaaaaaaa",
-                "daaaaaaaaaa","dog", "dogs",};
-        long outputValues[] = {1,2,3,9,5,6,7,8, 13,10,11};
+    public static String[] str2Array(String str) {
+        int len = str.length();
+        String[] ret = new String[len];
+        for (int i = 0; i < len; i++) {
+            ret[i] = String.valueOf(str.charAt(i));
+        }
+        return ret;
+    }
+
+    public static void main(String[] args) {
+        String[] inputValues = {"cat", "da", "daa", "daaa", "daaaa", "daaaaa", "daaaaaaaa", "daaaaaaaaa",
+                "daaaaaaaaaa", "dog", "dogs"};
+        long[] outputValues = {1, 2, 3, 9, 5, 6, 7, 8, 13, 10, 11};
         HashMap<String, Long> map = new HashMap<>();
-        PositiveIntOutputs outputs = PositiveIntOutputs.getSingleton();
-        Builder<Long> builder = new Builder<Long>(FST.INPUT_TYPE.BYTE1, outputs);
-        BytesRefBuilder scratchBytes = new BytesRefBuilder();
-        IntsRefBuilder scratchInts = new IntsRefBuilder();
         for (int i = 0; i < inputValues.length; i++) {
             map.put(inputValues[i], outputValues[i]);
-            scratchBytes.copyChars(inputValues[i]);
-            builder.add(Util.toIntsRef(scratchBytes.get(), scratchInts), outputValues[i]);
         }
-        FST<Long> fst = builder.finish();
+        Arrays.sort(inputValues);
+        ArrayList<fstPair<String[], Long>> inputs = new ArrayList<>();
+        for (String inputValue : inputValues) {
+            inputs.add(new fstPair<>(str2Array(inputValue), map.get(inputValue)));
+        }
 
-        //根据key查询value
-        Long value = Util.get(fst, new BytesRef("dogs"));
-        System.out.println(value);
-        IntsRef key = Util.getByOutput(fst, value);
-        System.out.println(Util.toBytesRef(key,scratchBytes).utf8ToString());
+        FST fst = new FST();
+        fst.build(inputs);
 
-        System.out.println(RamUsageEstimator.shallowSizeOf(fst));;
-        System.out.println(RamUsageEstimator.shallowSizeOf(map));
+        fstPair<ArrayList<fstNode>, Long> searchRet = fst.search(str2Array("dogs"));
+        System.out.println(searchRet.getValue());
+        System.out.println(fst.search(str2Array("dogs")));
     }
 }

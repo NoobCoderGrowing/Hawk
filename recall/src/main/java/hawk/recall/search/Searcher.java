@@ -11,14 +11,15 @@ import hawk.recall.query.Query;
 import hawk.recall.query.StringQuery;
 import hawk.recall.query.TermQuery;
 import hawk.recall.reader.DirectoryReader;
+import hawk.recall.reader.TermFstUtil;
 import hawk.recall.similarity.Similarity;
 import hawk.segment.core.Term;
 import hawk.segment.core.anlyzer.Analyzer;
+import io.github.noobcodergrowing.JFST.FST;
+import io.github.noobcodergrowing.JFST.fstNode;
+import io.github.noobcodergrowing.JFST.fstPair;
 import lombok.extern.slf4j.Slf4j;
 import net.jpountz.lz4.LZ4FastDecompressor;
-import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.fst.FST;
-import org.apache.lucene.util.fst.Util;
 
 import util.DataInput;
 import util.NumericTrie;
@@ -27,7 +28,6 @@ import common.IndexFormatConfig;
 import common.Pair;
 
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -73,19 +73,15 @@ public class Searcher {
         String term = query.getTerm();
         HashMap<String, Pair<byte[], Float>> fdmMap = directoryReader.getFDMMap();
         float averageDocLength = fdmMap.get(field).getRight();
-        FST<BytesRef> termFST = directoryReader.getTermFST();
+        FST termFST = directoryReader.getTermFST();
         MappedByteBuffer frqMappedBuffer = directoryReader.getFRQBuffer();
         ByteBuffer frqBuffer = frqMappedBuffer.asReadOnlyBuffer();
-        BytesRef value = null;
-        try {
-            value = Util.get(termFST, new BytesRef(field.concat(":").concat(term)));
-        } catch (IOException e) {
-            log.error("error searching fst");
-            System.exit(1);
+        fstPair<ArrayList<fstNode>, Long> searchRet =
+                termFST.search(TermFstUtil.toCharArray(TermFstUtil.termKey(field, term)));
+        if (searchRet == null) {
+            return null;
         }
-        if(value == null) return null;
-        byte[] frqOffsetBytes = value.bytes;
-        long frqOffset = DataInput.readVlong(frqOffsetBytes);
+        long frqOffset = searchRet.getValue();
         WrapInt frqOffsetWrapper = new WrapInt((int) frqOffset);
         int termFrequency = DataInput.readVintAtIndex(frqBuffer, frqOffsetWrapper);
         ScoreDoc[] hits = new ScoreDoc[termFrequency];

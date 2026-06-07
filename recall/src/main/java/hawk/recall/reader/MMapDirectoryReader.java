@@ -2,11 +2,9 @@ package hawk.recall.reader;
 
 import directory.Directory;
 import directory.memory.MMap;
+import io.github.noobcodergrowing.JFST.FST;
+import io.github.noobcodergrowing.JFST.fstPair;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.BytesRefBuilder;
-import org.apache.lucene.util.IntsRefBuilder;
-import org.apache.lucene.util.fst.*;
 import util.DataInput;
 import util.NumberUtil;
 import util.NumericTrie;
@@ -19,6 +17,8 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.TreeMap;
 
@@ -35,7 +35,7 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     private MappedByteBuffer frqBuffer;
 
-    private FST<BytesRef> termFST;
+    private FST termFST;
 
     private HashMap<String, NumericTrie> numericTries;
 
@@ -140,10 +140,7 @@ public class MMapDirectoryReader extends DirectoryReader {
     }
 
     public void constructFSTNumericTrie(){
-        ByteSequenceOutputs outputs = ByteSequenceOutputs.getSingleton();
-        Builder<BytesRef> builder = new Builder<BytesRef>(FST.INPUT_TYPE.BYTE1, outputs);
-        BytesRefBuilder scratchBytes = new BytesRefBuilder();
-        IntsRefBuilder scratchInts = new IntsRefBuilder();
+        ArrayList<fstPair<String, Long>> stringTerms = new ArrayList<>();
 
         String dirPath = directory.getPath().toAbsolutePath().toString();
         String timPath = dirPath + "/1.tim";
@@ -162,17 +159,23 @@ public class MMapDirectoryReader extends DirectoryReader {
                 byte[] offset = DataInput.readVlongBytes(buffer);
                 byte fieldType = fdmMap.get(fieldName).getLeft()[0];
                 if((fieldType & 0b00001000) != 0){ // String term
+                    long frqOffset = DataInput.readVlong(offset);
                     log.info("FST building ==> " + "filed name is " + fieldName +", field value is " +
-                            fieldValue + ", offset is " + DataInput.readLong(offset));
-                    scratchBytes.copyChars(fieldName.concat(":").concat(fieldValue));
-                    BytesRef bytesRef = new BytesRef(offset);
-                    builder.add(Util.toIntsRef(scratchBytes.get(), scratchInts), bytesRef);
+                            fieldValue + ", offset is " + frqOffset);
+                    stringTerms.add(new fstPair<>(
+                            TermFstUtil.termKey(fieldName, fieldValue), frqOffset));
                 } else if ((fieldType & 0b00000100)!= 0) { // double term
                     constructNumericTrieMap(fieldName, fieldValueBytes, offset, 64 , 4);
                 }
             }
-            this.termFST = builder.finish();
             MMap.unMMap(buffer);
+            stringTerms.sort(Comparator.comparing(fstPair::getKey));
+            ArrayList<fstPair<String[], Long>> fstInput = new ArrayList<>(stringTerms.size());
+            for (fstPair<String, Long> entry : stringTerms) {
+                fstInput.add(new fstPair<>(TermFstUtil.toCharArray(entry.getKey()), entry.getValue()));
+            }
+            this.termFST = new FST();
+            this.termFST.build(fstInput);
             log.info("end of constructing FST and numericTrie");
         } catch (FileNotFoundException e) {
             log.error("tim file does not exist");
@@ -204,7 +207,7 @@ public class MMapDirectoryReader extends DirectoryReader {
     }
 
     @Override
-    public FST<BytesRef> getTermFST() {
+    public FST getTermFST() {
         return this.termFST;
     }
 
