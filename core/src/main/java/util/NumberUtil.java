@@ -1,6 +1,6 @@
 package util;
 
-import writer.PrefixedNumber;
+import common.PrefixedNumber;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;

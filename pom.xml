@@ -13,7 +13,6 @@
         <module>segment</module>
         <module>recall</module>
         <module>core</module>
-        <module>shard-control</module>
         <module>demo</module>
     </modules>
     <parent>

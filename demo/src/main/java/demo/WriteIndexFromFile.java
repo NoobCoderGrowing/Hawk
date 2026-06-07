@@ -5,10 +5,10 @@ import document.Document;
 import field.DoubleField;
 import field.Field;
 import field.StringField;
+import hawk.indexer.writer.IndexWriter;
+import hawk.indexer.writer.config.IndexConfig;
 import hawk.segment.core.anlyzer.Analyzer;
 import hawk.segment.core.anlyzer.NShortestPathAnalyzer;
-import writer.IndexConfig;
-import writer.IndexWriter;
 
 import java.io.BufferedReader;
 import java.io.FileReader;

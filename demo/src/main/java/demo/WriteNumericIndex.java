@@ -4,8 +4,8 @@ import directory.MMapDirectory;
 import document.Document;
 import field.DoubleField;
 import field.Field;
-import writer.IndexConfig;
-import writer.IndexWriter;
+import hawk.indexer.writer.IndexWriter;
+import hawk.indexer.writer.config.IndexConfig;
 import hawk.segment.core.anlyzer.Analyzer;
 import hawk.segment.core.anlyzer.NShortestPathAnalyzer;
 

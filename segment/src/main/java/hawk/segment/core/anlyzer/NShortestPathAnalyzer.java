@@ -4,8 +4,6 @@ import hawk.segment.core.*;
 import hawk.segment.core.graph.Edge;
 import hawk.segment.core.graph.Vertex;
 import hawk.segment.core.Term;
-import hawk.segment.demo.DemoEdge;
-import hawk.segment.demo.DemoVertex;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 

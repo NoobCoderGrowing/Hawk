@@ -5,13 +5,14 @@ import directory.Directory;
 import directory.MMapDirectory;
 import document.Document;
 import field.DoubleField;
+import hawk.indexer.writer.config.IndexConfig;
+import hawk.recall.config.SearchConfig;
+import hawk.recall.query.NumericRangeQuery;
+import hawk.recall.reader.DirectoryReader;
+import hawk.recall.search.ScoreDoc;
+import hawk.recall.search.Searcher;
 import hawk.segment.core.anlyzer.Analyzer;
 import hawk.segment.core.anlyzer.NShortestPathAnalyzer;
-import reader.DirectoryReader;
-import search.NumericRangeQuery;
-import search.ScoreDoc;
-import search.Searcher;
-import writer.IndexConfig;
 
 import java.io.IOException;
 import java.nio.file.Paths;
@@ -26,7 +27,7 @@ public class SearchByNumericRangeQuery {
         DirectoryReader directoryReader = DirectoryReader.open(directory);
         Analyzer analyzer = new NShortestPathAnalyzer(1);
         IndexConfig indexConfig = new IndexConfig(analyzer);
-        Searcher searcher = new Searcher(directoryReader, indexConfig);
+        Searcher searcher = new Searcher(directoryReader, new SearchConfig(analyzer), indexConfig);
         NumericRangeQuery query = new NumericRangeQuery("price", 5.7, 18.56);
         ScoreDoc[] hits = searcher.search(query, 10);
         List<Document> documents = new ArrayList<>();

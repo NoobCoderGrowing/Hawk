@@ -1,8 +1,8 @@
 package util;
 
 
-import writer.ByteReference;
-import writer.Pair;
+import common.ByteReference;
+import common.Pair;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
