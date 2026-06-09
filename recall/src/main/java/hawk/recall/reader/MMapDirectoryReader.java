@@ -1,7 +1,7 @@
 package hawk.recall.reader;
 
 import directory.Directory;
-import directory.LiveDocsStore;
+import directory.DeletedIdsStore;
 import directory.PkMapStore;
 import directory.memory.MMap;
 import io.github.noobcodergrowing.JFST.FST;
@@ -21,10 +21,11 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.BitSet;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 @Slf4j
@@ -47,7 +48,9 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     private Map<Long, Integer> pkMap;
 
-    private BitSet liveDocs;
+    private Map<Integer, Long> docIdToUniqueId;
+
+    private HashSet<Long> deletedUniqueIds;
 
     public MMapDirectoryReader(Directory directory) {
         this.directory = directory;
@@ -69,10 +72,13 @@ public class MMapDirectoryReader extends DirectoryReader {
     private void loadDeleteMetadata() {
         try {
             this.pkMap = PkMapStore.load(directory.getPath());
-            int preMaxID = directory.getSegmentInfo().getPreMaxID();
-            this.liveDocs = LiveDocsStore.load(directory.getPath(), preMaxID);
+            this.docIdToUniqueId = new HashMap<>();
+            for (Map.Entry<Long, Integer> entry : pkMap.entrySet()) {
+                docIdToUniqueId.put(entry.getValue(), entry.getKey());
+            }
+            this.deletedUniqueIds = DeletedIdsStore.load(directory.getPath());
         } catch (IOException e) {
-            log.error("failed to load pk.map or live.docs");
+            log.error("failed to load pk.map or deleted.ids");
             throw new RuntimeException(e);
         }
     }
@@ -235,12 +241,19 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     @Override
     public boolean isLive(int docID) {
-        return docID > 0 && liveDocs.get(docID);
+        if (docID <= 0) {
+            return false;
+        }
+        Long uniqueID = docIdToUniqueId.get(docID);
+        if (uniqueID == null) {
+            return false;
+        }
+        return !deletedUniqueIds.contains(uniqueID);
     }
 
     @Override
     public int numDocs() {
-        return liveDocs.cardinality();
+        return pkMap.size() - deletedUniqueIds.size();
     }
 
     @Override

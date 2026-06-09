@@ -7,9 +7,9 @@ import util.NumericTrie;
 import common.Pair;
 
 import java.nio.MappedByteBuffer;
-import java.util.BitSet;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 public abstract class DirectoryReader {
@@ -41,7 +41,7 @@ public abstract class DirectoryReader {
 
     public abstract Map<Long, Integer> getPkMap();
 
-    public abstract BitSet getLiveDocs();
+    public abstract Set<Long> getDeletedUniqueIds();
 
     public abstract Directory getDirectory();
 

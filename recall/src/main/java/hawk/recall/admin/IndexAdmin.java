@@ -1,14 +1,14 @@
 package hawk.recall.admin;
 
+import directory.DeletedIdsStore;
 import directory.Directory;
-import directory.LiveDocsStore;
 import hawk.recall.reader.DirectoryReader;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
-import java.util.BitSet;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Data
@@ -20,30 +20,28 @@ public class IndexAdmin {
 
     private final Map<Long, Integer> pkMap;
 
-    private final BitSet liveDocs;
+    private final Set<Long> deletedUniqueIds;
 
     public IndexAdmin(DirectoryReader directoryReader, Directory directory) {
         this.directoryReader = directoryReader;
         this.directory = directory;
         this.pkMap = directoryReader.getPkMap();
-        this.liveDocs = directoryReader.getLiveDocs();
+        this.deletedUniqueIds = directoryReader.getDeletedUniqueIds();
     }
 
     public boolean deleteDoc(long uniqueID) {
-        Integer docID = pkMap.get(uniqueID);
-        if (docID == null) {
+        if (!pkMap.containsKey(uniqueID)) {
             return false;
         }
-        if (!liveDocs.get(docID)) {
+        if (!deletedUniqueIds.add(uniqueID)) {
             return false;
         }
-        liveDocs.clear(docID);
         try {
-            LiveDocsStore.save(directory.getPath(), liveDocs);
+            DeletedIdsStore.save(directory.getPath(), deletedUniqueIds);
         } catch (IOException e) {
-            throw new RuntimeException("failed to save live.docs", e);
+            throw new RuntimeException("failed to save deleted.ids", e);
         }
-        log.info("deleted doc uniqueID={}, docID={}", uniqueID, docID);
+        log.info("deleted doc uniqueID={}, docID={}", uniqueID, pkMap.get(uniqueID));
         return true;
     }
 }
