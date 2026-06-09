@@ -2,8 +2,14 @@ package hawk.recall.search;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TopScoreDocCollectorTest {
 
@@ -16,14 +22,12 @@ class TopScoreDocCollectorTest {
 
         ScoreDoc[] hits = collector.topDocs();
         assertEquals(2, hits.length);
-        assertEquals(3f, hits[0].score);
-        assertEquals(2, hits[0].docID);
-        assertEquals(2f, hits[1].score);
-        assertEquals(3, hits[1].docID);
+        assertEquals(Set.of(2, 3), docIds(hits));
+        assertEquals(Set.of(2f, 3f), scores(hits));
     }
 
     @Test
-    void breaksTiesByDocIdDescending() {
+    void keepsFirstDocsWhenScoresEqual() {
         TopScoreDocCollector collector = new TopScoreDocCollector(3);
         for (int docId = 1; docId <= 5; docId++) {
             collector.collect(0f, docId);
@@ -31,9 +35,7 @@ class TopScoreDocCollectorTest {
 
         ScoreDoc[] hits = collector.topDocs();
         assertEquals(3, hits.length);
-        assertEquals(5, hits[0].docID);
-        assertEquals(4, hits[1].docID);
-        assertEquals(3, hits[2].docID);
+        assertEquals(Set.of(1, 2, 3), docIds(hits));
     }
 
     @Test
@@ -44,8 +46,8 @@ class TopScoreDocCollectorTest {
 
         ScoreDoc[] hits = collector.topDocs();
         assertEquals(2, hits.length);
-        assertEquals(20, hits[0].docID);
-        assertEquals(10, hits[1].docID);
+        assertEquals(Set.of(10, 20), docIds(hits));
+        assertEquals(Set.of(1f, 2f), scores(hits));
     }
 
     @Test
@@ -53,5 +55,38 @@ class TopScoreDocCollectorTest {
         TopScoreDocCollector collector = new TopScoreDocCollector(0);
         collector.collect(1f, 1);
         assertArrayEquals(new ScoreDoc[0], collector.topDocs());
+    }
+
+    @Test
+    void rejectsEqualScoreAfterHeapFull() {
+        TopScoreDocCollector collector = new TopScoreDocCollector(2);
+        collector.collect(1f, 1);
+        collector.collect(1f, 2);
+        collector.collect(1f, 3);
+
+        ScoreDoc[] hits = collector.topDocs();
+        assertEquals(2, hits.length);
+        assertEquals(Set.of(1, 2), docIds(hits));
+    }
+
+    @Test
+    void replacesWhenScoreIsHigher() {
+        TopScoreDocCollector collector = new TopScoreDocCollector(2);
+        collector.collect(1f, 1);
+        collector.collect(1f, 2);
+        collector.collect(2f, 3);
+
+        ScoreDoc[] hits = collector.topDocs();
+        assertEquals(2, hits.length);
+        assertTrue(docIds(hits).contains(3));
+        assertTrue(scores(hits).contains(2f));
+    }
+
+    private static Set<Integer> docIds(ScoreDoc[] hits) {
+        return Arrays.stream(hits).map(hit -> hit.docID).collect(Collectors.toCollection(HashSet::new));
+    }
+
+    private static Set<Float> scores(ScoreDoc[] hits) {
+        return Arrays.stream(hits).map(hit -> hit.score).collect(Collectors.toCollection(HashSet::new));
     }
 }

@@ -1,6 +1,5 @@
 package hawk.recall.search;
 
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.PriorityQueue;
 
@@ -16,16 +15,6 @@ public final class TopScoreDocCollector {
         return Integer.compare(left.docID, right.docID);
     };
 
-    private static final Comparator<ScoreDoc> RESULT_ORDER = (left, right) -> {
-        if (left.score > right.score) {
-            return -1;
-        }
-        if (left.score < right.score) {
-            return 1;
-        }
-        return Integer.compare(right.docID, left.docID);
-    };
-
     private final int topN;
 
     private final PriorityQueue<ScoreDoc> minHeap;
@@ -39,31 +28,22 @@ public final class TopScoreDocCollector {
         if (topN <= 0) {
             return;
         }
-        ScoreDoc candidate = new ScoreDoc(score, docId);
         if (minHeap.size() < topN) {
-            minHeap.offer(candidate);
+            minHeap.offer(new ScoreDoc(score, docId));
             return;
         }
         ScoreDoc worst = minHeap.peek();
-        if (isBetter(candidate, worst)) {
-            minHeap.poll();
-            minHeap.offer(candidate);
+        if (score <= worst.score) {
+            return;
         }
+        minHeap.poll();
+        minHeap.offer(new ScoreDoc(score, docId));
     }
 
     public ScoreDoc[] topDocs() {
         if (minHeap.isEmpty()) {
             return new ScoreDoc[0];
         }
-        ScoreDoc[] results = minHeap.toArray(new ScoreDoc[0]);
-        Arrays.sort(results, RESULT_ORDER);
-        return results;
-    }
-
-    private static boolean isBetter(ScoreDoc candidate, ScoreDoc currentWorst) {
-        if (candidate.score > currentWorst.score) {
-            return true;
-        }
-        return candidate.score == currentWorst.score && candidate.docID > currentWorst.docID;
+        return minHeap.toArray(new ScoreDoc[0]);
     }
 }
