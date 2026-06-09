@@ -79,19 +79,22 @@ public class DocWriter implements Runnable {
         HashMap<FieldTermPair, int[]> docIVT = (HashMap<FieldTermPair, int[]>) docFDMIVT.getRight();
         // flush when ram usage exceeds configuration
         ramUsageLock.lock();
-        while(bytesUsed.get() + bytesCurDoc.getValue() >= maxRamUsage * 0.95){
-            flush();
-            reset();
+        try {
+            while (bytesUsed.get() + bytesCurDoc.getValue() >= maxRamUsage * 0.95) {
+                flush();
+                reset();
+            }
+            int docID = docIDAllocator.addAndGet(1);
+            registerPrimaryKey(doc);
+            // assemble memory index
+            assembleFDT(docFDT, docID);
+            assembleFDM(docFDM);
+            assembleIVT(docIVT, docID);
+            bytesUsed.addAndGet(bytesCurDoc.getValue() + 8); //8bytes for 2 docID in FDM and IVT
+            log.info("current bytes used： " + bytesUsed.get());
+        } finally {
+            ramUsageLock.unlock();
         }
-        int docID = docIDAllocator.addAndGet(1);
-        registerPrimaryKey(doc);
-        // assemble memory index
-        assembleFDT(docFDT, docID);
-        assembleFDM(docFDM);
-        assembleIVT(docIVT, docID);
-        bytesUsed.addAndGet(bytesCurDoc.getValue() + 8); //8bytes for 2 docID in FDM and IVT
-        log.info("current bytes used： " + bytesUsed.get());
-        ramUsageLock.unlock();
     }
 
     public void assembleFDT(byte[][] docFDT, int docID){
@@ -372,6 +375,9 @@ public class DocWriter implements Runnable {
     }
 
     public void mergetest(int docBase){
+        if (!config.isEnableMerge()) {
+            return;
+        }
         int segCount = directory.getSegmentInfo().getSegCount();
         if(segCount > 1) {
             log.info("merge start now," + " cur segment count is " + segCount + ", cur file number is " +

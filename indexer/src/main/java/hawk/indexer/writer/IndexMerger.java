@@ -275,19 +275,25 @@ public class IndexMerger {
 
     public void merge(){
         HashMap<String, Path> files = directory.getFiles();
-        if(files.size() != 11) { // 1 segment contains 5 files, plus 1 segement.info, thus 2 * 5 + 1
-            log.error("wrong file count " + files.size() + " detected during merge");
-            System.exit(1);
+        int segCount = directory.getSegmentInfo().getSegCount();
+        int expected = segCount * 5 + 1;
+        long segmentFileCount = files.keySet().stream().filter(this::isSegmentFile).count();
+        if (segmentFileCount != expected) {
+            throw new RuntimeException("wrong segment file count " + segmentFileCount
+                    + " detected during merge, expected " + expected);
         }
         mergeStored(files);
         mergeIndexed(files);
         try {
             deleteFiles(files);
         } catch (IOException e) {
-            log.error("delete file errored during merge");
-            System.exit(1);
+            throw new RuntimeException("delete file errored during merge", e);
         }
         this.directory.updateSegInfo(docIDAllocator.get() + this.docBase, -1);
+    }
+
+    private boolean isSegmentFile(String fileName) {
+        return "segment.info".equals(fileName) || fileName.matches("\\d+\\.(fdt|fdx|tim|frq|fdm)");
     }
 
     public void mergeFDX(ArrayList<int[]> seg2FDX, FileChannel seg1FdxFC, FileChannel seg1FdtFC){

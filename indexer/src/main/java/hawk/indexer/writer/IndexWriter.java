@@ -57,6 +57,10 @@ public class IndexWriter {
     private final Map<Long, Integer> pkMap;
 
     public IndexWriter(IndexConfig config, Directory directory) {
+        this(config, directory, true);
+    }
+
+    public IndexWriter(IndexConfig config, Directory directory, boolean loadExistingPkMap) {
         this.config = config;
         this.directory = directory;
         this.ivt = new HashMap<>();
@@ -70,10 +74,14 @@ public class IndexWriter {
                 this.blockingQueue);
         this.futures = new ConcurrentLinkedQueue<>();
         this.fdm = new HashMap<>();
-        try {
-            this.pkMap = new ConcurrentHashMap<>(PkMapStore.load(directory.getPath()));
-        } catch (IOException e) {
-            throw new RuntimeException("failed to load pk.map", e);
+        if (loadExistingPkMap) {
+            try {
+                this.pkMap = new ConcurrentHashMap<>(PkMapStore.load(directory.getPath()));
+            } catch (IOException e) {
+                throw new RuntimeException("failed to load pk.map", e);
+            }
+        } else {
+            this.pkMap = new ConcurrentHashMap<>();
         }
     }
 
@@ -86,8 +94,21 @@ public class IndexWriter {
 
     // must call after all addDoc
     public void commit() throws Exception{
-        for (int i = 0; i < futures.size(); i++) {
-            futures.poll().get();
+        try {
+            Future<?> future;
+            while ((future = futures.poll()) != null) {
+                future.get();
+            }
+        } catch (ExecutionException e) {
+            threadPoolExecutor.shutdownNow();
+            Throwable cause = e.getCause();
+            if (cause instanceof Exception) {
+                throw (Exception) cause;
+            }
+            throw e;
+        } catch (Exception e) {
+            threadPoolExecutor.shutdownNow();
+            throw e;
         }
         threadPoolExecutor.shutdown();
         if(ivt.size() != 0 || fdt.size() != 0) {

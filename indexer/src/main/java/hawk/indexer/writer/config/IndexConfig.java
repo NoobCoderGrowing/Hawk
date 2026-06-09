@@ -16,6 +16,8 @@ public class IndexConfig extends IndexFormatConfig {
 
     private int indexerThreadNum;
 
+    private boolean enableMerge = true;
+
     public IndexConfig(Analyzer analyzer) {
         this(analyzer, 1024 * 1024 * 1024L, Constants.PROCESSOR_NUM);
     }

@@ -14,6 +14,7 @@
         <module>recall</module>
         <module>core</module>
         <module>demo</module>
+        <module>benchmark</module>
     </modules>
     <parent>
         <groupId>org.springframework.boot</groupId>
