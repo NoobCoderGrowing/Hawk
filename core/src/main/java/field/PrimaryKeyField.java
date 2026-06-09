@@ -4,7 +4,9 @@ import util.NumberUtil;
 
 import java.nio.charset.StandardCharsets;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import lombok.Data;
 
+@Data
 public class PrimaryKeyField implements Field {
 
     private String name;
@@ -30,15 +32,6 @@ public class PrimaryKeyField implements Field {
     @Override
     public Enum<Stored> isStored() {
         return Stored.YES;
-    }
-
-    @Override
-    public String getName() {
-        return name;
-    }
-
-    public long getValue() {
-        return value;
     }
 
     @Override

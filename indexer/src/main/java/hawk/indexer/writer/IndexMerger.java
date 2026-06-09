@@ -6,6 +6,7 @@ import hawk.indexer.writer.config.IndexConfig;
 import util.DataInput;
 import util.DataOutput;
 import util.WrapLong;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -22,6 +23,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
+@Data
 public class IndexMerger {
 
     private Directory directory;

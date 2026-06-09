@@ -6,6 +6,7 @@ import directory.PkMapStore;
 import directory.memory.MMap;
 import io.github.noobcodergrowing.JFST.FST;
 import io.github.noobcodergrowing.JFST.fstPair;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import util.DataInput;
 import util.NumberUtil;
@@ -27,21 +28,22 @@ import java.util.Map;
 import java.util.TreeMap;
 
 @Slf4j
+@Data
 public class MMapDirectoryReader extends DirectoryReader {
 
     private Directory directory;
 
-    private TreeMap<Integer, byte[]> fdxMap;
+    private TreeMap<Integer, byte[]> fDXMap;
 
-    private MappedByteBuffer fdtBuffer;
+    private MappedByteBuffer fDTBuffer;
 
-    private HashMap<String, Pair<byte[], Float>> fdmMap;
+    private HashMap<String, Pair<byte[], Float>> fDMMap;
 
-    private MappedByteBuffer frqBuffer;
+    private MappedByteBuffer fRQBuffer;
 
     private FST termFST;
 
-    private HashMap<String, NumericTrie> numericTries;
+    private HashMap<String, NumericTrie> numericTrieMap;
 
     private Map<Long, Integer> pkMap;
 
@@ -49,9 +51,9 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     public MMapDirectoryReader(Directory directory) {
         this.directory = directory;
-        this.fdxMap = new TreeMap<>();
-        this.fdmMap = new HashMap<>();
-        this.numericTries = new HashMap<>();
+        this.fDXMap = new TreeMap<>();
+        this.fDMMap = new HashMap<>();
+        this.numericTrieMap = new HashMap<>();
         init();
     }
 
@@ -87,7 +89,7 @@ public class MMapDirectoryReader extends DirectoryReader {
             while (buffer.position() < buffer.limit()) {
                 int key = DataInput.readVint(buffer);
                 byte[] offset = DataInput.readVlongBytes(buffer);
-                this.fdxMap.put(key, offset);
+                this.fDXMap.put(key, offset);
             }
             fc.close();
         } catch (FileNotFoundException e) {
@@ -105,7 +107,7 @@ public class MMapDirectoryReader extends DirectoryReader {
         try {
             MappedByteBuffer buffer = MMap.mmapFile(fdtPath);// .fdt must not exceed 4GB
             buffer.load(); // force load buffer content into memory
-            this.fdtBuffer = buffer;
+            this.fDTBuffer = buffer;
         } catch (FileNotFoundException e) {
             throw new RuntimeException(e);
         } catch (IOException e) {
@@ -131,7 +133,7 @@ public class MMapDirectoryReader extends DirectoryReader {
                 int fieldLengthSum = buffer.getInt();
                 int docCount = buffer.getInt();
                 float avgFieldLength = fieldLengthSum/docCount;
-                fdmMap.put(fieldName, new Pair<>(new byte[]{fieldType}, avgFieldLength));
+                fDMMap.put(fieldName, new Pair<>(new byte[]{fieldType}, avgFieldLength));
             }
             fc.close();
         } catch (FileNotFoundException e) {
@@ -149,7 +151,7 @@ public class MMapDirectoryReader extends DirectoryReader {
         try {
             MappedByteBuffer buffer = MMap.mmapFile(frqPath);// .frq must not exceed 4GB
             buffer.load(); // force load buffer content into memory
-            this.frqBuffer = buffer;
+            this.fRQBuffer = buffer;
         } catch (FileNotFoundException e) {
             log.error("frq file not found during load frq");
             System.exit(1);
@@ -177,7 +179,7 @@ public class MMapDirectoryReader extends DirectoryReader {
                 buffer.get(fieldValueBytes);
                 String fieldValue = new String(fieldValueBytes,StandardCharsets.UTF_8);
                 byte[] offset = DataInput.readVlongBytes(buffer);
-                byte fieldType = fdmMap.get(fieldName).getLeft()[0];
+                byte fieldType = fDMMap.get(fieldName).getLeft()[0];
                 if((fieldType & 0b00001000) != 0){ // String term
                     long frqOffset = DataInput.readVlong(offset);
                     log.info("FST building ==> " + "filed name is " + fieldName +", field value is " +
@@ -216,44 +218,14 @@ public class MMapDirectoryReader extends DirectoryReader {
         int shift = fieldValueBytes[0] & 0xff;
         log.info("NumericTrie Construction ===> " + "field name is " + fieldName + ", shift is " + shift + ", value is "
                 + doubelValue);
-        if(numericTries.containsKey(fieldName)){
-            NumericTrie trie = numericTries.get(fieldName);
+        if(numericTrieMap.containsKey(fieldName)){
+            NumericTrie trie = numericTrieMap.get(fieldName);
             trie.add(key, offset);
         }else {
             NumericTrie trie = new NumericTrie(length, precisionStep);
             trie.add(key, offset);
-            numericTries.put(fieldName, trie);
+            numericTrieMap.put(fieldName, trie);
         }
-    }
-
-    @Override
-    public FST getTermFST() {
-        return this.termFST;
-    }
-
-    @Override
-    public MappedByteBuffer getFRQBuffer() {
-        return this.frqBuffer;
-    }
-
-    @Override
-    public MappedByteBuffer getFDTBuffer() {
-        return this.fdtBuffer;
-    }
-
-    @Override
-    public HashMap<String, NumericTrie> getNumericTrieMap() {
-        return this.numericTries;
-    }
-
-    @Override
-    public HashMap<String, Pair<byte[], Float>> getFDMMap() {
-        return this.fdmMap;
-    }
-
-    @Override
-    public TreeMap<Integer, byte[]> getFDXMap() {
-        return this.fdxMap;
     }
 
     @Override
@@ -272,24 +244,9 @@ public class MMapDirectoryReader extends DirectoryReader {
     }
 
     @Override
-    public Map<Long, Integer> getPkMap() {
-        return pkMap;
-    }
-
-    @Override
-    public BitSet getLiveDocs() {
-        return liveDocs;
-    }
-
-    @Override
-    public Directory getDirectory() {
-        return directory;
-    }
-
-    @Override
     public void close() {
-        MMap.unMMap(fdtBuffer);
-        MMap.unMMap(frqBuffer);
+        MMap.unMMap(fDTBuffer);
+        MMap.unMMap(fRQBuffer);
     }
 
 }

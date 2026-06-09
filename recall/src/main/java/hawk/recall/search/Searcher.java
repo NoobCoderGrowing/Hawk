@@ -19,6 +19,7 @@ import hawk.segment.core.anlyzer.Analyzer;
 import io.github.noobcodergrowing.JFST.FST;
 import io.github.noobcodergrowing.JFST.fstNode;
 import io.github.noobcodergrowing.JFST.fstPair;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import net.jpountz.lz4.LZ4FastDecompressor;
 
@@ -35,6 +36,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Slf4j
+@Data
 public class Searcher {
 
     private DirectoryReader directoryReader;

@@ -3,6 +3,7 @@ package hawk.recall.admin;
 import directory.Directory;
 import directory.LiveDocsStore;
 import hawk.recall.reader.DirectoryReader;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -10,6 +11,7 @@ import java.util.BitSet;
 import java.util.Map;
 
 @Slf4j
+@Data
 public class IndexAdmin {
 
     private final DirectoryReader directoryReader;

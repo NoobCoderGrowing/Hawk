@@ -1,8 +1,10 @@
 package hawk.segment.demo;
 import hawk.segment.core.Triple;
+import lombok.Data;
 
 import java.util.*;
 
+@Data
 public class DemoAnalyzer {
 
     private HashSet<String> NPathSet = new HashSet<String>();
