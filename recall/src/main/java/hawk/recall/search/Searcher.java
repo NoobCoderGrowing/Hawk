@@ -85,17 +85,20 @@ public class Searcher {
         long frqOffset = searchRet.getValue();
         WrapInt frqOffsetWrapper = new WrapInt((int) frqOffset);
         int termFrequency = DataInput.readVintAtIndex(frqBuffer, frqOffsetWrapper);
-        ScoreDoc[] hits = new ScoreDoc[termFrequency];
-        for (int i = 0; i < hits.length; i++) {
+        List<ScoreDoc> hits = new ArrayList<>();
+        for (int i = 0; i < termFrequency; i++) {
             int docID = DataInput.readVintAtIndex(frqBuffer, frqOffsetWrapper);
             int docFrequency = DataInput.readVintAtIndex(frqBuffer,frqOffsetWrapper);
             int docFieldLength = DataInput.readVintAtIndex(frqBuffer,frqOffsetWrapper);
-            float score = Similarity.BM25(directoryReader.getTotalDoc(),termFrequency, docFrequency,
+            if (!directoryReader.isLive(docID)) {
+                continue;
+            }
+            float score = Similarity.BM25(directoryReader.numDocs(),termFrequency, docFrequency,
                     docFieldLength, averageDocLength);
             ScoreDoc hit = new ScoreDoc(score, docID);
-            hits[i] = hit;
+            hits.add(hit);
         }
-        return hits;
+        return hits.toArray(new ScoreDoc[0]);
     }
 
     public ScoreDoc[] searchNumericRange(NumericRangeQuery query){
@@ -120,6 +123,9 @@ public class Searcher {
                     int docID = DataInput.readVintAtIndex(frqBuffer, frqOffsetWrapper);
                     int docFrequency = DataInput.readVintAtIndex(frqBuffer,frqOffsetWrapper);
                     int docFieldLength = DataInput.readVintAtIndex(frqBuffer,frqOffsetWrapper);
+                    if (!directoryReader.isLive(docID)) {
+                        continue;
+                    }
                     float score = 0;
                     ScoreDoc hit = new ScoreDoc(score, docID);
                     resultSet.add(hit);
@@ -274,6 +280,9 @@ public class Searcher {
     public Document doc (ScoreDoc scoreDoc){
         if(scoreDoc == null) return null;
         int docID = scoreDoc.docID;
+        if (!directoryReader.isLive(docID)) {
+            return null;
+        }
         Document document = new Document(scoreDoc.getScore());
         TreeMap<Integer, byte[]> fdxMap = this.directoryReader.getFDXMap();
         MappedByteBuffer fdtMappedBuffer = this.directoryReader.getFDTBuffer();

@@ -1,6 +1,8 @@
 package hawk.recall.reader;
 
 import directory.Directory;
+import directory.LiveDocsStore;
+import directory.PkMapStore;
 import directory.memory.MMap;
 import io.github.noobcodergrowing.JFST.FST;
 import io.github.noobcodergrowing.JFST.fstPair;
@@ -18,8 +20,10 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.TreeMap;
 
 @Slf4j
@@ -39,6 +43,10 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     private HashMap<String, NumericTrie> numericTries;
 
+    private Map<Long, Integer> pkMap;
+
+    private BitSet liveDocs;
+
     public MMapDirectoryReader(Directory directory) {
         this.directory = directory;
         this.fdxMap = new TreeMap<>();
@@ -48,11 +56,23 @@ public class MMapDirectoryReader extends DirectoryReader {
     }
 
     public void init() {
+        loadDeleteMetadata();
         constructFdxMap();
         loadFdt();
         constructFdmMap();
         loadFrq();
         constructFSTNumericTrie();
+    }
+
+    private void loadDeleteMetadata() {
+        try {
+            this.pkMap = PkMapStore.load(directory.getPath());
+            int preMaxID = directory.getSegmentInfo().getPreMaxID();
+            this.liveDocs = LiveDocsStore.load(directory.getPath(), preMaxID);
+        } catch (IOException e) {
+            log.error("failed to load pk.map or live.docs");
+            throw new RuntimeException(e);
+        }
     }
 
     public void constructFdxMap() {
@@ -239,6 +259,31 @@ public class MMapDirectoryReader extends DirectoryReader {
     @Override
     public int getTotalDoc() {
         return directory.getSegmentInfo().getPreMaxID();
+    }
+
+    @Override
+    public boolean isLive(int docID) {
+        return docID > 0 && liveDocs.get(docID);
+    }
+
+    @Override
+    public int numDocs() {
+        return liveDocs.cardinality();
+    }
+
+    @Override
+    public Map<Long, Integer> getPkMap() {
+        return pkMap;
+    }
+
+    @Override
+    public BitSet getLiveDocs() {
+        return liveDocs;
+    }
+
+    @Override
+    public Directory getDirectory() {
+        return directory;
     }
 
     @Override

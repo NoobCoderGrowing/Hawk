@@ -48,9 +48,14 @@ public class DocWriter implements Runnable {
 
     private HashMap<ByteReference, Pair<byte[], int[]>> fdm;
 
+    private Map<Long, Integer> pkMap;
+
+    private BitSet liveDocs;
+
     public DocWriter(AtomicInteger docIDAllocator, Document doc, List fdt, HashMap<FieldTermPair,
             int[][]> ivt, AtomicLong bytesUsed, long maxRamUsage, ReentrantLock ramUsageLock, Directory directory,
-                     IndexConfig config, HashMap<ByteReference, Pair<byte[], int[]>> fdm) {
+                     IndexConfig config, HashMap<ByteReference, Pair<byte[], int[]>> fdm,
+                     Map<Long, Integer> pkMap, BitSet liveDocs) {
         this.docIDAllocator = docIDAllocator;
         this.doc = doc;
         this.fdt = fdt;
@@ -61,6 +66,8 @@ public class DocWriter implements Runnable {
         this.directory = directory;
         this.config = config;
         this.fdm = fdm;
+        this.pkMap = pkMap;
+        this.liveDocs = liveDocs;
     }
 
     @Override
@@ -80,6 +87,7 @@ public class DocWriter implements Runnable {
             reset();
         }
         int docID = docIDAllocator.addAndGet(1);
+        registerPrimaryKey(doc);
         // assemble memory index
         assembleFDT(docFDT, docID);
         assembleFDM(docFDM);
@@ -91,6 +99,18 @@ public class DocWriter implements Runnable {
 
     public void assembleFDT(byte[][] docFDT, int docID){
         fdt.add(new Pair<>(docID, docFDT));
+    }
+
+    private void registerPrimaryKey(Document doc) {
+        PrimaryKeyField pk = (PrimaryKeyField) doc.getFieldMap().get("uniqueID");
+        if (pk == null) {
+            throw new IllegalArgumentException("document missing PrimaryKeyField");
+        }
+        int globalDocID = docIDAllocator.get() + directory.getSegmentInfo().getPreMaxID();
+        if (pkMap.putIfAbsent(pk.getValue(), globalDocID) != null) {
+            throw new IllegalArgumentException("duplicate uniqueID: " + pk.getValue());
+        }
+        liveDocs.set(globalDocID);
     }
     // doc fdm key: filed name; value1:field type, value2: field value length
     // global fdm key: field name; value left: field type; value right1: field value length, value right2: doc count

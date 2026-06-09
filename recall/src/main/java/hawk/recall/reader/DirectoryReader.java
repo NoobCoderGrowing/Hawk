@@ -7,7 +7,9 @@ import util.NumericTrie;
 import common.Pair;
 
 import java.nio.MappedByteBuffer;
+import java.util.BitSet;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.TreeMap;
 
 public abstract class DirectoryReader {
@@ -32,6 +34,16 @@ public abstract class DirectoryReader {
     public abstract TreeMap<Integer, byte[]> getFDXMap();
 
     public abstract int getTotalDoc();
+
+    public abstract boolean isLive(int docID);
+
+    public abstract int numDocs();
+
+    public abstract Map<Long, Integer> getPkMap();
+
+    public abstract BitSet getLiveDocs();
+
+    public abstract Directory getDirectory();
 
     public abstract void close();
 }

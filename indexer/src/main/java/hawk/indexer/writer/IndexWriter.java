@@ -4,17 +4,21 @@ import common.Pair;
 import directory.Directory;
 import document.Document;
 import hawk.indexer.writer.config.IndexConfig;
+import directory.LiveDocsStore;
+import directory.PkMapStore;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.BitSet;
 
 @Data
 @Slf4j
@@ -52,6 +56,10 @@ public class IndexWriter {
 
     private LinkedBlockingQueue<Runnable> blockingQueue;
 
+    private final Map<Long, Integer> pkMap;
+
+    private final BitSet liveDocs;
+
     public IndexWriter(IndexConfig config, Directory directory) {
         this.config = config;
         this.directory = directory;
@@ -66,12 +74,18 @@ public class IndexWriter {
                 this.blockingQueue);
         this.futures = new ConcurrentLinkedQueue<>();
         this.fdm = new HashMap<>();
+        try {
+            this.pkMap = new ConcurrentHashMap<>(PkMapStore.load(directory.getPath()));
+            this.liveDocs = LiveDocsStore.load(directory.getPath(), directory.getSegmentInfo().getPreMaxID());
+        } catch (IOException e) {
+            throw new RuntimeException("failed to load pk.map or live.docs", e);
+        }
     }
 
 // indexing is by default multithreaded.
     public void addDoc(Document doc){
         Future<?> future = threadPoolExecutor.submit(new DocWriter(docIDAllocator, doc, fdt, ivt, bytesUsed,
-                config.getMaxRamUsage(), ramUsageLock, directory, config, fdm));
+                config.getMaxRamUsage(), ramUsageLock, directory, config, fdm, pkMap, liveDocs));
         futures.add(future);
     }
 
@@ -83,14 +97,25 @@ public class IndexWriter {
             } catch (InterruptedException e) {
                 log.info("met InterruptedException during commit ");
             } catch (ExecutionException e) {
-                log.error("met ExecutionException during commit");
+                log.error("met ExecutionException during commit", e.getCause());
+                Throwable cause = e.getCause();
+                if (cause instanceof RuntimeException) {
+                    throw (RuntimeException) cause;
+                }
+                throw new RuntimeException(cause);
             }
         }
         threadPoolExecutor.shutdown();
         if(ivt.size() != 0 || fdt.size() != 0) {
             DocWriter lastDocWriter = new DocWriter(docIDAllocator, null, fdt, ivt, bytesUsed, config.getMaxRamUsage(),
-                    ramUsageLock, directory, config, fdm);
+                    ramUsageLock, directory, config, fdm, pkMap, liveDocs);
             lastDocWriter.flush();
+        }
+        try {
+            PkMapStore.save(directory.getPath(), pkMap);
+            LiveDocsStore.save(directory.getPath(), liveDocs);
+        } catch (IOException e) {
+            throw new RuntimeException("failed to save pk.map or live.docs", e);
         }
     }
 }
