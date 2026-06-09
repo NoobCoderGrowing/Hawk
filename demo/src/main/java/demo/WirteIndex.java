@@ -15,7 +15,7 @@ import java.nio.file.Paths;
 
 public class WirteIndex {
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws Exception {
         MMapDirectory mMapDirectory = new MMapDirectory(Paths.get("/opt/index/1"));
         Analyzer analyzer = new NShortestPathAnalyzer(1);
         IndexConfig indexConfig = new IndexConfig(analyzer);

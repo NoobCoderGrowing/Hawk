@@ -90,20 +90,9 @@ public class IndexWriter {
     }
 
     // must call after all addDoc
-    public void commit(){
+    public void commit() throws Exception{
         for (int i = 0; i < futures.size(); i++) {
-            try {
-                futures.poll().get();
-            } catch (InterruptedException e) {
-                log.info("met InterruptedException during commit ");
-            } catch (ExecutionException e) {
-                log.error("met ExecutionException during commit", e.getCause());
-                Throwable cause = e.getCause();
-                if (cause instanceof RuntimeException) {
-                    throw (RuntimeException) cause;
-                }
-                throw new RuntimeException(cause);
-            }
+            futures.poll().get();
         }
         threadPoolExecutor.shutdown();
         if(ivt.size() != 0 || fdt.size() != 0) {

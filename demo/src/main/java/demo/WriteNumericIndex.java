@@ -15,7 +15,7 @@ import java.nio.file.Paths;
 
 public class WriteNumericIndex {
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws Exception {
         MMapDirectory mMapDirectory = new MMapDirectory(Paths.get("/opt/temp/shard2"));
         Analyzer analyzer = new NShortestPathAnalyzer(1);
         IndexConfig indexConfig = new IndexConfig(analyzer);
