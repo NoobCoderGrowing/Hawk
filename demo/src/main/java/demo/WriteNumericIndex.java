@@ -19,13 +19,13 @@ public class WriteNumericIndex {
         Analyzer analyzer = new NShortestPathAnalyzer(1);
         IndexConfig indexConfig = new IndexConfig(analyzer);
         IndexWriter indexWriter = new IndexWriter(indexConfig, mMapDirectory);
-        Document doc = new Document();
+        Document doc = new Document(0);
         DoubleField field = new DoubleField("price", 5.3, Field.Tokenized.YES, Field.Stored.YES);
         doc.add(field);
         indexWriter.addDoc(doc);
 
 
-        Document doc2 = new Document();
+        Document doc2 = new Document(1);
         DoubleField field2 = new DoubleField("price", 12.1, Field.Tokenized.YES, Field.Stored.YES);
         doc2.add(field2);
         indexWriter.addDoc(doc2);

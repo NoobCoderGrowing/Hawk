@@ -3,6 +3,7 @@ package hawk.recall.search;
 import document.Document;
 import field.DoubleField;
 import field.Field;
+import field.PrimaryKeyField;
 import field.StringField;
 import hawk.recall.config.SearchConfig;
 import hawk.recall.query.BooleanQuery;
@@ -252,6 +253,9 @@ public class Searcher {
             long longVal = DataInput.readLong(fieldValue);
             double value = Double.longBitsToDouble(longVal);
             return new DoubleField(fieldName, value);
+        } else if ((fieldType & 0b00010000) != 0) { // primary key field
+            long value = DataInput.readLong(fieldValue);
+            return new PrimaryKeyField(value);
         }
         return null;
     }
