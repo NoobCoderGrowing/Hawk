@@ -37,6 +37,8 @@ public abstract class DirectoryReader {
 
     public abstract boolean isLive(int docID);
 
+    public abstract boolean hasDeletions();
+
     public abstract int numDocs();
 
     public abstract Map<Long, Integer> getPkMap();

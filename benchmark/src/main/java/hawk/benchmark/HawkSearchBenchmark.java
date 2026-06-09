@@ -37,6 +37,7 @@ public class HawkSearchBenchmark {
 
     private static final int INDEX_DOC_COUNT = 50000;
     private static final int QUERY_COUNT = 32;
+    private static final int TOP_N = Integer.MAX_VALUE;
 
     private Searcher searcher;
 
@@ -57,6 +58,7 @@ public class HawkSearchBenchmark {
         searcher = BenchmarkSupport.openSearcher(indexDir, indexConfig);
 
         List<String> titles = CorpusLoader.sampleTitles(QUERY_COUNT);
+        double[][] randomRanges = BenchmarkRangeQueries.buildRandomRanges(QUERY_COUNT);
         termQueries = new Query[QUERY_COUNT];
         stringQueries = new Query[QUERY_COUNT];
         rangeQueries = new Query[QUERY_COUNT];
@@ -65,7 +67,7 @@ public class HawkSearchBenchmark {
             String firstTerm = title.substring(0, Math.min(2, title.length()));
             termQueries[i] = new TermQuery("title", firstTerm);
             stringQueries[i] = new StringQuery("title", firstTerm);
-            rangeQueries[i] = new NumericRangeQuery("price", 1.0, 100.0);
+            rangeQueries[i] = new NumericRangeQuery("price", randomRanges[i][0], randomRanges[i][1]);
         }
     }
 
@@ -82,25 +84,25 @@ public class HawkSearchBenchmark {
 
     @Benchmark
     public void searchTerm(Blackhole blackhole) {
-        ScoreDoc[] hits = searcher.search(nextQuery(termQueries), 10);
+        ScoreDoc[] hits = searcher.search(nextQuery(termQueries), TOP_N);
         blackhole.consume(hits);
     }
 
     @Benchmark
     public void searchString(Blackhole blackhole) {
-        ScoreDoc[] hits = searcher.search(nextQuery(stringQueries), 10);
+        ScoreDoc[] hits = searcher.search(nextQuery(stringQueries), TOP_N);
         blackhole.consume(hits);
     }
 
     @Benchmark
     public void searchNumericRange(Blackhole blackhole) {
-        ScoreDoc[] hits = searcher.search(nextQuery(rangeQueries), 10);
+        ScoreDoc[] hits = searcher.search(nextQuery(rangeQueries), TOP_N);
         blackhole.consume(hits);
     }
 
     @Benchmark
     public void searchTermAndFetchDoc(Blackhole blackhole) {
-        ScoreDoc[] hits = searcher.search(nextQuery(termQueries), 10);
+        ScoreDoc[] hits = searcher.search(nextQuery(termQueries), TOP_N);
         if (hits.length > 0) {
             Document document = searcher.doc(hits[0]);
             blackhole.consume(document);

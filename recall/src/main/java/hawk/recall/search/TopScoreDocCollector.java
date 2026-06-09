@@ -40,6 +40,13 @@ public final class TopScoreDocCollector {
         minHeap.offer(new ScoreDoc(score, docId));
     }
 
+    public boolean isSaturated(float score) {
+        if (topN <= 0 || minHeap.size() < topN) {
+            return false;
+        }
+        return score <= minHeap.peek().score;
+    }
+
     public ScoreDoc[] topDocs() {
         if (minHeap.isEmpty()) {
             return new ScoreDoc[0];

@@ -124,4 +124,67 @@ class BkdRoundtripTest {
                 });
         assertEquals(10, collected.size());
     }
+
+    @Test
+    void wideRangeMatchesBruteForceAfterSkipValueRead() throws Exception {
+        Path bkdPath = tempDir.resolve("1.bkd");
+        Random random = new Random(7);
+        List<BkdPoint> expected = new ArrayList<>();
+        for (int docId = 1; docId <= 2000; docId++) {
+            double value = random.nextDouble() * 100.0;
+            expected.add(new BkdPoint(docId, NumberUtil.double2SortableLong(value)));
+        }
+
+        Map<String, List<BkdPoint>> fieldPoints = new HashMap<>();
+        fieldPoints.put("price", expected);
+        BkdFileWriter.write(bkdPath, fieldPoints, new BkdConfig());
+
+        BkdReader reader = BkdFileReader.open(bkdPath).get("price");
+        long min = NumberUtil.double2SortableLong(1.0);
+        long max = NumberUtil.double2SortableLong(100.0);
+        int[] hits = reader.intersect(min, max);
+
+        Set<Integer> expectedHits = new HashSet<>();
+        for (BkdPoint point : expected) {
+            if (point.getSortableValue() >= min && point.getSortableValue() <= max) {
+                expectedHits.add(point.getDocId());
+            }
+        }
+        Set<Integer> actualHits = new HashSet<>();
+        for (int docId : hits) {
+            actualHits.add(docId);
+        }
+        assertEquals(expectedHits, actualHits);
+    }
+
+    @Test
+    void intersectStopsWhenTopNReached() throws Exception {
+        Path bkdPath = tempDir.resolve("1.bkd");
+        List<BkdPoint> points = new ArrayList<>();
+        for (int docId = 1; docId <= 500; docId++) {
+            points.add(new BkdPoint(docId, NumberUtil.double2SortableLong(docId)));
+        }
+
+        Map<String, List<BkdPoint>> fieldPoints = new HashMap<>();
+        fieldPoints.put("price", points);
+        BkdFileWriter.write(bkdPath, fieldPoints, new BkdConfig());
+
+        BkdReader reader = BkdFileReader.open(bkdPath).get("price");
+        int topN = 10;
+        List<Integer> hits = new ArrayList<>();
+        int[] visited = {0};
+        reader.intersect(
+                NumberUtil.double2SortableLong(1.0),
+                NumberUtil.double2SortableLong(500.0),
+                docId -> {
+                    visited[0]++;
+                    if (hits.size() < topN) {
+                        hits.add(docId);
+                    }
+                    return hits.size() < topN;
+                });
+
+        assertEquals(topN, hits.size());
+        assertTrue(visited[0] < 100, "expected early stop well before all 500 docs, visited=" + visited[0]);
+    }
 }

@@ -251,6 +251,11 @@ public class MMapDirectoryReader extends DirectoryReader {
     }
 
     @Override
+    public boolean hasDeletions() {
+        return !deletedUniqueIds.isEmpty();
+    }
+
+    @Override
     public int numDocs() {
         return pkMap.size() - deletedUniqueIds.size();
     }

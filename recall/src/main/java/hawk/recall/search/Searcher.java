@@ -132,11 +132,13 @@ public class Searcher {
             return hits.toArray(new ScoreDoc[0]);
         }
         TopScoreDocCollector collector = new TopScoreDocCollector(topN);
+        boolean checkLive = directoryReader.hasDeletions();
         bkdReader.intersect(minValue, maxValue, docId -> {
-            if (directoryReader.isLive(docId)) {
-                collector.collect(0f, docId);
+            if (checkLive && !directoryReader.isLive(docId)) {
+                return !collector.isSaturated(0f);
             }
-            return true;
+            collector.collect(0f, docId);
+            return !collector.isSaturated(0f);
         });
         return collector.topDocs();
     }

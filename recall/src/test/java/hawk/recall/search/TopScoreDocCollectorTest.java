@@ -82,6 +82,28 @@ class TopScoreDocCollectorTest {
         assertTrue(scores(hits).contains(2f));
     }
 
+    @Test
+    void isSaturatedFalseUntilHeapFull() {
+        TopScoreDocCollector collector = new TopScoreDocCollector(3);
+        assertTrue(!collector.isSaturated(0f));
+        collector.collect(0f, 1);
+        assertTrue(!collector.isSaturated(0f));
+        collector.collect(0f, 2);
+        assertTrue(!collector.isSaturated(0f));
+        collector.collect(0f, 3);
+        assertTrue(collector.isSaturated(0f));
+    }
+
+    @Test
+    void isSaturatedFalseWhenHigherScoreCouldEnter() {
+        TopScoreDocCollector collector = new TopScoreDocCollector(2);
+        collector.collect(1f, 1);
+        collector.collect(2f, 2);
+        assertTrue(!collector.isSaturated(3f));
+        assertTrue(collector.isSaturated(2f));
+        assertTrue(collector.isSaturated(1f));
+    }
+
     private static Set<Integer> docIds(ScoreDoc[] hits) {
         return Arrays.stream(hits).map(hit -> hit.docID).collect(Collectors.toCollection(HashSet::new));
     }

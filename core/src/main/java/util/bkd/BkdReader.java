@@ -63,11 +63,19 @@ public class BkdReader {
             int count = buffer.getInt();
             boolean leafFullyInRange = nodeMin >= minValue && nodeMax <= maxValue;
             for (int i = 0; i < count; i++) {
-                long value = readLong(buffer);
-                int docId = DataInput.readVint(buffer);
-                if (leafFullyInRange || (value >= minValue && value <= maxValue)) {
+                if (leafFullyInRange) {
+                    buffer.position(buffer.position() + 8);
+                    int docId = DataInput.readVint(buffer);
                     if (!collector.collect(docId)) {
                         return false;
+                    }
+                } else {
+                    long value = readLong(buffer);
+                    int docId = DataInput.readVint(buffer);
+                    if (value >= minValue && value <= maxValue) {
+                        if (!collector.collect(docId)) {
+                            return false;
+                        }
                     }
                 }
             }
