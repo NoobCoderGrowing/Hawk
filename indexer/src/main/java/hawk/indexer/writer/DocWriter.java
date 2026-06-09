@@ -68,12 +68,10 @@ public class DocWriter implements Runnable {
         WrapLong bytesCurDoc = new WrapLong(0);
         // FDT: field data table, 正排索引数据
         byte[][]  docFDT = processStoredFields(doc, bytesCurDoc);
-
         // 左侧FDM: field metadata table, 存储字段元数据, 只记录文档中有哪些字段，都是什么类型，值有多长
         // 右侧IVT: inverted index table, 存储倒排索引数据, 存储字段名和词频，词频和字段值长度
         Pair docFDMIVT =  processIndexedFields(doc, bytesCurDoc);
         HashMap<ByteReference, Pair<byte[], Integer>> docFDM = (HashMap<ByteReference, Pair<byte[], Integer>>) docFDMIVT.getLeft();
-        docFDM.putAll(processStoredOnlyFieldsForFDM(doc, bytesCurDoc));
         HashMap<FieldTermPair, int[]> docIVT = (HashMap<FieldTermPair, int[]>) docFDMIVT.getRight();
         // flush when ram usage exceeds configuration
         ramUsageLock.lock();
@@ -435,8 +433,8 @@ public class DocWriter implements Runnable {
     }
 
     /**
-     * 处理文档中所有需要建立倒排索引的字段（{@link Field.Tokenized#YES}），生成单文档级别的
-     * FDM 元数据与 IVT 倒排条目，供后续 {@link #assembleFDM} 和 {@link #assembleIVT} 合并到全局内存索引。
+     * 处理文档中所有需要 FDM 元数据或倒排索引的字段，生成单文档级别的 docFDM 与 docIVT，
+     * 供后续 {@link #assembleFDM} 和 {@link #assembleIVT} 合并到全局内存索引。
      *
      * <p>返回值是一个 {@link Pair}，左右两部分分别对应：
      * <ul>
@@ -448,24 +446,29 @@ public class DocWriter implements Runnable {
      *       flush 时写入 .tim / .frq 文件。</li>
      * </ul>
      *
-     * <p>仅处理 {@code Tokenized.YES} 的字段；仅 stored、不 tokenize 的字段由
-     * {@link #processStoredOnlyFieldsForFDM} 单独处理，调用方在 {@link #run()} 中通过
-     * {@code putAll} 合并到 docFDM。
+     * <p>按字段属性分两条路径（互斥）：
+     * <ul>
+     *   <li>{@code Tokenized.YES}：经 {@link #processIndexedField} 写入 FDM 与 IVT。</li>
+     *   <li>{@code Stored.YES} 且 {@code Tokenized.NO}：仅写入 FDM 元数据（供 doc() 反序列化）。</li>
+     * </ul>
      *
      * @param doc         待索引的文档
      * @param bytesCurDoc 当前文档的内存占用估算，{@link #processIndexedField} 在新增 FDM/IVT 条目时累加
-     * @return Pair 左为 docFDM，右为 docIVT
+     * @return Pair 左为完整 docFDM，右为 docIVT
      */
     public Pair processIndexedFields(Document doc, WrapLong bytesCurDoc){
-        // 初始化单文档的 FDM 与 IVT 容器，逐字段填充后返回
         Pair<HashMap<ByteReference, Pair<byte[], Integer>>, HashMap<FieldTermPair, int[]>> ret = new Pair<>(new HashMap<>(),
                 new HashMap<>());
+        HashMap<ByteReference, Pair<byte[], Integer>> docFDM = ret.getLeft();
         HashMap<String, Field> fieldMap = doc.getFieldMap();
         for (Map.Entry<String, Field> entry : fieldMap.entrySet()) {
             Field field = entry.getValue();
-            // 仅对需要分词/建索引的字段做 analyze、term 提取，并写入 ret 的左右两个 Map
-            if(field.isTokenized() == Field.Tokenized.YES){
+            if (field.isTokenized() == Field.Tokenized.YES) {
                 processIndexedField(field, ret, bytesCurDoc);
+            } else if (field.isStored() == Field.Stored.YES) {
+                byte[] fieldName = field.serializeName();
+                assembleFieldTypeMap(docFDM, fieldName, new byte[]{getFieldType(field)},
+                        storedOnlyFieldLength(field), bytesCurDoc);
             }
         }
         return ret;
@@ -487,20 +490,6 @@ public class DocWriter implements Runnable {
             termType |= 0b00010000;
         }
         return termType;
-    }
-
-    // Stored-only fields need fdm metadata for doc() deserialization
-    public HashMap<ByteReference, Pair<byte[], Integer>> processStoredOnlyFieldsForFDM(Document doc, WrapLong bytesCurDoc) {
-        HashMap<ByteReference, Pair<byte[], Integer>> docFDM = new HashMap<>();
-        for (Field field : doc.getFieldMap().values()) {
-            if (field.isStored() != Field.Stored.YES || field.isTokenized() != Field.Tokenized.NO) {
-                continue;
-            }
-            byte[] fieldName = field.serializeName();
-            assembleFieldTypeMap(docFDM, fieldName, new byte[]{getFieldType(field)},
-                    storedOnlyFieldLength(field), bytesCurDoc);
-        }
-        return docFDM;
     }
 
     private int storedOnlyFieldLength(Field field) {

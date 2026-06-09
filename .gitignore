@@ -1,0 +1,73 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+
+# Logs
+*.log
+logs/
+
+# Spring Boot
+spring-boot-*.log
+
+# Local / override config (keep example files tracked)
+application-local.yml
+application-local.yaml
+application-local.properties
+*-local.yml
+*-local.yaml
+*-local.properties
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# IDE - Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# IDE - VS Code
+.vscode/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Local Nacos runtime (bundled server + data/logs)
+z-nacos/
+z-nacos2/
+
+# Index / runtime data
+*.index
+index-data/
+
+# Temp files
+*.tmp
+*.swp
+*~
+.cache/
