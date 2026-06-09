@@ -27,7 +27,6 @@ public abstract class Directory {
 
     public abstract String generateSegFile(String fileName);
 
-
     public static Path createDirectory(Path path){
         Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwxrwxrwx");
         Path fp = null;

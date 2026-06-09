@@ -91,7 +91,6 @@ public class DocWriter implements Runnable {
             assembleFDM(docFDM);
             assembleIVT(docIVT, docID);
             bytesUsed.addAndGet(bytesCurDoc.getValue() + 8); //8bytes for 2 docID in FDM and IVT
-            log.info("current bytes used： " + bytesUsed.get());
         } finally {
             ramUsageLock.unlock();
         }
@@ -125,7 +124,6 @@ public class DocWriter implements Runnable {
             }
         }
     }
-
 
     //key: field term pair; value: doc frequency, field value length
     public void  assembleIVT(HashMap<FieldTermPair, int[]> docIVT, int docID){
@@ -195,7 +193,6 @@ public class DocWriter implements Runnable {
     }
 
     public void writeFDX(FileChannel fc, int docID, WrapLong fdtPos, WrapLong fdxPos){
-        log.info("fdx writing ===> " + "docID is " + docID + ", fdt offset is " + fdtPos.getValue());
         DataOutput.writeVInt(docID, fc, fdxPos);
         DataOutput.writeVLong(fdtPos, fc, fdxPos);
     }
@@ -211,7 +208,6 @@ public class DocWriter implements Runnable {
             WrapInt bufferPos = new WrapInt(0);
             WrapLong fdtPos = new WrapLong(0);
             WrapLong fdxPos = new WrapLong(0);
-            log.info("start writing fdx and fdt");
             if(fdt.size()>0){
                 int blockStartID = fdt.get(0).getLeft() + docBase;
                 for (int i = 0; i < fdt.size(); i++) {
@@ -234,7 +230,6 @@ public class DocWriter implements Runnable {
                 }
             }
 
-            log.info("end of writing fdx and fdt");
             //close channel
             fdxChannel.force(false);
             fdtChannel.force(false);
@@ -250,29 +245,23 @@ public class DocWriter implements Runnable {
 
     public void writeFDM(FileChannel fc, ArrayList<Map.Entry<ByteReference, Pair<byte[], int[]>>> fdmList){
         WrapLong pos = new WrapLong(0);
-        log.info("start writting fdm");
         for (int i = 0; i < fdmList.size(); i++) {
             byte[] field = fdmList.get(i).getKey().getBytes();
             byte type = fdmList.get(i).getValue().getLeft()[0];
             int fieldLengthSum = fdmList.get(i).getValue().getRight()[0];
             int docCount = fdmList.get(i).getValue().getRight()[1];
             int length = field.length;
-            log.info("field name is " + new String(field) + ", fieldLength sum is " + fieldLengthSum +
-                    ", total doc count of this field is " + docCount);
             DataOutput.writeInt(length, fc, pos);
             DataOutput.writeBytes(field, fc, pos);
             DataOutput.writeByte(type, fc, pos);
             DataOutput.writeInt(fieldLengthSum,fc,pos);
             DataOutput.writeInt(docCount, fc, pos);
         }
-        log.info("end of writting fdm");
     }
 
     public void writeTIM(FileChannel fc, FieldTermPair fieldTermPair, WrapLong timPos, WrapLong frqPos){
         byte[] field = fieldTermPair.getField();
         byte[] term = fieldTermPair.getTerm();
-        log.info("tim writing ==> filed name is " + new String(field) + ", term is " + new String(term) +
-                ", frq offset is " + frqPos.getValue());
         DataOutput.writeInt(field.length, fc, timPos);
         DataOutput.writeBytes(field, fc, timPos);
         DataOutput.writeInt(term.length, fc, timPos);
@@ -282,11 +271,8 @@ public class DocWriter implements Runnable {
 
     public void writeFRQ(FileChannel fc, int[][] posting, WrapLong frqPos, int docBase){
         int length = posting.length;
-        log.info("frq writing ==> " + "posting length is " + length);
         DataOutput.writeVInt(length, fc, frqPos);
         for (int i = 0; i < length; i++) {
-            log.info("frq writing ==> " + "doc id is " + posting[i][0] + ", frequency is " + posting[i][1] +
-                    ", field value length is " + posting[i][2]);
             DataOutput.writeVInt(posting[i][0] + docBase, fc, frqPos);
             DataOutput.writeVInt(posting[i][1], fc, frqPos);
             DataOutput.writeVInt(posting[i][2], fc, frqPos);
@@ -306,14 +292,12 @@ public class DocWriter implements Runnable {
             writeFDM(fdmChannel, fdmList);
             WrapLong frqPos = new WrapLong(0);
             WrapLong timPos = new WrapLong(0);
-            log.info("start writing tim and frq");
             for (int i = 0; i < ivtList.size(); i++) { // write .tim and .frq
                 FieldTermPair fieldTermPair = ivtList.get(i).getKey();
                 int[][] posting = ivtList.get(i).getValue();
                 writeTIM(timChannel, fieldTermPair, timPos, frqPos);
                 writeFRQ(frqChannel, posting, frqPos, docBase);
             }
-            log.info("end of writing tim and frq");
             timChannel.force(false);
             frqChannel.force(false);
             fdmChannel.force(false);
@@ -380,18 +364,12 @@ public class DocWriter implements Runnable {
         }
         int segCount = directory.getSegmentInfo().getSegCount();
         if(segCount > 1) {
-            log.info("merge start now," + " cur segment count is " + segCount + ", cur file number is " +
-                    directory.getFiles().size() + ", cur maxDocID is " + directory.getSegmentInfo().getPreMaxID());
             IndexMerger indexMerger = new IndexMerger(directory, config, docIDAllocator, docBase);
             indexMerger.merge();
-            log.info("merge end now," + "cur segment count is " + directory.getSegmentInfo().getSegCount() +
-                    ", cur file number is " + directory.getFiles().size() + ", cur maxDocID is " +
-                    directory.getSegmentInfo().getPreMaxID());
         }
     }
 
     public void flush(){
-        log.info("start flushing");
         Path[] files = directory.generateSegFiles();
         int docBase = directory.getSegmentInfo().getPreMaxID();
         Path fdtPath = files[0];
@@ -532,7 +510,6 @@ public class DocWriter implements Runnable {
             bytesCurDoc.setValue(bytesCurDoc.getValue() + fieldName.length + type.length + 4);
         }
     }
-
 
     public void assembleFieldTermMap(HashMap<FieldTermPair, int[]> fieldTermMap, byte[] filedName, byte[] filedValue,
                                      WrapLong bytesCurDoc, int fieldLength){

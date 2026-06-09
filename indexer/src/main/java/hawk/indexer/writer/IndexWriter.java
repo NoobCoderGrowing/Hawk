@@ -6,8 +6,6 @@ import document.Document;
 import hawk.indexer.writer.config.IndexConfig;
 import directory.PkMapStore;
 import lombok.Data;
-import lombok.extern.slf4j.Slf4j;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,7 +17,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Data
-@Slf4j
 public class IndexWriter {
 
     /** indexWriter configuration
