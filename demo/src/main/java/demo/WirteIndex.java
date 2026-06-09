@@ -19,13 +19,13 @@ public class WirteIndex {
         Analyzer analyzer = new NShortestPathAnalyzer(1);
         IndexConfig indexConfig = new IndexConfig(analyzer);
         IndexWriter indexWriter = new IndexWriter(indexConfig, mMapDirectory);
-        Document doc = new Document(0);
+        Document doc = new Document();
         StringField field = new StringField("title", "适用于丰田18-21款八代凯美瑞中控仪表台防晒隔热避光垫内饰改装", Field.Tokenized.YES, Field.Stored.YES);
         doc.add(field);
         indexWriter.addDoc(doc);
 
 
-        Document doc2 = new Document(1);
+        Document doc2 = new Document();
         StringField field2 = new StringField("title", "适配丰田凯美瑞 亚洲龙 双擎混动版电池滤芯滤网", Field.Tokenized.YES, Field.Stored.YES);
         doc2.add(field2);
         indexWriter.addDoc(doc2);

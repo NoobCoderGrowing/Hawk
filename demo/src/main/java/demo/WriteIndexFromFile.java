@@ -36,7 +36,6 @@ public class WriteIndexFromFile {
             float price = Float.parseFloat(strings[2]);
             double doublePrice = (double) price;
             Document document = new Document();
-            // Document document = new Document(uniqueID);
             PrimaryKeyField primaryKeyField = new PrimaryKeyField(uniqueID);
             StringField stringField = new StringField("title", title, Field.Tokenized.YES, Field.Stored.YES);
             DoubleField doubleField = new DoubleField("price", doublePrice, Field.Tokenized.YES, Field.Stored.YES);
