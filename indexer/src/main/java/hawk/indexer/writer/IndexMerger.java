@@ -34,7 +34,6 @@ public class IndexMerger {
 
     int docBase;
 
-
     public IndexMerger(Directory directory, IndexConfig indexConfig, AtomicInteger docIDAllocator, int docBase) {
         this.directory = directory;
         this.indexConfig = indexConfig;
@@ -84,7 +83,6 @@ public class IndexMerger {
             DataOutput.writeVInt(fieldLength, seg3Frq);
         }
     }
-
 
     public void mergeFrq(MappedByteBuffer frqBuffer, FileChannel seg3Frq){
         int frqLength = DataInput.readVint(frqBuffer);
@@ -184,7 +182,6 @@ public class IndexMerger {
         DataOutput.writeInt(docCount, fc);
     }
 
-
     public void writeFdmRecord(FdmRecord record, FileChannel fc){
         byte[] field = record.getField();
         int length = field.length;
@@ -238,7 +235,6 @@ public class IndexMerger {
             seg2Record = readFdmRecord(seg2FdmBuffer);
         }
     }
-
 
     //比较fieldterm, 小的写入seg3, 相等拼接posting写入seg3。每次移动小的，或者同时移动
     public void mergeIndexed(HashMap<String, Path> files){
@@ -304,7 +300,6 @@ public class IndexMerger {
                 int docID = item[0];
                 long offset = item[1] + limit;
                 WrapLong offsetWrapper = new WrapLong(offset);
-                log.info("fdx merge writing ===> " + "docID is " + docID + ", fdt offset is " + offset);
                 DataOutput.writeVInt(docID, seg1FdxFC, offsetWrapper);
                 DataOutput.writeVLong(offset, seg1FdxFC, offsetWrapper);
             }

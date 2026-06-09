@@ -62,7 +62,6 @@ public class SegmentInfo {
         }
     }
 
-
     public String writeDate(FileChannel fc){
         String dateStr = DateUtil.getDateStr();
         byte[] dateBytes = dateStr.getBytes(StandardCharsets.UTF_8);

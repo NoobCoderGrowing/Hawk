@@ -1,13 +1,7 @@
 package util;
 
-
-import lombok.extern.slf4j.Slf4j;
-
 import java.nio.ByteBuffer;
 
-
-
-@Slf4j
 public class DataInput {
     //first byte the most significant
     public static long readLong(byte[] buffer){
@@ -18,7 +12,6 @@ public class DataInput {
         }
         return value;
     }
-
 
     public static long readVlong(byte[] buffer){
         long ret = 0;
@@ -41,8 +34,6 @@ public class DataInput {
         buffer.get(ret);
         return ret;
     }
-
-
 
     public static long readVlong(ByteBuffer buffer){
         byte b = buffer.get();
@@ -75,11 +66,9 @@ public class DataInput {
         b = buffer.get();
         i |= ((b & 0x7fL) << 63);
         if((b & 0x2L) == 0) return i;
-        log.error("too many bits");
         System.exit(1);
         return -1;
     }
-
 
     public static int readVint(ByteBuffer buffer){
         byte b = buffer.get();
@@ -97,7 +86,6 @@ public class DataInput {
         b = buffer.get();
         i |= ((b & 0x7f) << 28);
         if((b & 0xF0) == 0) return i;
-        log.error("too many bits");
         System.exit(1);
         return -1;
     }
@@ -128,11 +116,9 @@ public class DataInput {
         if((b & 0xF0) == 0){
             return i;
         }
-        log.error("too many bits");
         System.exit(1);
         return -1;
     }
-
 
     public static int readVintAtIndex(ByteBuffer buffer, WrapInt indexWrapper){
         int index = indexWrapper.getValue();
@@ -166,11 +152,9 @@ public class DataInput {
             indexWrapper.setValue(index);
             return i;
         }
-        log.error("too many bits");
         System.exit(1);
         return -1;
     }
-
 
     public static byte[] growBytes(byte[] bytes){
         byte[] newBytes = new byte[bytes.length + 1];

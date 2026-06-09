@@ -14,7 +14,6 @@ public class ArrayUtil {
         return newArray;
     }
 
-
     public static byte[] bytesConcatenation(byte[] bytes1, byte[] bytes2){
         byte[] temp = new byte[bytes1.length + bytes2.length];
         System.arraycopy(bytes1, 0, temp, 0, bytes1.length);

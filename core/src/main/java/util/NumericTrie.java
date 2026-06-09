@@ -1,13 +1,10 @@
 package util;
 
 import lombok.Data;
-import lombok.extern.slf4j.Slf4j;
-
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Data
-@Slf4j
 public class NumericTrie {
 
     @Data
@@ -18,7 +15,6 @@ public class NumericTrie {
         Node right;
         Node parent;
         Node[] children;
-
 
         public Node() {
         }

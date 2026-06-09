@@ -1,7 +1,5 @@
 package directory;
 
-import lombok.extern.slf4j.Slf4j;
-
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -15,7 +13,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-@Slf4j
 public class PkMapStore {
 
     public static final String FILE_NAME = "pk.map";
@@ -61,6 +58,5 @@ public class PkMapStore {
             fc.write(buffer);
             fc.force(false);
         }
-        log.info("saved pk.map with {} entries", entries.size());
     }
 }

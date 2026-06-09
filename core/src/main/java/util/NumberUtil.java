@@ -7,7 +7,6 @@ import java.util.HashSet;
 
 public class NumberUtil {
 
-
     public static HashSet<PrefixedNumber> long2PrefixFormat(long rawBits, int precisionStep){
 
         StringBuilder sb = new StringBuilder();
@@ -51,7 +50,6 @@ public class NumberUtil {
 
         return Double.longBitsToDouble(input);
     }
-
 
     public static byte[] int2Bytes(int i){
         byte[] ret = new byte[]{
@@ -103,7 +101,6 @@ public class NumberUtil {
         return ret;
     }
 
-
     public static int compareSortableBytes(byte[] a, byte[] b){
         int aInt, bInt;
         for (int i = 0; i < a.length && i < b.length; i++) {
@@ -139,7 +136,6 @@ public class NumberUtil {
         return new String(strBytes, StandardCharsets.UTF_8);
     }
 
-
     public static String long2StringWithShift(int shift, long input){
         StringBuilder sb = new StringBuilder();
         sb.append((char) shift);
@@ -160,7 +156,6 @@ public class NumberUtil {
         }
         return Long.parseUnsignedLong(sb.toString(), 2);
     }
-
 
     public static String[] long2PrefixString(long rawBits, int precisionStep){
 

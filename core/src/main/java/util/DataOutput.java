@@ -1,6 +1,5 @@
 package util;
 
-
 import common.ByteReference;
 import common.Pair;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +20,6 @@ public class DataOutput {
             log.error("sth wrong with write byte with no pos");
         }
     }
-
 
     public static void writeByte(byte input, FileChannel fc, WrapLong pos){
         ByteBuffer buffer = ByteBuffer.wrap(new byte[]{input});
@@ -81,7 +79,6 @@ public class DataOutput {
         writeByte((byte) i, fc, pos);
     }
 
-
     public static void writeVLong(WrapLong input, FileChannel fc, WrapLong pos){
         long i = input.getValue();
         while ((i & ~0x7FL) != 0L) {
@@ -106,7 +103,6 @@ public class DataOutput {
         }
     }
 
-
     public static void writeBytes(byte[] bytes, FileChannel fc){
         ByteBuffer byteBuffer = ByteBuffer.wrap(bytes);
         try {
@@ -115,7 +111,6 @@ public class DataOutput {
             log.error("sth wrong with write bytes with no pos ");
         }
     }
-
 
     public static void writeBytes(byte[] bytes, FileChannel fc, WrapLong pos){
         ByteBuffer byteBuffer = ByteBuffer.wrap(bytes);
@@ -127,12 +122,10 @@ public class DataOutput {
         }
     }
 
-
     public static void writeInt(int i, byte[] buffer, WrapInt pos){
         byte[] bytes = NumberUtil.int2Bytes(i);
         writeBytes(bytes, buffer, pos);
     }
-
 
     public static void writeInt(int i, FileChannel fc){
         byte[] bytes = NumberUtil.int2Bytes(i);

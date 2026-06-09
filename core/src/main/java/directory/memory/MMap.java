@@ -15,7 +15,6 @@ public class MMap {
         return buffer;
     }
 
-
     public static MappedByteBuffer[] mmapFils(String[] files) throws IOException {
         MappedByteBuffer[] mappedByteBuffers = new MappedByteBuffer[files.length];
         for (int i = 0; i < files.length; i++) {
@@ -26,7 +25,6 @@ public class MMap {
         }
         return mappedByteBuffers;
     }
-
 
     public static void unMMap(ByteBuffer bb) {
         if (null==bb || !bb.isDirect()) {

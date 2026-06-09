@@ -5,7 +5,6 @@ import lombok.Data;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
-
 @Data
 public class FieldTermPair {
 

@@ -1,7 +1,5 @@
 package directory;
 
-import lombok.extern.slf4j.Slf4j;
-
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -14,7 +12,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-@Slf4j
 public class DeletedIdsStore {
 
     public static final String FILE_NAME = "deleted.ids";
@@ -57,6 +54,5 @@ public class DeletedIdsStore {
             fc.write(buffer);
             fc.force(false);
         }
-        log.info("saved deleted.ids with {} entries", ids.size());
     }
 }
