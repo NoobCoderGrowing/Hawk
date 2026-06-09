@@ -27,7 +27,7 @@ public class DeleteDocDemo {
         Searcher searcher = new Searcher(directoryReader, new SearchConfig(analyzer), indexConfig);
         IndexAdmin indexAdmin = new IndexAdmin(directoryReader, directory);
 
-        StringQuery query = new StringQuery("title", "家园");
+        StringQuery query = new StringQuery("title", "丰田");
         ScoreDoc[] hitsBefore = searcher.search(query, 10000);
         System.out.println("hits before delete: " + hitsBefore.length);
 

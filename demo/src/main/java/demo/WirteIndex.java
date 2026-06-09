@@ -16,7 +16,7 @@ import java.nio.file.Paths;
 public class WirteIndex {
 
     public static void main(String[] args) throws IOException {
-        MMapDirectory mMapDirectory = new MMapDirectory(Paths.get("/opt/temp/shard1"));
+        MMapDirectory mMapDirectory = new MMapDirectory(Paths.get("/opt/index/1"));
         Analyzer analyzer = new NShortestPathAnalyzer(1);
         IndexConfig indexConfig = new IndexConfig(analyzer);
         IndexWriter indexWriter = new IndexWriter(indexConfig, mMapDirectory);
