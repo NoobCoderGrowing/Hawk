@@ -8,6 +8,10 @@ import field.Field;
 import field.PrimaryKeyField;
 import field.StringField;
 import util.*;
+import util.bkd.BkdConfig;
+import util.bkd.BkdFileWriter;
+import util.bkd.BkdPoint;
+import util.bkd.FieldBkdWriter;
 import hawk.indexer.writer.config.IndexConfig;
 import hawk.segment.core.Term;
 import lombok.Data;
@@ -50,10 +54,12 @@ public class DocWriter implements Runnable {
 
     private Map<Long, Integer> pkMap;
 
+    private HashMap<ByteReference, FieldBkdWriter> bkdFields;
+
     public DocWriter(AtomicInteger docIDAllocator, Document doc, List fdt, HashMap<FieldTermPair,
             int[][]> ivt, AtomicLong bytesUsed, long maxRamUsage, ReentrantLock ramUsageLock, Directory directory,
                      IndexConfig config, HashMap<ByteReference, Pair<byte[], int[]>> fdm,
-                     Map<Long, Integer> pkMap) {
+                     Map<Long, Integer> pkMap, HashMap<ByteReference, FieldBkdWriter> bkdFields) {
         this.docIDAllocator = docIDAllocator;
         this.doc = doc;
         this.fdt = fdt;
@@ -65,6 +71,7 @@ public class DocWriter implements Runnable {
         this.config = config;
         this.fdm = fdm;
         this.pkMap = pkMap;
+        this.bkdFields = bkdFields;
     }
 
     @Override
@@ -74,7 +81,8 @@ public class DocWriter implements Runnable {
         byte[][]  docFDT = processStoredFields(doc, bytesCurDoc);
         // 左侧FDM: field metadata table, 存储字段元数据, 只记录文档中有哪些字段，都是什么类型，值有多长
         // 右侧IVT: inverted index table, 存储倒排索引数据, 存储字段名和词频，词频和字段值长度
-        Pair docFDMIVT =  processIndexedFields(doc, bytesCurDoc);
+        HashMap<ByteReference, Long> docBkd = new HashMap<>();
+        Pair docFDMIVT = processIndexedFields(doc, bytesCurDoc, docBkd);
         HashMap<ByteReference, Pair<byte[], Integer>> docFDM = (HashMap<ByteReference, Pair<byte[], Integer>>) docFDMIVT.getLeft();
         HashMap<FieldTermPair, int[]> docIVT = (HashMap<FieldTermPair, int[]>) docFDMIVT.getRight();
         // flush when ram usage exceeds configuration
@@ -90,6 +98,7 @@ public class DocWriter implements Runnable {
             assembleFDT(docFDT, docID);
             assembleFDM(docFDM);
             assembleIVT(docIVT, docID);
+            assembleBkd(docBkd, docID);
             bytesUsed.addAndGet(bytesCurDoc.getValue() + 8); //8bytes for 2 docID in FDM and IVT
         } finally {
             ramUsageLock.unlock();
@@ -126,6 +135,21 @@ public class DocWriter implements Runnable {
     }
 
     //key: field term pair; value: doc frequency, field value length
+    public void assembleBkd(HashMap<ByteReference, Long> docBkd, int docID) {
+        if (docBkd == null || docBkd.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<ByteReference, Long> entry : docBkd.entrySet()) {
+            ByteReference fieldRef = entry.getKey();
+            FieldBkdWriter writer = bkdFields.get(fieldRef);
+            if (writer == null) {
+                writer = new FieldBkdWriter(fieldRef.getBytes());
+                bkdFields.put(fieldRef, writer);
+            }
+            writer.addPoint(docID, entry.getValue());
+        }
+    }
+
     public void  assembleIVT(HashMap<FieldTermPair, int[]> docIVT, int docID){
         for (Map.Entry<FieldTermPair, int[] > entry : docIVT.entrySet()) {
             FieldTermPair fieldTermPair = entry.getKey();
@@ -146,6 +170,7 @@ public class DocWriter implements Runnable {
         ivt.clear();
         fdt.clear();
         fdm.clear();
+        bkdFields.clear();
     }
 
     // write fdt into a buffer of 16kb
@@ -358,6 +383,20 @@ public class DocWriter implements Runnable {
         });
     }
 
+    public void flushBkd(Path bkdPath, int docBase) {
+        try {
+            HashMap<String, List<BkdPoint>> fieldPoints = new HashMap<>();
+            for (Map.Entry<ByteReference, FieldBkdWriter> entry : bkdFields.entrySet()) {
+                String fieldName = new String(entry.getKey().getBytes(), StandardCharsets.UTF_8);
+                fieldPoints.put(fieldName, entry.getValue().copyPointsWithDocBase(docBase));
+            }
+            BkdFileWriter.write(bkdPath, fieldPoints, new BkdConfig(config));
+        } catch (IOException e) {
+            log.error("force flush .bkd file errored");
+            throw new RuntimeException(e);
+        }
+    }
+
     public void mergetest(int docBase){
         if (!config.isEnableMerge()) {
             return;
@@ -377,6 +416,7 @@ public class DocWriter implements Runnable {
         Path timPath = files[2];
         Path frqPath = files[3];
         Path fdmPath = files[4];
+        Path bkdPath = files[5];
         // sort fdt
         Collections.sort(fdt, (o1, o2) -> {
             Integer a = (Integer) o1.getLeft();
@@ -392,6 +432,7 @@ public class DocWriter implements Runnable {
         //posting is already sorted
         flushStored(fdtPath, fdxPath, docBase);
         flushIndexed(timPath, frqPath, fdmPath, ivtList, fdmList, docBase);
+        flushBkd(bkdPath, docBase);
         directory.updateSegInfo(docIDAllocator.get() + docBase, 1);
         mergetest(docBase);
     }
@@ -456,7 +497,8 @@ public class DocWriter implements Runnable {
      * @param bytesCurDoc 当前文档的内存占用估算，{@link #processIndexedField} 在新增 FDM/IVT 条目时累加
      * @return Pair 左为完整 docFDM，右为 docIVT
      */
-    public Pair processIndexedFields(Document doc, WrapLong bytesCurDoc){
+    public Pair processIndexedFields(Document doc, WrapLong bytesCurDoc,
+                                     HashMap<ByteReference, Long> docBkd){
         Pair<HashMap<ByteReference, Pair<byte[], Integer>>, HashMap<FieldTermPair, int[]>> ret = new Pair<>(new HashMap<>(),
                 new HashMap<>());
         HashMap<ByteReference, Pair<byte[], Integer>> docFDM = ret.getLeft();
@@ -464,7 +506,7 @@ public class DocWriter implements Runnable {
         for (Map.Entry<String, Field> entry : fieldMap.entrySet()) {
             Field field = entry.getValue();
             if (field.isTokenized() == Field.Tokenized.YES) {
-                processIndexedField(field, ret, bytesCurDoc);
+                processIndexedField(field, ret, bytesCurDoc, docBkd);
             } else if (field.isStored() == Field.Stored.YES) {
                 byte[] fieldName = field.serializeName();
                 assembleFieldTypeMap(docFDM, fieldName, new byte[]{getFieldType(field)},
@@ -548,37 +590,27 @@ public class DocWriter implements Runnable {
      * @param bytesCurDoc 当前文档内存占用估算，新增 IVT/FDM 条目时由 assemble 方法累加
      */
     public void processIndexedField(Field field, Pair pair,
-                                    WrapLong bytesCurDoc){
+                                    WrapLong bytesCurDoc, HashMap<ByteReference, Long> docBkd){
         HashMap<ByteReference, Pair<byte[], Integer>> fieldTypeMap = (HashMap) pair.getLeft();
         HashMap<FieldTermPair, int[]> fieldTermMap = (HashMap) pair.getRight();
-        // 编码 stored/tokenized/字段类型 等属性，供 .fdm 落盘与 doc() 反序列化
         byte termType = getFieldType(field);
         byte[] filedName = field.serializeName();
         int filedLength = 0;
         if (field instanceof StringField){
-            // 分词得到 term 集合；Term 含位置信息，同值不同位置的 term 视为不同条目
             HashSet<Term> termSet = config.getAnalyzer().anlyze(((StringField) field).getValue(),
                     ((StringField) field).getName());
             for (Term t : termSet) {
                 byte[] filedValue = t.getValue().getBytes(StandardCharsets.UTF_8);
-                // StringField 的 fieldLength 为原始字符串字符长度，用于 doc() 还原
                 filedLength = ((StringField) field).getValue().length();
                 assembleFieldTermMap(fieldTermMap, filedName, filedValue, bytesCurDoc, filedLength);
             }
         } else if (field instanceof DoubleField) {
             double value = ((DoubleField) field).getValue();
-            // 转为按数值大小可排序的 long 比特表示
             long sortableLong = NumberUtil.double2SortableLong(value);
-            // 按 precisionStep 切分，生成多级前缀 term 以支持范围检索
-            String[] prefixString = NumberUtil.long2PrefixString(sortableLong, config.getPrecisionStep());
-            // DoubleField 在 FDM 中固定占 1 字节
             filedLength = 1;
-            for (int i = 0; i < prefixString.length; i++) {
-                assembleFieldTermMap(fieldTermMap, filedName, prefixString[i].getBytes(StandardCharsets.UTF_8),
-                        bytesCurDoc, filedLength);
-            }
+            docBkd.put(new ByteReference(filedName), sortableLong);
+            bytesCurDoc.setValue(bytesCurDoc.getValue() + filedName.length + 16);
         }
-        // 无论 String 还是 Double，最终都在 FDM 中登记该字段的类型与值长度
         assembleFieldTypeMap(fieldTypeMap, filedName, new byte[]{termType}, filedLength, bytesCurDoc);
     }
 

@@ -46,8 +46,8 @@ public class FSDirectory extends Directory{
         int segCount = segmentInfo.getSegCount();
         int curSeg = segCount + 1;
         String prefix = path.toString() + "/";
-        String[] fileNames = new String[]{".fdt",".fdx", ".tim",".frq",".fdm"};
-        Path[] filePaths = new Path[5];
+        String[] fileNames = new String[]{".fdt",".fdx", ".tim",".frq",".fdm", ".bkd"};
+        Path[] filePaths = new Path[6];
         for (int i = 0; i < fileNames.length; i++) {
             String fileName = Integer.toString(curSeg).concat(fileNames[i]);
             String filePath = prefix.concat(fileName);

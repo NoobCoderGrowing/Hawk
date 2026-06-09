@@ -3,6 +3,11 @@ package hawk.indexer.writer;
 import directory.Directory;
 import directory.memory.MMap;
 import hawk.indexer.writer.config.IndexConfig;
+import util.bkd.BkdConfig;
+import util.bkd.BkdFileReader;
+import util.bkd.BkdFileWriter;
+import util.bkd.BkdPoint;
+import util.bkd.FieldBkdWriter;
 import util.DataInput;
 import util.DataOutput;
 import util.WrapLong;
@@ -16,9 +21,12 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -49,7 +57,7 @@ public class IndexMerger {
                 Files.delete(entry.getValue());
                 it.remove();
             } else if (entry.getKey().contains("3.frq") || entry.getKey().contains("3.tim") ||
-                    entry.getKey().contains("3.fdm")) {
+                    entry.getKey().contains("3.fdm") || entry.getKey().contains("3.bkd")) {
                 String fileName = entry.getKey();
                 Path filePath = entry.getValue();
                 String deleteFileName = "1.".concat(fileName.split("\\.")[1]);
@@ -272,7 +280,7 @@ public class IndexMerger {
     public void merge(){
         HashMap<String, Path> files = directory.getFiles();
         int segCount = directory.getSegmentInfo().getSegCount();
-        int expected = segCount * 5 + 1;
+        int expected = segCount * 6 + 1;
         long segmentFileCount = files.keySet().stream().filter(this::isSegmentFile).count();
         if (segmentFileCount != expected) {
             throw new RuntimeException("wrong segment file count " + segmentFileCount
@@ -280,6 +288,7 @@ public class IndexMerger {
         }
         mergeStored(files);
         mergeIndexed(files);
+        mergeBkd(files);
         try {
             deleteFiles(files);
         } catch (IOException e) {
@@ -289,7 +298,35 @@ public class IndexMerger {
     }
 
     private boolean isSegmentFile(String fileName) {
-        return "segment.info".equals(fileName) || fileName.matches("\\d+\\.(fdt|fdx|tim|frq|fdm)");
+        return "segment.info".equals(fileName) || fileName.matches("\\d+\\.(fdt|fdx|tim|frq|fdm|bkd)");
+    }
+
+    public void mergeBkd(HashMap<String, Path> files) {
+        String seg3BkdPath = directory.generateSegFile("3.bkd");
+        try {
+            Map<String, List<BkdPoint>> seg1Points = readBkdPoints(files.get("1.bkd"));
+            Map<String, List<BkdPoint>> seg2Points = readBkdPoints(files.get("2.bkd"));
+            Map<String, List<BkdPoint>> mergedPoints = new HashMap<>();
+            HashSet<String> fieldNames = new HashSet<>();
+            fieldNames.addAll(seg1Points.keySet());
+            fieldNames.addAll(seg2Points.keySet());
+            for (String fieldName : fieldNames) {
+                List<BkdPoint> left = seg1Points.getOrDefault(fieldName, new ArrayList<>());
+                List<BkdPoint> right = seg2Points.getOrDefault(fieldName, new ArrayList<>());
+                mergedPoints.put(fieldName, FieldBkdWriter.mergePoints(left, right, 0));
+            }
+            BkdFileWriter.write(Paths.get(seg3BkdPath), mergedPoints, new BkdConfig(indexConfig));
+        } catch (IOException e) {
+            log.error("file not found during mergeBkd");
+            System.exit(1);
+        }
+    }
+
+    private Map<String, List<BkdPoint>> readBkdPoints(Path bkdPath) throws IOException {
+        if (bkdPath == null || !Files.exists(bkdPath) || Files.size(bkdPath) == 0) {
+            return new HashMap<>();
+        }
+        return BkdFileReader.readAllFieldPoints(bkdPath);
     }
 
     public void mergeFDX(ArrayList<int[]> seg2FDX, FileChannel seg1FdxFC, FileChannel seg1FdtFC){

@@ -136,4 +136,8 @@ public class DataOutput {
         byte[] bytes = NumberUtil.int2Bytes(i);
         writeBytes(bytes, fc, pos);
     }
+
+    public static void writeLong(long value, FileChannel fc, WrapLong pos) {
+        writeBytes(NumberUtil.long2Bytes(value), fc, pos);
+    }
 }

@@ -21,3 +21,12 @@ no need to store block length, as .fdx stores every block start offset
 # field - term to posting
 .tim
 [fieldLength<int>, field<bytes>, termLength<int>, term<bytes>, .frq start offset<vlong>]
+
+# BKD numeric point index (tokenized DoubleField)
+.bkd
+[magic<int>=0x424B4431, formatVersion<int>, fieldCount<int>, directoryOffset<long>]
+[data section: inner/leaf BKD tree nodes]
+[directory: per field -> fieldLength<int>, field<bytes>, numPoints<int>, rootOffset<long>]
+
+# segment metadata (segment.info)
+# bytes 0-7: timestamp, 8-11: segCount, 12-15: preMaxID, 16-19: formatVersion (1=BKD)

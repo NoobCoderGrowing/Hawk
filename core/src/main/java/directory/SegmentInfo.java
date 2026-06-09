@@ -1,5 +1,6 @@
 package directory;
 
+import util.bkd.BkdFormatVersion;
 import util.DateUtil;
 import util.WrapLong;
 import util.DataOutput;
@@ -28,10 +29,14 @@ public class SegmentInfo {
 
     private int preMaxID;
 
+    /** 0 = legacy prefix-term numeric index; 1 = BKD numeric index */
+    private int formatVersion;
+
     public SegmentInfo(){
         this.timeStamp = DateUtil.getDateStr();
         this.segCount = 0;
         this.preMaxID = 0;
+        this.formatVersion = BkdFormatVersion.CURRENT;
     }
 
     public SegmentInfo(Path segmentInfoPath){
@@ -55,6 +60,14 @@ public class SegmentInfo {
             fc.read(preMaxIDBuffer, 12);
             preMaxIDBuffer.flip();
             this.preMaxID = preMaxIDBuffer.getInt();
+            if (fc.size() >= 20) {
+                ByteBuffer formatVersionBuffer = ByteBuffer.allocate(4);
+                fc.read(formatVersionBuffer, 16);
+                formatVersionBuffer.flip();
+                this.formatVersion = formatVersionBuffer.getInt();
+            } else {
+                this.formatVersion = BkdFormatVersion.LEGACY_PREFIX;
+            }
             fc.close();
         } catch (IOException e) {
             log.error("sth wrong reading segment.info");
@@ -84,12 +97,18 @@ public class SegmentInfo {
         DataOutput.writeInt(id, fc, new WrapLong(12));
     }
 
+    public void writeFormatVersion(FileChannel fc, int version) {
+        DataOutput.writeInt(version, fc, new WrapLong(16));
+    }
+
     public void init(Path path){
         try {
             FileChannel fc = new RandomAccessFile(path.toString(), "rw").getChannel();
             writeDate(fc);
             writeSegCount(fc, 0);
             writePreMaxID(fc, 0);
+            writeFormatVersion(fc, BkdFormatVersion.CURRENT);
+            this.formatVersion = BkdFormatVersion.CURRENT;
             fc.force(false);
             fc.close();
         } catch (IOException e) {
@@ -105,9 +124,11 @@ public class SegmentInfo {
             int newSegCount = this.segCount + segCountInc;
             writeSegCount(fc, newSegCount);
             writePreMaxID(fc, lastDocID);
+            writeFormatVersion(fc, BkdFormatVersion.CURRENT);
             this.timeStamp = writeDate(fc);
             this.segCount = newSegCount;
             this.preMaxID = lastDocID;
+            this.formatVersion = BkdFormatVersion.CURRENT;
             fc.force(false);
             fc.close();
         } catch (IOException e) {

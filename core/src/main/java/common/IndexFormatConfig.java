@@ -16,5 +16,8 @@ public class IndexFormatConfig {
 
     private int blocSize = 16 * 1024;
 
+    @Deprecated
     private int precisionStep = 4;
+
+    private int bkdMaxPointsInLeaf = 512;
 }

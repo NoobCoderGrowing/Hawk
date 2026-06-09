@@ -24,8 +24,9 @@ import lombok.extern.slf4j.Slf4j;
 import net.jpountz.lz4.LZ4FastDecompressor;
 
 import util.DataInput;
-import util.NumericTrie;
+import util.NumberUtil;
 import util.WrapInt;
+import util.bkd.BkdReader;
 import common.IndexFormatConfig;
 import common.Pair;
 
@@ -103,41 +104,41 @@ public class Searcher {
         return hits.toArray(new ScoreDoc[0]);
     }
 
-    public ScoreDoc[] searchNumericRange(NumericRangeQuery query){
+    public ScoreDoc[] searchNumericRange(NumericRangeQuery query) {
+        return searchNumericRange(query, Integer.MAX_VALUE);
+    }
+
+    public ScoreDoc[] searchNumericRange(NumericRangeQuery query, int topN) {
+        if (topN <= 0) {
+            return new ScoreDoc[0];
+        }
         String field = query.getField();
         double lower = query.getLower();
         double upper = query.getUpper();
-        HashMap<String, NumericTrie> trieMap = directoryReader.getNumericTrieMap();
-        MappedByteBuffer frqMappedBuffer = directoryReader.getFRQBuffer();
-        ByteBuffer frqBuffer = frqMappedBuffer.asReadOnlyBuffer();
-        NumericTrie trie = trieMap.get(field);
-        List<NumericTrie.Node> nodes = trie.rangeSearch(lower,upper);
-        HashSet<ScoreDoc> resultSet = new HashSet<>(); // same docID may be in different nodes' payload
-        for (int i = 0; i < nodes.size(); i++) {
-            NumericTrie.Node node = nodes.get(i);
-            byte[][] offsets = node.getOffsets();
-            for (int j = 0; j < offsets.length; j++) {
-                byte[] offset = offsets[j];
-                int frqOffset = (int) DataInput.readVlong(offset);
-                WrapInt frqOffsetWrapper = new WrapInt(frqOffset);
-                int length = DataInput.readVintAtIndex(frqBuffer, frqOffsetWrapper);
-                for (int k = 0; k < length; k++) {
-                    int docID = DataInput.readVintAtIndex(frqBuffer, frqOffsetWrapper);
-                    int docFrequency = DataInput.readVintAtIndex(frqBuffer,frqOffsetWrapper);
-                    int docFieldLength = DataInput.readVintAtIndex(frqBuffer,frqOffsetWrapper);
-                    if (!directoryReader.isLive(docID)) {
-                        continue;
-                    }
-                    float score = 0;
-                    ScoreDoc hit = new ScoreDoc(score, docID);
-                    resultSet.add(hit);
-                }//reset frqBuffer position after reading each frq record
-                //[frq length<vint>, [docID<vint>, frq<vint>, fieldLength<vint>]]
-                frqBuffer.rewind();
-            }
+        BkdReader bkdReader = directoryReader.getBkdReaders().get(field);
+        if (bkdReader == null) {
+            return new ScoreDoc[0];
         }
-        ScoreDoc[] result = resultSet.toArray(new ScoreDoc[0]);
-        return result;
+        long minValue = NumberUtil.double2SortableLong(lower);
+        long maxValue = NumberUtil.double2SortableLong(upper);
+        if (topN == Integer.MAX_VALUE) {
+            List<ScoreDoc> hits = new ArrayList<>();
+            bkdReader.intersect(minValue, maxValue, docId -> {
+                if (directoryReader.isLive(docId)) {
+                    hits.add(new ScoreDoc(0, docId));
+                }
+                return true;
+            });
+            return hits.toArray(new ScoreDoc[0]);
+        }
+        TopScoreDocCollector collector = new TopScoreDocCollector(topN);
+        bkdReader.intersect(minValue, maxValue, docId -> {
+            if (directoryReader.isLive(docId)) {
+                collector.collect(0f, docId);
+            }
+            return true;
+        });
+        return collector.topDocs();
     }
 
 
@@ -343,8 +344,7 @@ public class Searcher {
         } else if (query instanceof StringQuery) {
             result = searchString((StringQuery) query);
         } else if(query instanceof NumericRangeQuery){
-            result = searchNumericRange((NumericRangeQuery) query);
-            return result;
+            return searchNumericRange((NumericRangeQuery) query, topN);
         }
         return topN(result, topN);
     }

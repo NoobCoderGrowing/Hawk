@@ -5,6 +5,7 @@ import directory.Directory;
 import document.Document;
 import hawk.indexer.writer.config.IndexConfig;
 import directory.PkMapStore;
+import util.bkd.FieldBkdWriter;
 import lombok.Data;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -49,6 +50,8 @@ public class IndexWriter {
 
     private HashMap<ByteReference, Pair<byte[], int[]>> fdm;
 
+    private HashMap<ByteReference, FieldBkdWriter> bkdFields;
+
     private LinkedBlockingQueue<Runnable> blockingQueue;
 
     private final Map<Long, Integer> pkMap;
@@ -71,6 +74,7 @@ public class IndexWriter {
                 this.blockingQueue);
         this.futures = new ConcurrentLinkedQueue<>();
         this.fdm = new HashMap<>();
+        this.bkdFields = new HashMap<>();
         if (loadExistingPkMap) {
             try {
                 this.pkMap = new ConcurrentHashMap<>(PkMapStore.load(directory.getPath()));
@@ -85,7 +89,7 @@ public class IndexWriter {
 // indexing is by default multithreaded.
     public void addDoc(Document doc){
         Future<?> future = threadPoolExecutor.submit(new DocWriter(docIDAllocator, doc, fdt, ivt, bytesUsed,
-                config.getMaxRamUsage(), ramUsageLock, directory, config, fdm, pkMap));
+                config.getMaxRamUsage(), ramUsageLock, directory, config, fdm, pkMap, bkdFields));
         futures.add(future);
     }
 
@@ -108,9 +112,9 @@ public class IndexWriter {
             throw e;
         }
         threadPoolExecutor.shutdown();
-        if(ivt.size() != 0 || fdt.size() != 0) {
+        if(ivt.size() != 0 || fdt.size() != 0 || !bkdFields.isEmpty()) {
             DocWriter lastDocWriter = new DocWriter(docIDAllocator, null, fdt, ivt, bytesUsed, config.getMaxRamUsage(),
-                    ramUsageLock, directory, config, fdm, pkMap);
+                    ramUsageLock, directory, config, fdm, pkMap, bkdFields);
             lastDocWriter.flush();
         }
         try {

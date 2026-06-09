@@ -9,8 +9,9 @@ import io.github.noobcodergrowing.JFST.fstPair;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import util.DataInput;
-import util.NumberUtil;
-import util.NumericTrie;
+import util.bkd.BkdFileReader;
+import util.bkd.BkdFormatVersion;
+import util.bkd.BkdReader;
 import common.Pair;
 
 import java.io.FileNotFoundException;
@@ -44,7 +45,7 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     private FST termFST;
 
-    private HashMap<String, NumericTrie> numericTrieMap;
+    private HashMap<String, BkdReader> bkdReaders;
 
     private Map<Long, Integer> pkMap;
 
@@ -56,7 +57,7 @@ public class MMapDirectoryReader extends DirectoryReader {
         this.directory = directory;
         this.fDXMap = new TreeMap<>();
         this.fDMMap = new HashMap<>();
-        this.numericTrieMap = new HashMap<>();
+        this.bkdReaders = new HashMap<>();
         init();
     }
 
@@ -66,7 +67,24 @@ public class MMapDirectoryReader extends DirectoryReader {
         loadFdt();
         constructFdmMap();
         loadFrq();
-        constructFSTNumericTrie();
+        loadBkd();
+        constructTermFST();
+    }
+
+    private void loadBkd() {
+        int formatVersion = directory.getSegmentInfo().getFormatVersion();
+        if (formatVersion < BkdFormatVersion.BKD) {
+            throw new IllegalStateException("index formatVersion " + formatVersion
+                    + " does not support BKD; rebuild the index");
+        }
+        String dirPath = directory.getPath().toAbsolutePath().toString();
+        String bkdPath = dirPath + "/1.bkd";
+        try {
+            this.bkdReaders = new HashMap<>(BkdFileReader.open(java.nio.file.Paths.get(bkdPath)));
+        } catch (IOException e) {
+            log.error("failed to load .bkd file");
+            throw new RuntimeException(e);
+        }
     }
 
     private void loadDeleteMetadata() {
@@ -167,12 +185,11 @@ public class MMapDirectoryReader extends DirectoryReader {
         }
     }
 
-    public void constructFSTNumericTrie(){
+    public void constructTermFST(){
         ArrayList<fstPair<String, Long>> stringTerms = new ArrayList<>();
 
         String dirPath = directory.getPath().toAbsolutePath().toString();
         String timPath = dirPath + "/1.tim";
-        log.info("start constructing FST and numericTrie");
         try {
             MappedByteBuffer buffer = MMap.mmapFile(timPath);
             while (buffer.position() < buffer.limit()){
@@ -186,14 +203,12 @@ public class MMapDirectoryReader extends DirectoryReader {
                 String fieldValue = new String(fieldValueBytes,StandardCharsets.UTF_8);
                 byte[] offset = DataInput.readVlongBytes(buffer);
                 byte fieldType = fDMMap.get(fieldName).getLeft()[0];
-                if((fieldType & 0b00001000) != 0){ // String term
+                if((fieldType & 0b00001000) != 0){
                     long frqOffset = DataInput.readVlong(offset);
-                    log.info("FST building ==> " + "filed name is " + fieldName +", field value is " +
-                            fieldValue + ", offset is " + frqOffset);
                     stringTerms.add(new fstPair<>(
                             TermFstUtil.termKey(fieldName, fieldValue), frqOffset));
-                } else if ((fieldType & 0b00000100)!= 0) { // double term
-                    constructNumericTrieMap(fieldName, fieldValueBytes, offset, 64 , 4);
+                } else if ((fieldType & 0b00000100)!= 0) {
+                    // numeric fields are indexed in .bkd
                 }
             }
             MMap.unMMap(buffer);
@@ -204,7 +219,6 @@ public class MMapDirectoryReader extends DirectoryReader {
             }
             this.termFST = new FST();
             this.termFST.build(fstInput);
-            log.info("end of constructing FST and numericTrie");
         } catch (FileNotFoundException e) {
             log.error("tim file does not exist");
             System.exit(1);
@@ -214,24 +228,9 @@ public class MMapDirectoryReader extends DirectoryReader {
         }
     }
 
-    public void  constructNumericTrieMap(String fieldName, byte[] fieldValueBytes, byte[] offset, int length,
-                                      int precisionStep){
-        String key = new String(fieldValueBytes);
-
-//        debug info
-        long sortableLong = DataInput.read7bitBytes2Long(fieldValueBytes, 1);
-        double doubelValue = NumberUtil.sortableLong2Double(sortableLong);
-        int shift = fieldValueBytes[0] & 0xff;
-        log.info("NumericTrie Construction ===> " + "field name is " + fieldName + ", shift is " + shift + ", value is "
-                + doubelValue);
-        if(numericTrieMap.containsKey(fieldName)){
-            NumericTrie trie = numericTrieMap.get(fieldName);
-            trie.add(key, offset);
-        }else {
-            NumericTrie trie = new NumericTrie(length, precisionStep);
-            trie.add(key, offset);
-            numericTrieMap.put(fieldName, trie);
-        }
+    @Override
+    public HashMap<String, BkdReader> getBkdReaders() {
+        return bkdReaders;
     }
 
     @Override

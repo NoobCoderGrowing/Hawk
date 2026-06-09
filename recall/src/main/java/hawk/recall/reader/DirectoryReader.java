@@ -3,7 +3,7 @@ package hawk.recall.reader;
 import directory.Directory;
 import directory.MMapDirectory;
 import io.github.noobcodergrowing.JFST.FST;
-import util.NumericTrie;
+import util.bkd.BkdReader;
 import common.Pair;
 
 import java.nio.MappedByteBuffer;
@@ -27,7 +27,7 @@ public abstract class DirectoryReader {
 
     public abstract MappedByteBuffer getFDTBuffer();
 
-    public abstract HashMap<String, NumericTrie> getNumericTrieMap();
+    public abstract HashMap<String, BkdReader> getBkdReaders();
 
     public abstract HashMap<String, Pair<byte[], Float>> getFDMMap();
 
