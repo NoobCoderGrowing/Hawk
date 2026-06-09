@@ -4,7 +4,6 @@ import common.Pair;
 import directory.Directory;
 import document.Document;
 import hawk.indexer.writer.config.IndexConfig;
-import directory.LiveDocsStore;
 import directory.PkMapStore;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +17,6 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.BitSet;
 
 @Data
 @Slf4j
@@ -58,8 +56,6 @@ public class IndexWriter {
 
     private final Map<Long, Integer> pkMap;
 
-    private final BitSet liveDocs;
-
     public IndexWriter(IndexConfig config, Directory directory) {
         this.config = config;
         this.directory = directory;
@@ -76,16 +72,15 @@ public class IndexWriter {
         this.fdm = new HashMap<>();
         try {
             this.pkMap = new ConcurrentHashMap<>(PkMapStore.load(directory.getPath()));
-            this.liveDocs = LiveDocsStore.load(directory.getPath(), directory.getSegmentInfo().getPreMaxID());
         } catch (IOException e) {
-            throw new RuntimeException("failed to load pk.map or live.docs", e);
+            throw new RuntimeException("failed to load pk.map", e);
         }
     }
 
 // indexing is by default multithreaded.
     public void addDoc(Document doc){
         Future<?> future = threadPoolExecutor.submit(new DocWriter(docIDAllocator, doc, fdt, ivt, bytesUsed,
-                config.getMaxRamUsage(), ramUsageLock, directory, config, fdm, pkMap, liveDocs));
+                config.getMaxRamUsage(), ramUsageLock, directory, config, fdm, pkMap));
         futures.add(future);
     }
 
@@ -97,14 +92,13 @@ public class IndexWriter {
         threadPoolExecutor.shutdown();
         if(ivt.size() != 0 || fdt.size() != 0) {
             DocWriter lastDocWriter = new DocWriter(docIDAllocator, null, fdt, ivt, bytesUsed, config.getMaxRamUsage(),
-                    ramUsageLock, directory, config, fdm, pkMap, liveDocs);
+                    ramUsageLock, directory, config, fdm, pkMap);
             lastDocWriter.flush();
         }
         try {
             PkMapStore.save(directory.getPath(), pkMap);
-            LiveDocsStore.save(directory.getPath(), liveDocs);
         } catch (IOException e) {
-            throw new RuntimeException("failed to save pk.map or live.docs", e);
+            throw new RuntimeException("failed to save pk.map", e);
         }
     }
 }

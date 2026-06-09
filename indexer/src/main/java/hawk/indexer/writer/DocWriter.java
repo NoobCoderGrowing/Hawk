@@ -50,12 +50,10 @@ public class DocWriter implements Runnable {
 
     private Map<Long, Integer> pkMap;
 
-    private BitSet liveDocs;
-
     public DocWriter(AtomicInteger docIDAllocator, Document doc, List fdt, HashMap<FieldTermPair,
             int[][]> ivt, AtomicLong bytesUsed, long maxRamUsage, ReentrantLock ramUsageLock, Directory directory,
                      IndexConfig config, HashMap<ByteReference, Pair<byte[], int[]>> fdm,
-                     Map<Long, Integer> pkMap, BitSet liveDocs) {
+                     Map<Long, Integer> pkMap) {
         this.docIDAllocator = docIDAllocator;
         this.doc = doc;
         this.fdt = fdt;
@@ -67,7 +65,6 @@ public class DocWriter implements Runnable {
         this.config = config;
         this.fdm = fdm;
         this.pkMap = pkMap;
-        this.liveDocs = liveDocs;
     }
 
     @Override
@@ -110,7 +107,6 @@ public class DocWriter implements Runnable {
         if (pkMap.putIfAbsent(pk.getValue(), globalDocID) != null) {
             throw new IllegalArgumentException("duplicate uniqueID: " + pk.getValue());
         }
-        liveDocs.set(globalDocID);
     }
     // doc fdm key: filed name; value1:field type, value2: field value length
     // global fdm key: field name; value left: field type; value right1: field value length, value right2: doc count
