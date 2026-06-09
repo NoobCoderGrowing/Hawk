@@ -43,6 +43,7 @@ public class HawkIndexBenchmark {
         documents = CorpusLoader.loadDocuments(docCount);
         indexDir = BenchmarkSupport.indexDir().resolve("index-" + docCount);
         indexConfig = BenchmarkSupport.newBenchmarkIndexConfig();
+        BenchmarkSupport.logIndexThreadConfig(indexConfig);
     }
 
     @Setup(Level.Iteration)

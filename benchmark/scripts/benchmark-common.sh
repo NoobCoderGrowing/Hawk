@@ -14,6 +14,7 @@ init_result_file() {
     echo "index_dir: ${INDEX_DIR}"
     echo "doc_counts: ${DOC_COUNTS}"
     echo "jmh_args: ${JMH_ARGS}"
+    echo "available_processors: $(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo unknown)"
     echo "jar: ${JAR}"
     echo
   } | tee "${RESULT_FILE}"

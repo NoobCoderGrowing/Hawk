@@ -10,7 +10,6 @@ import hawk.segment.core.anlyzer.Analyzer;
 import hawk.segment.core.anlyzer.NShortestPathAnalyzer;
 
 import field.PrimaryKeyField;
-import java.io.IOException;
 import java.nio.file.Paths;
 
 public class WirteIndex {

@@ -47,6 +47,10 @@ public final class BenchmarkSupport {
         return indexConfig;
     }
 
+    public static void logIndexThreadConfig(IndexConfig indexConfig) {
+        BenchmarkThreadInfo.logHawkIndexThreads(indexConfig);
+    }
+
     public static void wipeDirectory(Path dir) throws IOException {
         if (!Files.exists(dir)) {
             Files.createDirectories(dir);
@@ -65,6 +69,7 @@ public final class BenchmarkSupport {
     }
 
     public static void buildIndex(Path indexDir, List<Document> documents, IndexConfig indexConfig) throws Exception {
+        logIndexThreadConfig(indexConfig);
         wipeDirectory(indexDir);
         MMapDirectory directory = MMapDirectory.open(indexDir);
         IndexWriter indexWriter = new IndexWriter(indexConfig, directory, false);

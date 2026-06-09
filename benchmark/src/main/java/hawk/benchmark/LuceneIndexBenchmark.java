@@ -40,6 +40,7 @@ public class LuceneIndexBenchmark {
     public void loadCorpus() throws Exception {
         documents = CorpusLoader.loadDocuments(docCount);
         indexDir = LuceneBenchmarkSupport.indexDir().resolve("index-" + docCount);
+        LuceneBenchmarkSupport.logIndexThreadConfig(LuceneBenchmarkSupport.newBenchmarkWriterConfig());
     }
 
     @Setup(Level.Iteration)

@@ -50,6 +50,10 @@ public final class LuceneBenchmarkSupport {
         return config;
     }
 
+    public static void logIndexThreadConfig(IndexWriterConfig config) {
+        BenchmarkThreadInfo.logLuceneIndexThreads(config);
+    }
+
     public static org.apache.lucene.document.Document toLuceneDocument(Document hawkDocument) {
         PrimaryKeyField primaryKeyField = (PrimaryKeyField) hawkDocument.getFieldMap().get("uniqueID");
         StringField titleField = (StringField) hawkDocument.getFieldMap().get("title");
@@ -75,9 +79,11 @@ public final class LuceneBenchmarkSupport {
     }
 
     public static void buildIndex(Path indexDir, List<Document> documents) throws IOException {
+        IndexWriterConfig writerConfig = newBenchmarkWriterConfig();
+        logIndexThreadConfig(writerConfig);
         BenchmarkSupport.wipeDirectory(indexDir);
         try (Directory directory = FSDirectory.open(indexDir);
-             IndexWriter indexWriter = new IndexWriter(directory, newBenchmarkWriterConfig())) {
+             IndexWriter indexWriter = new IndexWriter(directory, writerConfig)) {
             for (Document hawkDocument : documents) {
                 indexWriter.addDocument(toLuceneDocument(hawkDocument));
             }
