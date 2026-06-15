@@ -8,26 +8,30 @@ import field.StringField;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
 public final class CorpusLoader {
 
-    public static final String CORPUS_RESOURCE = "goods.csv";
+    public static final String CORPUS_FILE_PROPERTY = "hawk.benchmark.corpus.file";
+
+    private static final Path DEFAULT_CORPUS_FILE = Paths.get("goods.csv");
 
     private CorpusLoader() {
     }
 
+    public static Path corpusFile() {
+        String configured = System.getProperty(CORPUS_FILE_PROPERTY);
+        return configured == null ? DEFAULT_CORPUS_FILE : Paths.get(configured);
+    }
+
     public static List<Document> loadDocuments(int maxDocs) throws IOException {
-        InputStream inputStream = CorpusLoader.class.getClassLoader().getResourceAsStream(CORPUS_RESOURCE);
-        if (inputStream == null) {
-            throw new IOException("missing classpath resource: " + CORPUS_RESOURCE);
-        }
         List<Document> documents = new ArrayList<>();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+        try (BufferedReader reader = Files.newBufferedReader(corpusFile(), StandardCharsets.UTF_8)) {
             String line;
             long uniqueID = 0;
             while ((line = reader.readLine()) != null) {
@@ -42,11 +46,7 @@ public final class CorpusLoader {
 
     public static List<String> sampleTitles(int count) throws IOException {
         List<String> titles = new ArrayList<>(count);
-        InputStream inputStream = CorpusLoader.class.getClassLoader().getResourceAsStream(CORPUS_RESOURCE);
-        if (inputStream == null) {
-            throw new IOException("missing classpath resource: " + CORPUS_RESOURCE);
-        }
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+        try (BufferedReader reader = Files.newBufferedReader(corpusFile(), StandardCharsets.UTF_8)) {
             String line;
             while ((line = reader.readLine()) != null && titles.size() < count) {
                 String[] parts = line.split("\t", 3);

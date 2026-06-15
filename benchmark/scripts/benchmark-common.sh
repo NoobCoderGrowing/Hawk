@@ -12,6 +12,7 @@ init_result_file() {
     echo "=== Benchmark run: ${prefix} ==="
     echo "started: $(date -Iseconds)"
     echo "index_dir: ${INDEX_DIR}"
+    echo "corpus_file: ${CORPUS_FILE}"
     echo "doc_counts: ${DOC_COUNTS}"
     echo "jmh_args: ${JMH_ARGS}"
     echo "available_processors: $(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo unknown)"
@@ -46,6 +47,7 @@ run_jmh() {
   log "[${BENCHMARK_PREFIX}] run ${benchmark_name} $*"
   {
     java "${jvm_index_property}=${INDEX_DIR}" \
+      -Dhawk.benchmark.corpus.file="${CORPUS_FILE}" \
       -jar "${JAR}" \
       "${benchmark_name}" \
       ${JMH_ARGS} \

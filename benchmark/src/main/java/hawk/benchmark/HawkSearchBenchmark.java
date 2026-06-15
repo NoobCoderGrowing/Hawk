@@ -37,7 +37,7 @@ public class HawkSearchBenchmark {
 
     private static final int INDEX_DOC_COUNT = 50000;
     private static final int QUERY_COUNT = 32;
-    private static final int TOP_N = Integer.MAX_VALUE;
+    private static final int TOP_N = 500;
 
     private Searcher searcher;
 

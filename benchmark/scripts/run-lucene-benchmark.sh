@@ -9,6 +9,7 @@ PROJECT_ROOT="$(cd "${BENCHMARK_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/benchmark-common.sh"
 
 JAR="${JAR:-${BENCHMARK_DIR}/target/benchmarks.jar}"
+CORPUS_FILE="${CORPUS_FILE:-${PROJECT_ROOT}/goods.csv}"
 INDEX_DIR="${LUCENE_BENCHMARK_INDEX_DIR:-/tmp/lucene-jmh-index}"
 DOC_COUNTS="${DOC_COUNTS:-1000 5000 10000}"
 JMH_ARGS="${JMH_ARGS:--i 1 -wi 1 -f 1}"
