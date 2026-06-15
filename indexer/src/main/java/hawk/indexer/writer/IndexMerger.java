@@ -332,13 +332,13 @@ public class IndexMerger {
     public void mergeFDX(ArrayList<int[]> seg2FDX, FileChannel seg1FdxFC, FileChannel seg1FdtFC){
         try {
             long limit = seg1FdtFC.size();
+            WrapLong fdxPos = new WrapLong(seg1FdxFC.size());
             for (int i = 0; i < seg2FDX.size(); i++) {
                 int[] item = seg2FDX.get(i);
                 int docID = item[0];
                 long offset = item[1] + limit;
-                WrapLong offsetWrapper = new WrapLong(offset);
-                DataOutput.writeVInt(docID, seg1FdxFC, offsetWrapper);
-                DataOutput.writeVLong(offset, seg1FdxFC, offsetWrapper);
+                DataOutput.writeVInt(docID, seg1FdxFC, fdxPos);
+                DataOutput.writeVLong(offset, seg1FdxFC, fdxPos);
             }
         } catch (IOException e) {
             log.error("something wrong during mergeFDX");
@@ -349,7 +349,7 @@ public class IndexMerger {
     public void mergeFDT(FileChannel seg1FdtFC,  MappedByteBuffer seg2FDTBuffer,
                          ArrayList<int[]> seg2FDX){
         try {
-            long writePos = seg1FdtFC.size();
+            long base = seg1FdtFC.size();
             long limit = seg2FDTBuffer.limit();
             int left, right;
             for (int i = 0; i < seg2FDX.size(); i++) {
@@ -362,12 +362,10 @@ public class IndexMerger {
                 }
                 int length = right - left;
                 byte[] block = new byte[length];
-                //read original bloc
-                seg2FDTBuffer.get(block, left, length);
+                seg2FDTBuffer.position(left);
+                seg2FDTBuffer.get(block, 0, length);
                 ByteBuffer buffer = ByteBuffer.wrap(block);
-                //write original block to seg1 FDT
-                writePos += left;
-                seg1FdtFC.write(buffer, writePos);
+                seg1FdtFC.write(buffer, base + left);
             }
         } catch (IOException e) {
             log.error("something wrong during mergeFDT");
