@@ -61,7 +61,7 @@ IndexWriter.addDoc(Document)
         ├─ 累积数值点 (sortableLong, docID) → bkdFields
         └─ 登记主键 → pkMap
 
-触发 flush（RAM 使用量 ≥ 95% maxRamUsage，或 commit()）：
+触发 flush（RAM 估算量 ≥ 95% maxRamUsage，或 commit()）：
   1. 排序 fdt / fdm / ivt
   2. flushStored  → {n}.fdt + {n}.fdx
   3. flushIndexed → {n}.fdm + {n}.tim + {n}.frq
@@ -71,6 +71,10 @@ IndexWriter.addDoc(Document)
 ```
 
 `IndexWriter.commit()` 等待所有写入线程结束，做最后一次 flush，并持久化 `pk.map`。
+
+> `maxRamUsage` 默认 **8 GiB**（`IndexConfig.DEFAULT_MAX_RAM_USAGE`），但它是**估算值**：按字段序列化后的字节数累加，
+> 不计 `HashMap` 的 entry 开销（每项 32–48 B）、`FieldTermPair` / `ByteReference` / `int[]` 等包装对象、以及分词器输出的 `HashSet<Term>`。
+> 真实堆占用明显高于该值，**`-Xmx` 需相应调高**，否则会在估算量够到阈值之前先抛 `OutOfMemoryError`——flush 永远等不到触发。
 
 ### 1.4 检索链路
 
@@ -115,11 +119,18 @@ deleted.ids      软删除主键集合
 
 ## 2. 构建与运行
 
-要求：JDK 8+（基准测试在 JDK 17 上运行），Maven。
+**要求 JDK 22+**（当前使用 25 LTS），Maven。
+
+> 为什么不能再低了：索引文件的寻址改用 `java.lang.foreign` 的 `MemorySegment` 以突破 2 GiB 单文件上限，
+> 而 FFM 在 **JDK 22** 才转正（JEP 454）；JDK 17/21 上它只是 preview，且 `FileChannel.map(mode, long, long, Arena)`
+> 这个签名在 22 才出现。`pom.xml` 中为 `maven.compiler.release=25`。
+>
+> 另外 JDK 23 起 javac 不再隐式运行"仅在 classpath 上"的注解处理器，因此根 pom 显式配了 `-proc:full`——
+> 否则 Lombok 与 JMH 的 processor 会一起静默失效（表现为找不到 `@Data` 生成的成员、`benchmarks.jar` 缺 `BenchmarkList`）。
 
 ```bash
-# 全量构建
-mvn -DskipTests package
+# 全量构建。切换 JDK 版本后务必带 clean：增量编译会复用旧字节码，报出"假的成功"
+mvn clean -DskipTests package
 ```
 
 示例类一览（`demo/src/main/java/demo`）：`demo` 模块中的 `main` 方法直接指向本地索引目录，按需修改路径后运行。
@@ -152,6 +163,11 @@ mvn -DskipTests package
 | 查询构造 | 取标题前 2 个字符作为词项/串查询；`price` 落于 [1.0, 100.0] 的宽度 20 的随机区间（固定种子 42） |
 
 **为什么这个对比有意义**：Lucene 侧不是用它自己的 `StandardAnalyzer`/`SmartChineseAnalyzer`，而是被替换成 Hawk 的分词器实现。因此两侧的**分词开销完全相同**，差异只来自索引结构、打分与存储层——这是能否公平对比的前提。
+
+> **关于运行环境的两点说明**
+>
+> 1. `benchmark/results/` 里记录的结果是在 **JDK 17.0.19** 上跑出来的，当时工程还在用 `MappedByteBuffer`。工程迁移到 JDK 25 + FFM 之后，Hawk 侧检索基准已复测，吞吐与记录相当（Term 67.3k vs 66.3k、NumericRange 112.5k vs 108.5k ops/s，2 次迭代的噪声范围内），因此 §3.2 / §3.3 的数字仍可作为对照。**但表格里的 JVM 一栏描述的是当时那次运行**；现在重跑需要 JDK 22+。
+> 2. 下面 §3.2 配置栏中的 `maxRamUsage=1 GiB` 同样是**当时那次运行的记录**。该值现已是可配置项，**当前默认 8 GiB**（`IndexConfig.DEFAULT_MAX_RAM_USAGE`）。注意它是估算值而非实测堆占用，会低估真实内存，因此 `-Xmx` 需相应调高。
 
 ### 3.2 索引吞吐
 
