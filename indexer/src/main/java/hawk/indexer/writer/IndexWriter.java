@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Data
@@ -24,7 +23,6 @@ public class IndexWriter {
      * Configurable object:
      *  Analyzer
      *  Thread count used to do indexing
-     *  Maximum memory allowed to do indexing
      *  **/
     private final IndexConfig config;
 
@@ -38,10 +36,7 @@ public class IndexWriter {
     //stored doc fields
     private volatile List<Pair> fdt;
 
-    // calculation of byte used in fdt and ivt
-    private AtomicLong bytesUsed;
-
-    // lock for flush and reset byteUsed
+    // 保护内存索引的组装（不再有 flush 触发点）
     private ReentrantLock ramUsageLock;
 
     //documentID, increase linearly from 0 since every time an indexWriter is opened
@@ -65,7 +60,6 @@ public class IndexWriter {
         this.directory = directory;
         this.ivt = new HashMap<>();
         this.fdt = new ArrayList<>();
-        this.bytesUsed = new AtomicLong(0);
         this.ramUsageLock = new ReentrantLock();
         this.docIDAllocator = new AtomicInteger(0);
         this.blockingQueue = new LinkedBlockingQueue<>();
@@ -88,8 +82,8 @@ public class IndexWriter {
 
 // indexing is by default multithreaded.
     public void addDoc(Document doc){
-        Future<?> future = threadPoolExecutor.submit(new DocWriter(docIDAllocator, doc, fdt, ivt, bytesUsed,
-                config.getMaxRamUsage(), ramUsageLock, directory, config, fdm, pkMap, bkdFields));
+        Future<?> future = threadPoolExecutor.submit(new DocWriter(docIDAllocator, doc, fdt, ivt,
+                ramUsageLock, directory, config, fdm, pkMap, bkdFields));
         futures.add(future);
     }
 
@@ -113,7 +107,7 @@ public class IndexWriter {
         }
         threadPoolExecutor.shutdown();
         if(ivt.size() != 0 || fdt.size() != 0 || !bkdFields.isEmpty()) {
-            DocWriter lastDocWriter = new DocWriter(docIDAllocator, null, fdt, ivt, bytesUsed, config.getMaxRamUsage(),
+            DocWriter lastDocWriter = new DocWriter(docIDAllocator, null, fdt, ivt,
                     ramUsageLock, directory, config, fdm, pkMap, bkdFields);
             lastDocWriter.flush();
         }

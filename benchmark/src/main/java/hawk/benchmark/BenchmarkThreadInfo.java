@@ -17,10 +17,9 @@ public final class BenchmarkThreadInfo {
 
     public static String formatHawkIndexThreads(IndexConfig config) {
         return String.format(
-                "# Benchmark index threads [hawk]: indexerThreadNum=%d, maxRamUsageBytes=%d, mergeEnabled=%s, "
+                "# Benchmark index threads [hawk]: indexerThreadNum=%d, mergeEnabled=%s, "
                         + "availableProcessors=%d, constantsProcessorNum=%d",
                 config.getIndexerThreadNum(),
-                config.getMaxRamUsage(),
                 config.isEnableMerge(),
                 Runtime.getRuntime().availableProcessors(),
                 Constants.PROCESSOR_NUM);

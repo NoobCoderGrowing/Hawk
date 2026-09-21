@@ -61,7 +61,7 @@ IndexWriter.addDoc(Document)
         ├─ 累积数值点 (sortableLong, docID) → bkdFields
         └─ 登记主键 → pkMap
 
-触发 flush（RAM 估算量 ≥ 95% maxRamUsage，或 commit()）：
+触发 flush（**仅在 `commit()` 时**，见下方说明）：
   1. 排序 fdt / fdm / ivt
   2. flushStored  → {n}.fdt + {n}.fdx
   3. flushIndexed → {n}.fdm + {n}.tim + {n}.frq
@@ -72,9 +72,13 @@ IndexWriter.addDoc(Document)
 
 `IndexWriter.commit()` 等待所有写入线程结束，做最后一次 flush，并持久化 `pk.map`。
 
-> `maxRamUsage` 默认 **8 GiB**（`IndexConfig.DEFAULT_MAX_RAM_USAGE`），但它是**估算值**：按字段序列化后的字节数累加，
-> 不计 `HashMap` 的 entry 开销（每项 32–48 B）、`FieldTermPair` / `ByteReference` / `int[]` 等包装对象、以及分词器输出的 `HashSet<Term>`。
-> 真实堆占用明显高于该值，**`-Xmx` 需相应调高**，否则会在估算量够到阈值之前先抛 `OutOfMemoryError`——flush 永远等不到触发。
+> **没有内存阈值了。** 所有文档累积在内存中，直到 `commit()` 才一次性落盘——因此**每次 `IndexWriter` 会话只产出单一 segment**，
+> 也不会触发段合并（`segCount > 1` 只可能来自"在已有索引上追加"这种跨会话场景）。
+>
+> 代价是**内存占用与语料规模成正比、且无上界**：`-Xmx` 必须放得下整个语料的内存表示
+> （正排 + 倒排 + BKD 点 + `pk.map`）。这换来的是确定性的单段布局与无空洞的 docID——
+> 实测 5 万篇时 `段数 = 1`、`preMaxID = 50000`（正好等于文档数）。
+> 若将来需要在有限内存下建大索引，阈值机制需要重新引入。
 
 ### 1.4 检索链路
 
@@ -167,7 +171,7 @@ mvn clean -DskipTests package
 > **关于运行环境的两点说明**
 >
 > 1. `benchmark/results/` 里记录的结果是在 **JDK 17.0.19** 上跑出来的，当时工程还在用 `MappedByteBuffer`。工程迁移到 JDK 25 + FFM 之后，Hawk 侧检索基准已复测，吞吐与记录相当（Term 67.3k vs 66.3k、NumericRange 112.5k vs 108.5k ops/s，2 次迭代的噪声范围内），因此 §3.2 / §3.3 的数字仍可作为对照。**但表格里的 JVM 一栏描述的是当时那次运行**；现在重跑需要 JDK 22+。
-> 2. 下面 §3.2 配置栏中的 `maxRamUsage=1 GiB` 同样是**当时那次运行的记录**。该值现已是可配置项，**当前默认 8 GiB**（`IndexConfig.DEFAULT_MAX_RAM_USAGE`）。注意它是估算值而非实测堆占用，会低估真实内存，因此 `-Xmx` 需相应调高。
+> 2. 下面 §3.2 配置栏中的 `maxRamUsage=1 GiB` 是**当时那次运行的记录**。该配置项**现已整个移除**：不再有内存阈值，flush 只在 `commit()` 发生（见 §1.3）。因此今天的基准跑法与该记录已不完全相同，但 50k 篇的规模下两者都不会中途刷盘，对比仍然成立。
 
 ### 3.2 索引吞吐
 

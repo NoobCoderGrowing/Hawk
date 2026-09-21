@@ -92,9 +92,12 @@ curSeg = segmentInfo.segCount + 1
 
 | 事件 | segCount 变化 | 生成的文件 |
 |------|---------------|------------|
-| 首次 flush | 0 → 1 | `1.fdt` … `1.bkd` |
-| 内存再次刷盘 | 1 → 2 | `2.fdt` … `2.bkd` |
+| 首次 flush（会话结束时） | 0 → 1 | `1.fdt` … `1.bkd` |
+| 在已有索引上再次写入 | 1 → 2 | `2.fdt` … `2.bkd` |
 | 段合并完成 | 2 → 1 | 仅保留 `1.*` |
+
+> 已无内存阈值，单次 `IndexWriter` 会话只 flush 一次（`commit()`），因此**新索引总是单段**。
+> `2.*` 只可能来自"打开已有索引继续追加"这种跨会话场景。
 
 **docID 分配：**
 
@@ -341,7 +344,7 @@ addDoc(Document)
   │    └─ stored-only 字段         → 仅登记 fdm 元数据
   └─ registerPrimaryKey()      → 内存 pkMap
 
-触发 flush（RAM ≥ 95% maxRamUsage 或 commit()）：
+触发 flush（**仅在 commit() 时**；已无内存阈值，故每次会话只产出单一 segment）：
   1. 排序 fdt、fdm、ivt
   2. flushStored  → .fdt + .fdx
   3. flushIndexed → .fdm + .tim + .frq
@@ -416,12 +419,16 @@ addDoc(Document)
 
    **实现注意：** FFM 下必须显式指定字节序与对齐——`ValueLayout.JAVA_INT`/`JAVA_LONG` 默认是 **native order**（x86 小端）而格式是大端，且默认要求 4/8 字节对齐而格式紧凑排布（如 `.fdm` 的 `Byte fieldType` 后紧跟 `Int`）。代码中统一用 `BIG_ENDIAN + withByteAlignment(1)` 的布局常量。
 
-2. **文档数上限约 2^31：** posting 的 `VInt docID`、`SegmentInfo.preMaxID`、`pk.map` 的 docID 仍是有符号 `int`。这与文件大小无关，达到该量级需升 `formatVersion` 并加宽 docID。
-3. **搜索只读 `1.*`：** 若 `enableMerge=false` 导致存在 `2.*` 段，未合并的数据对搜索不可见。
-4. **Term FST 不落盘：** 每次打开 `DirectoryReader` 都从 `1.tim` 重建，大索引打开会有额外开销。
-5. **docID 从 1 开始：** `docIDAllocator` 先自增再赋值，首篇文档全局 ID = `docBase + 1`。
-6. **Stored 字段顺序：** `fieldMap` 中 stored 字段应位于非 stored 字段之前，以保证 `insertBlock` 连续写入时字段顺序正确。
-7. **数值索引：** 当前格式下 `DoubleField` 只写 BKD，不写 tim/frq；`Tokenized.NO` 的数值字段仅作为 stored 字段存储。
+2. **建索引内存无上界：** 已移除内存阈值（`maxRamUsage`），全部文档累积在内存中直到 `commit()` 才落盘，
+   因此 `-Xmx` 必须放得下整个语料的常驻表示（正排 + 倒排 + BKD 点 + `pk.map`）。代价换来的是确定性单段布局。
+   若需在有限内存下建大索引，需重新引入分段阈值。
+
+3. **文档数上限约 2^31：** posting 的 `VInt docID`、`SegmentInfo.preMaxID`、`pk.map` 的 docID 仍是有符号 `int`。这与文件大小无关，达到该量级需升 `formatVersion` 并加宽 docID。
+4. **搜索只读 `1.*`：** 若 `enableMerge=false` 导致存在 `2.*` 段，未合并的数据对搜索不可见。
+5. **Term FST 不落盘：** 每次打开 `DirectoryReader` 都从 `1.tim` 重建，大索引打开会有额外开销。
+6. **docID 从 1 开始：** `docIDAllocator` 先自增再赋值，首篇文档全局 ID = `docBase + 1`。
+7. **Stored 字段顺序：** `fieldMap` 中 stored 字段应位于非 stored 字段之前，以保证 `insertBlock` 连续写入时字段顺序正确。
+8. **数值索引：** 当前格式下 `DoubleField` 只写 BKD，不写 tim/frq；`Tokenized.NO` 的数值字段仅作为 stored 字段存储。
 
 ---
 
