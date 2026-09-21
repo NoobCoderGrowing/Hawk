@@ -6,7 +6,7 @@ import io.github.noobcodergrowing.JFST.FST;
 import util.bkd.BkdReader;
 import common.Pair;
 
-import java.nio.MappedByteBuffer;
+import java.lang.foreign.MemorySegment;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -23,9 +23,9 @@ public abstract class DirectoryReader {
 
     public abstract FST getTermFST();
 
-    public abstract MappedByteBuffer getFRQBuffer();
+    public abstract MemorySegment getFRQBuffer();
 
-    public abstract MappedByteBuffer getFDTBuffer();
+    public abstract MemorySegment getFDTBuffer();
 
     public abstract HashMap<String, BkdReader> getBkdReaders();
 

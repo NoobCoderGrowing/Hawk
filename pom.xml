@@ -24,8 +24,10 @@
     </parent>
 
     <properties>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <!-- FFM (java.lang.foreign / MemorySegment) 需要 JDK 22+，用 25 LTS。
+             用 release 而非 source/target：保证不会意外链到更高版本才有的 API。 -->
+        <maven.compiler.release>25</maven.compiler.release>
+        <lombok.version>1.18.38</lombok.version>
     </properties>
 
 <!--    子项目必然继承-->
@@ -60,7 +62,8 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>1.18.22</version>
+            <!-- 1.18.22 无法在 JDK 25 的 javac 上跑注解处理，会静默不生成 @Data/@Slf4j 成员 -->
+            <version>${lombok.version}</version>
         </dependency>
 
         <dependency>
@@ -105,4 +108,23 @@
 
         </dependencies>
     </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <!-- JDK 23 起 javac 不再隐式运行"仅在 classpath 上"的注解处理器，
+                             会让 Lombok 与 JMH 的 annotation processor 一起静默失效
+                             （表现为找不到 @Data/@Slf4j 成员、benchmarks.jar 缺 BenchmarkList，
+                             且没有任何 processor 相关报错提示）。
+                             -proc:full 恢复 JDK 21 之前的行为：扫描 classpath 上的处理器。 -->
+                        <proc>full</proc>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
 </project>

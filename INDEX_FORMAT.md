@@ -410,12 +410,18 @@ addDoc(Document)
 
 ## 19. 限制与注意事项
 
-1. **4 GiB 上限：** `.fdt`、`.fdx`、`.frq`、`.fdm` 通过 `int` 强转文件大小，单文件不得超过 4 GB。
-2. **搜索只读 `1.*`：** 若 `enableMerge=false` 导致存在 `2.*` 段，未合并的数据对搜索不可见。
-3. **Term FST 不落盘：** 每次打开 `DirectoryReader` 都从 `1.tim` 重建，大索引打开会有额外开销。
-4. **docID 从 1 开始：** `docIDAllocator` 先自增再赋值，首篇文档全局 ID = `docBase + 1`。
-5. **Stored 字段顺序：** `fieldMap` 中 stored 字段应位于非 stored 字段之前，以保证 `insertBlock` 连续写入时字段顺序正确。
-6. **数值索引：** 当前格式下 `DoubleField` 只写 BKD，不写 tim/frq；`Tokenized.NO` 的数值字段仅作为 stored 字段存储。
+1. **单文件 2 GiB 上限已解除（前提：JDK 22+）：** 文件改用 `MemorySegment`（FFM）以 `long` 寻址，单次 `FileChannel.map()` 不再受 `Integer.MAX_VALUE` 约束；映射生命周期由 `Arena` 管理。偏移在磁盘上本就是 VLong（64 位），原先被窄化成有符号 `int` 的读取点（posting 偏移、`.bkd` 节点偏移、`.fdt` 块偏移、`.fdx`/`.fdm` 整文件大小）现已全部改为 `long`；`PkMapStore`/`DeletedIdsStore` 则改为流式读取，不再整文件进堆。
+
+   已验证 2.26 GiB 的 `.fdt` 可正常打开/检索/取回原文（旧实现在该文件上 `fc.map(...)` 抛 `IllegalArgumentException: Size exceeds Integer.MAX_VALUE`）。
+
+   **实现注意：** FFM 下必须显式指定字节序与对齐——`ValueLayout.JAVA_INT`/`JAVA_LONG` 默认是 **native order**（x86 小端）而格式是大端，且默认要求 4/8 字节对齐而格式紧凑排布（如 `.fdm` 的 `Byte fieldType` 后紧跟 `Int`）。代码中统一用 `BIG_ENDIAN + withByteAlignment(1)` 的布局常量。
+
+2. **文档数上限约 2^31：** posting 的 `VInt docID`、`SegmentInfo.preMaxID`、`pk.map` 的 docID 仍是有符号 `int`。这与文件大小无关，达到该量级需升 `formatVersion` 并加宽 docID。
+3. **搜索只读 `1.*`：** 若 `enableMerge=false` 导致存在 `2.*` 段，未合并的数据对搜索不可见。
+4. **Term FST 不落盘：** 每次打开 `DirectoryReader` 都从 `1.tim` 重建，大索引打开会有额外开销。
+5. **docID 从 1 开始：** `docIDAllocator` 先自增再赋值，首篇文档全局 ID = `docBase + 1`。
+6. **Stored 字段顺序：** `fieldMap` 中 stored 字段应位于非 stored 字段之前，以保证 `insertBlock` 连续写入时字段顺序正确。
+7. **数值索引：** 当前格式下 `DoubleField` 只写 BKD，不写 tim/frq；`Tokenized.NO` 的数值字段仅作为 stored 字段存储。
 
 ---
 

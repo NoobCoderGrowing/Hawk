@@ -1,5 +1,7 @@
 package directory;
 
+import java.io.BufferedInputStream;
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -22,17 +24,15 @@ public class DeletedIdsStore {
         if (!Files.exists(path)) {
             return deletedIds;
         }
-        try (FileChannel fc = new RandomAccessFile(path.toFile(), "r").getChannel()) {
-            int size = (int) fc.size();
-            if (size < 4) {
-                return deletedIds;
-            }
-            ByteBuffer buffer = ByteBuffer.allocate(size);
-            fc.read(buffer);
-            buffer.flip();
-            int count = buffer.getInt();
+        if (Files.size(path) < 4) {
+            return deletedIds;
+        }
+        // 流式读取：不再整文件进堆，也消除了 (int) fc.size() 的 2 GiB 限制
+        try (DataInputStream in = new DataInputStream(
+                new BufferedInputStream(Files.newInputStream(path)))) {
+            int count = in.readInt();
             for (int i = 0; i < count; i++) {
-                deletedIds.add(buffer.getLong());
+                deletedIds.add(in.readLong());
             }
         }
         return deletedIds;

@@ -1,5 +1,7 @@
 package util;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
 
 public class DataInput {
@@ -191,6 +193,168 @@ public class DataInput {
             index ++;
         }
         vLong[index] = b;
+        return vLong;
+    }
+
+    // ==================== MemorySegment (FFM) 版本 ====================
+    // JDK 22+ 的 java.lang.foreign 以 long 寻址，取代 ByteBuffer 的 int 寻址，
+    // 因此单文件不再有 Integer.MAX_VALUE（2 GiB）上限。
+    // 语义与上面的 ByteBuffer 版本逐行对应，便于对照。
+
+    public static byte[] readBytes(MemorySegment seg, long offset, int length) {
+        byte[] ret = new byte[length];
+        MemorySegment.copy(seg, ValueLayout.JAVA_BYTE, offset, ret, 0, length);
+        return ret;
+    }
+
+    /** 绝对定位读取一个 VInt，不移动任何游标。 */
+    public static int readVintAt(MemorySegment seg, long index) {
+        byte b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        if (b >= 0) {
+            return b;
+        }
+        int i = b & 0x7f;
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7f) << 7);
+        if (b >= 0) {
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7f) << 14);
+        if (b > 0) {
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7f) << 21);
+        if (b >= 0) {
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7f) << 28);
+        if ((b & 0xF0) == 0) {
+            return i;
+        }
+        System.exit(1);
+        return -1;
+    }
+
+    /** 从游标处读取一个 VInt 并推进游标。 */
+    public static int readVintAt(MemorySegment seg, WrapLong indexWrapper) {
+        long index = indexWrapper.getValue();
+        byte b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        if (b >= 0) {
+            indexWrapper.setValue(index);
+            return b;
+        }
+        int i = b & 0x7f;
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7f) << 7);
+        if (b >= 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7f) << 14);
+        if (b > 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7f) << 21);
+        if (b >= 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7f) << 28);
+        if ((b & 0xF0) == 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        System.exit(1);
+        return -1;
+    }
+
+    /** 从游标处读取一个 VLong 并推进游标。 */
+    public static long readVlongAt(MemorySegment seg, WrapLong indexWrapper) {
+        long index = indexWrapper.getValue();
+        byte b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        if (b >= 0) {
+            indexWrapper.setValue(index);
+            return b;
+        }
+        long i = b & 0x7fL;
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7fL) << 7);
+        if (b >= 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7fL) << 14);
+        if (b > 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7fL) << 21);
+        if (b >= 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7fL) << 28);
+        if (b > 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7fL) << 35);
+        if (b >= 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7fL) << 42);
+        if (b >= 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7fL) << 49);
+        if (b >= 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7fL) << 56);
+        if (b >= 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        b = seg.get(ValueLayout.JAVA_BYTE, index++);
+        i |= ((b & 0x7fL) << 63);
+        if ((b & 0x2L) == 0) {
+            indexWrapper.setValue(index);
+            return i;
+        }
+        System.exit(1);
+        return -1;
+    }
+
+    /** 从游标处读取一个 VLong 的原始字节并推进游标。 */
+    public static byte[] readVlongBytesAt(MemorySegment seg, WrapLong indexWrapper) {
+        long index = indexWrapper.getValue();
+        byte[] vLong = new byte[1];
+        byte b;
+        int i = 0;
+        while ((b = seg.get(ValueLayout.JAVA_BYTE, index++)) < 0) {
+            vLong = growBytes(vLong);
+            vLong[i] = b;
+            i++;
+        }
+        vLong[i] = b;
+        indexWrapper.setValue(index);
         return vLong;
     }
 

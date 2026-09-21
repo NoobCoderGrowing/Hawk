@@ -1,9 +1,11 @@
 package util.bkd;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import util.NumberUtil;
 
+import java.lang.foreign.Arena;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -22,6 +24,14 @@ class BkdRoundtripTest {
     @TempDir
     Path tempDir;
 
+    /** BkdReader 持有映射，映射生命周期必须由调用方管理。 */
+    private final Arena arena = Arena.ofShared();
+
+    @AfterEach
+    void closeArena() {
+        arena.close();
+    }
+
     @Test
     void roundTripRandomPoints() throws Exception {
         Path bkdPath = tempDir.resolve("1.bkd");
@@ -36,7 +46,7 @@ class BkdRoundtripTest {
         fieldPoints.put("price", expected);
         BkdFileWriter.write(bkdPath, fieldPoints, new BkdConfig());
 
-        BkdReader reader = BkdFileReader.open(bkdPath).get("price");
+        BkdReader reader = BkdFileReader.open(bkdPath, arena).get("price");
         long min = NumberUtil.double2SortableLong(10.0);
         long max = NumberUtil.double2SortableLong(20.0);
         int[] hits = reader.intersect(min, max);
@@ -81,7 +91,7 @@ class BkdRoundtripTest {
         fieldPoints.put("price", points);
         BkdFileWriter.write(bkdPath, fieldPoints, new BkdConfig());
 
-        BkdReader reader = BkdFileReader.open(bkdPath).get("price");
+        BkdReader reader = BkdFileReader.open(bkdPath, arena).get("price");
         int[] hits = reader.intersect(
                 NumberUtil.double2SortableLong(1.0),
                 NumberUtil.double2SortableLong(2.0));
@@ -113,7 +123,7 @@ class BkdRoundtripTest {
         fieldPoints.put("price", points);
         BkdFileWriter.write(bkdPath, fieldPoints, new BkdConfig());
 
-        BkdReader reader = BkdFileReader.open(bkdPath).get("price");
+        BkdReader reader = BkdFileReader.open(bkdPath, arena).get("price");
         List<Integer> collected = new ArrayList<>();
         reader.intersect(
                 NumberUtil.double2SortableLong(1.0),
@@ -139,7 +149,7 @@ class BkdRoundtripTest {
         fieldPoints.put("price", expected);
         BkdFileWriter.write(bkdPath, fieldPoints, new BkdConfig());
 
-        BkdReader reader = BkdFileReader.open(bkdPath).get("price");
+        BkdReader reader = BkdFileReader.open(bkdPath, arena).get("price");
         long min = NumberUtil.double2SortableLong(1.0);
         long max = NumberUtil.double2SortableLong(100.0);
         int[] hits = reader.intersect(min, max);
@@ -169,7 +179,7 @@ class BkdRoundtripTest {
         fieldPoints.put("price", points);
         BkdFileWriter.write(bkdPath, fieldPoints, new BkdConfig());
 
-        BkdReader reader = BkdFileReader.open(bkdPath).get("price");
+        BkdReader reader = BkdFileReader.open(bkdPath, arena).get("price");
         int topN = 10;
         List<Integer> hits = new ArrayList<>();
         int[] visited = {0};

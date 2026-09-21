@@ -1,5 +1,7 @@
 package directory;
 
+import java.io.BufferedInputStream;
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -23,18 +25,17 @@ public class PkMapStore {
             return new HashMap<>();
         }
         Map<Long, Integer> map = new HashMap<>();
-        try (FileChannel fc = new RandomAccessFile(path.toFile(), "r").getChannel()) {
-            int size = (int) fc.size();
-            if (size < 4) {
-                return map;
-            }
-            ByteBuffer buffer = ByteBuffer.allocate(size);
-            fc.read(buffer);
-            buffer.flip();
-            int count = buffer.getInt();
+        if (Files.size(path) < 4) {
+            return map;
+        }
+        // 流式读取：不再整文件进堆，也消除了 (int) fc.size() 的 2 GiB 限制。
+        // DataInputStream 默认大端，与原先 ByteBuffer.getInt/getLong 一致。
+        try (DataInputStream in = new DataInputStream(
+                new BufferedInputStream(Files.newInputStream(path)))) {
+            int count = in.readInt();
             for (int i = 0; i < count; i++) {
-                long uniqueID = buffer.getLong();
-                int docID = buffer.getInt();
+                long uniqueID = in.readLong();
+                int docID = in.readInt();
                 map.put(uniqueID, docID);
             }
         }

@@ -18,10 +18,8 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <source>8</source>
-                    <target>8</target>
-                </configuration>
+                <!-- source/target/release 由父 pom 的 maven.compiler.release 统一管理 -->
+
             </plugin>
         </plugins>
     </build>

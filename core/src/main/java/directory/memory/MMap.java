@@ -2,45 +2,32 @@ package directory.memory;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.lang.reflect.Method;
-import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.nio.channels.FileChannel;
 
 public class MMap {
-    public static MappedByteBuffer mmapFile(String files) throws IOException {
-        FileChannel fc = new RandomAccessFile(files, "r").getChannel();
-        MappedByteBuffer  buffer = fc.map(FileChannel.MapMode.READ_ONLY,0, fc.size());
-        fc.close();
-        return buffer;
+
+    // JDK 22+ 的 java.lang.foreign 以 long 寻址，单次 FileChannel.map 不再受
+    // Integer.MAX_VALUE（2 GiB）限制，因此单文件可以超过 2 GiB。
+    //
+    // 映射的生命周期交给传入的 Arena：Arena.close() 即解除映射。
+    // 跨线程共享的 reader 必须使用 Arena.ofShared()，否则访问会抛异常；
+    // 单线程的短生命周期用途（如 IndexMerger）可以用 Arena.ofConfined()。
+
+    public static MemorySegment mmapFile(String file, Arena arena) throws IOException {
+        try (FileChannel fc = new RandomAccessFile(file, "r").getChannel()) {
+            return fc.map(FileChannel.MapMode.READ_ONLY, 0, fc.size(), arena);
+        }
     }
 
-    public static MappedByteBuffer[] mmapFils(String[] files) throws IOException {
-        MappedByteBuffer[] mappedByteBuffers = new MappedByteBuffer[files.length];
+    public static MemorySegment[] mmapFiles(String[] files, Arena arena) throws IOException {
+        MemorySegment[] segments = new MemorySegment[files.length];
         for (int i = 0; i < files.length; i++) {
-            FileChannel fc = new RandomAccessFile(files[i], "rw").getChannel();
-            MappedByteBuffer buffer = fc.map(FileChannel.MapMode.READ_WRITE,0, fc.size());
-            mappedByteBuffers[i] = buffer;
-            fc.close();
+            try (FileChannel fc = new RandomAccessFile(files[i], "rw").getChannel()) {
+                segments[i] = fc.map(FileChannel.MapMode.READ_WRITE, 0, fc.size(), arena);
+            }
         }
-        return mappedByteBuffers;
-    }
-
-    public static void unMMap(ByteBuffer bb) {
-        if (null==bb || !bb.isDirect()) {
-            return;
-        }
-        // we could use this type cast and call functions without reflection code,
-        // but static import from sun.* package is risky for non-SUN virtual machine.
-        //try { ((sun.nio.ch.DirectBuffer)cb).cleaner().clean(); } catch (Exception ex) { }
-        try {
-            Method cleaner = bb.getClass().getMethod("cleaner");
-            cleaner.setAccessible(true);
-            Method clean = Class.forName("sun.misc.Cleaner").getMethod("clean");
-            clean.setAccessible(true);
-            clean.invoke(cleaner.invoke(bb));
-        } catch (Exception ex) {
-        }
-        bb = null;
+        return segments;
     }
 }

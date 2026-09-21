@@ -100,7 +100,9 @@ class TopScoreDocCollectorTest {
         collector.collect(1f, 1);
         collector.collect(2f, 2);
         assertTrue(!collector.isSaturated(3f));
-        assertTrue(collector.isSaturated(2f));
+        // 堆内 {1,2}，peek() 是最差分 1；2 > 1 故仍可入堆，即未饱和。
+        // 原为 assertTrue(collector.isSaturated(2f))，与方法名语义相反，是既有的测试笔误。
+        assertTrue(!collector.isSaturated(2f));
         assertTrue(collector.isSaturated(1f));
     }
 

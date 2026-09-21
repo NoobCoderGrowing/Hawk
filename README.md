@@ -214,7 +214,7 @@ cd benchmark/scripts
 
 1. **迭代次数极少。** 脚本默认 `-i 1 -wi 1 -f 1`（1 次热身、1 次测量、单 fork），JMH 输出的 `Error` 列为空即为该原因。**索引基准中 1k/5k 两点的差异不可信**，检索基准相对稳定但仍建议提高迭代次数后复测。
 2. **合并策略不对等。** Hawk 索引基准用 `enableMerge=false`，Lucene 侧 `ConcurrentMergeScheduler` 正常工作，两者承担的合并成本不同。
-3. **规模有限。** 索引基准最大 10k 篇、检索基准 50k 篇，未覆盖百万级；`core/` 中多处用 `int` 强转文件大小，单文件 **4 GiB 上限**是硬约束。
+3. **规模有限。** 索引基准最大 10k 篇、检索基准 50k 篇，未覆盖百万级。单文件 2 GiB 上限已随 FFM 迁移解除（见 [§4](#4-已知限制)），但**文档数 ~2^31 的上限未动**（posting 的 `VInt docID`、`preMaxID`、`pk.map` docID 仍是 `int`），到该量级需升 `formatVersion`。
 4. **字段类型不完全等价。** Lucene 侧 `descript`/`digt` 以 `StoredField` 写入，Hawk 侧为 `Tokenized.NO` 的存储字段；`uniqueID` 在 Lucene 侧同时写入 `LongPoint` 与 `StoredField`（含未被查询使用的点索引）。
 5. **单机单 JVM。** 未涉及跨机部署，与本项目"写入端/召回端可分离"的架构定位不完全对应。
 
@@ -222,12 +222,21 @@ cd benchmark/scripts
 
 ## 4. 已知限制
 
-1. **4 GiB 上限**：`.fdt`、`.fdx`、`.frq`、`.fdm` 通过 `int` 强转文件大小，单文件不得超过 4 GB。
-2. **搜索只读 `1.*`**：若 `enableMerge=false` 导致存在 `2.*` 段，未合并数据对搜索不可见。
-3. **Term FST 不落盘**：每次打开 `DirectoryReader` 都从 `1.tim` 重建，大索引有额外打开开销。
-4. **docID 从 1 开始**：`docIDAllocator` 先自增再赋值，首篇文档全局 ID = `docBase + 1`。
-5. **数值索引**：当前格式（`formatVersion = 1`）下 `DoubleField` 只写 BKD，不写 tim/frq。
-6. **向量召回未实现**：仅倒排索引链路可用。
+1. **单文件 2 GiB 上限已解除（前提：JDK 22+）**：索引文件改用 `MemorySegment`（FFM）以 **`long`** 寻址，单次 `FileChannel.map()` 不再受 `Integer.MAX_VALUE` 约束；映射生命周期由 `Arena` 管理，取代了原先 `sun.misc.Cleaner` 反射那套 hack。
+
+   偏移在磁盘上本就是 VLong（64 位），原先被窄化成**有符号 `int`** 的地方——posting 偏移、`.bkd` 节点偏移、`.fdt` 块偏移、`.fdx`/`.fdm` 的整文件大小——现已全部改为 `long`。
+
+   **已验证**：`1.fdt` = 2.26 GiB 的真实索引可正常打开、检索、取回原文；而旧实现在同一文件上 `fc.map(READ_ONLY, 0, 2_426_542_857L)` 会抛 `IllegalArgumentException: Size exceeds Integer.MAX_VALUE`。`core` 的 `LargeOffsetTest` 另覆盖 2 GiB 之后 VInt/VLong/bytes 的读写往返。
+
+   **注意**：FFM 有两个容易静默出错的坑，代码里用 `JAVA_INT_BE` / `JAVA_LONG_BE` 显式规避——`ValueLayout.JAVA_INT` 默认是 **native order**（x86 小端）而格式是大端；且默认要求 4 字节对齐而格式是紧凑排布（如 `.fdm` 的 `Byte fieldType` 后紧跟 `Int`）。
+
+2. **文档数上限约 2^31**：posting 里的 `VInt docID`、`SegmentInfo.preMaxID`、`pk.map` 的 docID 仍是 `int`。这与文件大小无关，达到该量级需升 `formatVersion` 并加宽 docID。
+3. **搜索只读 `1.*`**：若 `enableMerge=false` 导致存在 `2.*` 段，未合并数据对搜索不可见。
+4. **Term FST 不落盘**：每次打开 `DirectoryReader` 都从 `1.tim` 重建，大索引有额外打开开销。
+5. **docID 从 1 开始**：`docIDAllocator` 先自增再赋值，首篇文档全局 ID = `docBase + 1`。
+6. **数值索引**：当前格式（`formatVersion = 1`）下 `DoubleField` 只写 BKD，不写 tim/frq。
+7. **向量召回未实现**：仅倒排索引链路可用。
+8. **`pk.map` / `deleted.ids` 仍是全量进内存的 `HashMap`/`HashSet`**：文件本身已改为流式读取（不再整文件进堆），但内存占用随文档数线性增长，这是比文件大小更早到来的瓶颈。
 
 ---
 

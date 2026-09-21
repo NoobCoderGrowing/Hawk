@@ -25,14 +25,14 @@ import net.jpountz.lz4.LZ4FastDecompressor;
 
 import util.DataInput;
 import util.NumberUtil;
-import util.WrapInt;
+import util.WrapLong;
 import util.bkd.BkdReader;
 import common.IndexFormatConfig;
 import common.Pair;
 
 
+import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -78,21 +78,20 @@ public class Searcher {
         HashMap<String, Pair<byte[], Float>> fdmMap = directoryReader.getFDMMap();
         float averageDocLength = fdmMap.get(field).getRight();
         FST termFST = directoryReader.getTermFST();
-        MappedByteBuffer frqMappedBuffer = directoryReader.getFRQBuffer();
-        ByteBuffer frqBuffer = frqMappedBuffer.asReadOnlyBuffer();
+        MemorySegment frqBuffer = directoryReader.getFRQBuffer();
         fstPair<ArrayList<fstNode>, Long> searchRet =
                 termFST.search(TermFstUtil.toCharArray(TermFstUtil.termKey(field, term)));
         if (searchRet == null) {
             return null;
         }
-        long frqOffset = searchRet.getValue();
-        WrapInt frqOffsetWrapper = new WrapInt((int) frqOffset);
-        int termFrequency = DataInput.readVintAtIndex(frqBuffer, frqOffsetWrapper);
+        // 偏移全程用 long：posting 偏移在磁盘上是 VLong，.frq 可超过 2 GiB
+        WrapLong frqOffsetWrapper = new WrapLong(searchRet.getValue());
+        int termFrequency = DataInput.readVintAt(frqBuffer, frqOffsetWrapper);
         List<ScoreDoc> hits = new ArrayList<>();
         for (int i = 0; i < termFrequency; i++) {
-            int docID = DataInput.readVintAtIndex(frqBuffer, frqOffsetWrapper);
-            int docFrequency = DataInput.readVintAtIndex(frqBuffer,frqOffsetWrapper);
-            int docFieldLength = DataInput.readVintAtIndex(frqBuffer,frqOffsetWrapper);
+            int docID = DataInput.readVintAt(frqBuffer, frqOffsetWrapper);
+            int docFrequency = DataInput.readVintAt(frqBuffer,frqOffsetWrapper);
+            int docFieldLength = DataInput.readVintAt(frqBuffer,frqOffsetWrapper);
             if (!directoryReader.isLive(docID)) {
                 continue;
             }
@@ -290,20 +289,20 @@ public class Searcher {
         }
         Document document = new Document(scoreDoc.getScore());
         TreeMap<Integer, byte[]> fdxMap = this.directoryReader.getFDXMap();
-        MappedByteBuffer fdtMappedBuffer = this.directoryReader.getFDTBuffer();
-        // create a duplicate of mappedBuffer, position, limit and mark are independent
-        ByteBuffer fdtBuffer  = fdtMappedBuffer.asReadOnlyBuffer();
+        MemorySegment fdtBuffer = this.directoryReader.getFDTBuffer();
         // calculate fdt buffer offset
         byte[][] vlongOffsets = searchFDTOffset(docID, fdxMap);
 
-        int offsetLeft = (int)DataInput.readVlong(vlongOffsets[0]);
-        int offsetRight;
+        // 偏移全程 long：.fdt 可超过 2 GiB
+        long offsetLeft = DataInput.readVlong(vlongOffsets[0]);
+        long offsetRight;
         if(vlongOffsets[1] != null){
-            offsetRight = (int) DataInput.readVlong(vlongOffsets[1]);
+            offsetRight = DataInput.readVlong(vlongOffsets[1]);
         }else {
-            offsetRight = fdtBuffer.limit();
+            offsetRight = fdtBuffer.byteSize();
         }
-        int blockLength = offsetRight - offsetLeft;
+        // 单个压缩块最大约 blocSize(16 KiB)，int 足够
+        int blockLength = (int) (offsetRight - offsetLeft);
         // read compressed bloc into buffer
         byte[] fdtBloc = DataInput.readBytes(fdtBuffer, offsetLeft, blockLength);
 

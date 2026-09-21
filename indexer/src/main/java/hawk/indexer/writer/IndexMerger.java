@@ -10,14 +10,16 @@ import util.bkd.BkdPoint;
 import util.bkd.FieldBkdWriter;
 import util.DataInput;
 import util.DataOutput;
+import util.SegmentCursor;
 import util.WrapLong;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -69,36 +71,36 @@ public class IndexMerger {
         }
     }
 
-    public void mergeFrq(MappedByteBuffer frqBuffer1, MappedByteBuffer frqBuffer2, FileChannel seg3Frq){
-        int frqLength1 = DataInput.readVint(frqBuffer1);
-        int frqLength2 = DataInput.readVint(frqBuffer2);
+    public void mergeFrq(SegmentCursor frqCursor1, SegmentCursor frqCursor2, FileChannel seg3Frq){
+        int frqLength1 = frqCursor1.readVint();
+        int frqLength2 = frqCursor2.readVint();
         int frqLength = frqLength1 + frqLength2;
         DataOutput.writeVInt(frqLength,seg3Frq);
         for (int i = 0; i < frqLength1; i++) {
-            int docID = DataInput.readVint(frqBuffer1);
-            int frequency = DataInput.readVint(frqBuffer1);
-            int fieldLength = DataInput.readVint(frqBuffer1);
+            int docID = frqCursor1.readVint();
+            int frequency = frqCursor1.readVint();
+            int fieldLength = frqCursor1.readVint();
             DataOutput.writeVInt(docID, seg3Frq);
             DataOutput.writeVInt(frequency, seg3Frq);
             DataOutput.writeVInt(fieldLength, seg3Frq);
         }
         for (int i = 0; i < frqLength2; i++) {
-            int docID = DataInput.readVint(frqBuffer2);
-            int frequency = DataInput.readVint(frqBuffer2);
-            int fieldLength = DataInput.readVint(frqBuffer2);
+            int docID = frqCursor2.readVint();
+            int frequency = frqCursor2.readVint();
+            int fieldLength = frqCursor2.readVint();
             DataOutput.writeVInt(docID, seg3Frq);
             DataOutput.writeVInt(frequency, seg3Frq);
             DataOutput.writeVInt(fieldLength, seg3Frq);
         }
     }
 
-    public void mergeFrq(MappedByteBuffer frqBuffer, FileChannel seg3Frq){
-        int frqLength = DataInput.readVint(frqBuffer);
+    public void mergeFrq(SegmentCursor frqCursor, FileChannel seg3Frq){
+        int frqLength = frqCursor.readVint();
         DataOutput.writeVInt(frqLength,seg3Frq);
         for (int i = 0; i < frqLength; i++) {
-            int docID = DataInput.readVint(frqBuffer);
-            int frequency = DataInput.readVint(frqBuffer);
-            int fieldLength = DataInput.readVint(frqBuffer);
+            int docID = frqCursor.readVint();
+            int frequency = frqCursor.readVint();
+            int fieldLength = frqCursor.readVint();
             DataOutput.writeVInt(docID, seg3Frq);
             DataOutput.writeVInt(frequency, seg3Frq);
             DataOutput.writeVInt(fieldLength, seg3Frq);
@@ -116,24 +118,24 @@ public class IndexMerger {
         DataOutput.writeBytes(term, fc);
     }
 
-    public FieldTermPair readFieldTermPair(MappedByteBuffer buffer){
-        if(buffer.position() >= buffer.limit()){
+    public FieldTermPair readFieldTermPair(SegmentCursor cursor){
+        if(!cursor.hasRemaining()){
             return null;
         }
-        int fieldLength = buffer.getInt();
-        byte[] fieldBytes = DataInput.readBytes(buffer, fieldLength);
-        int termLength = buffer.getInt();
-        byte[] termBytes = DataInput.readBytes(buffer, termLength);
-        long offset = DataInput.readVlong(buffer);
+        int fieldLength = cursor.getInt();
+        byte[] fieldBytes = cursor.readBytes(fieldLength);
+        int termLength = cursor.getInt();
+        byte[] termBytes = cursor.readBytes(termLength);
+        cursor.readVlong(); // 旧段里的 frq 偏移，合并时用不到（新偏移由写出顺序决定）
         FieldTermPair fieldTermPair = new FieldTermPair(fieldBytes, termBytes);
         return fieldTermPair;
     }
 
     // assume 2 tim are not empty
-    public void mergeTim(MappedByteBuffer seg1TimBuffer, MappedByteBuffer seg1FrqBuffer, MappedByteBuffer seg2TimBuffer,
-                         MappedByteBuffer seg2FrqBuffer, FileChannel seg3Tim, FileChannel seg3Frq) throws IOException {
-        FieldTermPair seg1Pair = readFieldTermPair(seg1TimBuffer);
-        FieldTermPair seg2Pair = readFieldTermPair(seg2TimBuffer);
+    public void mergeTim(SegmentCursor seg1TimCursor, SegmentCursor seg1FrqCursor, SegmentCursor seg2TimCursor,
+                         SegmentCursor seg2FrqCursor, FileChannel seg3Tim, FileChannel seg3Frq) throws IOException {
+        FieldTermPair seg1Pair = readFieldTermPair(seg1TimCursor);
+        FieldTermPair seg2Pair = readFieldTermPair(seg2TimCursor);
         while(seg1Pair != null && seg2Pair != null){
             if(seg1Pair.compareTo(seg2Pair) < 0){
                 // write fieldTerm to new tim
@@ -141,22 +143,22 @@ public class IndexMerger {
                 // write frq offset to tim
                 DataOutput.writeVLong(seg3Frq.position(), seg3Tim);
                 //write to new frq
-                mergeFrq(seg1FrqBuffer, seg3Frq);
+                mergeFrq(seg1FrqCursor, seg3Frq);
                 // read next fieldTerm
-                seg1Pair = readFieldTermPair(seg1TimBuffer);
+                seg1Pair = readFieldTermPair(seg1TimCursor);
             } else if (seg1Pair.compareTo(seg2Pair) > 0) {
                 writeFieldTermPair(seg2Pair, seg3Tim);
                 DataOutput.writeVLong(seg3Frq.position(), seg3Tim);
-                mergeFrq(seg2FrqBuffer, seg3Frq);
-                seg2Pair = readFieldTermPair(seg2TimBuffer);
+                mergeFrq(seg2FrqCursor, seg3Frq);
+                seg2Pair = readFieldTermPair(seg2TimCursor);
             } else {
                 writeFieldTermPair(seg1Pair, seg3Tim);
                 DataOutput.writeVLong(seg3Frq.position(), seg3Tim);
                 //concatenate 2 old frq to new frq
-                mergeFrq(seg1FrqBuffer,seg2FrqBuffer, seg3Frq);
+                mergeFrq(seg1FrqCursor,seg2FrqCursor, seg3Frq);
                 // read next fieldTerm
-                seg1Pair = readFieldTermPair(seg1TimBuffer);
-                seg2Pair = readFieldTermPair(seg2TimBuffer);
+                seg1Pair = readFieldTermPair(seg1TimCursor);
+                seg2Pair = readFieldTermPair(seg2TimCursor);
             }
         }
         while(seg1Pair != null){
@@ -164,16 +166,16 @@ public class IndexMerger {
             // write frq offset to tim
             DataOutput.writeVLong(seg3Frq.position(), seg3Tim);
             //write to new frq
-            mergeFrq(seg1FrqBuffer, seg3Frq);
+            mergeFrq(seg1FrqCursor, seg3Frq);
             // read next fieldTerm
-            seg1Pair = readFieldTermPair(seg1TimBuffer);
+            seg1Pair = readFieldTermPair(seg1TimCursor);
         }
 
         while(seg2Pair != null){
             writeFieldTermPair(seg2Pair, seg3Tim);
             DataOutput.writeVLong(seg3Frq.position(), seg3Tim);
-            mergeFrq(seg2FrqBuffer, seg3Frq);
-            seg2Pair = readFieldTermPair(seg2TimBuffer);
+            mergeFrq(seg2FrqCursor, seg3Frq);
+            seg2Pair = readFieldTermPair(seg2TimCursor);
         }
     }
 
@@ -203,44 +205,44 @@ public class IndexMerger {
         DataOutput.writeInt(docCount, fc);
     }
 
-    public FdmRecord readFdmRecord(MappedByteBuffer buffer){
-        if(buffer.position() >= buffer.limit()){
+    public FdmRecord readFdmRecord(SegmentCursor cursor){
+        if(!cursor.hasRemaining()){
             return null;
         }
-        int fieldLength = buffer.getInt();
-        byte[] field = DataInput.readBytes(buffer, fieldLength);
-        byte fieldType = buffer.get();
-        int fieldLengthSum = buffer.getInt();
-        int docCount = buffer.getInt();
+        int fieldLength = cursor.getInt();
+        byte[] field = cursor.readBytes(fieldLength);
+        byte fieldType = cursor.get();
+        int fieldLengthSum = cursor.getInt();
+        int docCount = cursor.getInt();
         FdmRecord fdmRecord = new FdmRecord(field, fieldType, fieldLengthSum, docCount);
         return fdmRecord;
     }
 
-    public void mergeFdm(MappedByteBuffer seg1FdmBuffer, MappedByteBuffer seg2FdmBuffer, FileChannel seg3Fdm){
-        FdmRecord seg1Record = readFdmRecord(seg1FdmBuffer);
-        FdmRecord seg2Record = readFdmRecord(seg2FdmBuffer);
+    public void mergeFdm(SegmentCursor seg1FdmCursor, SegmentCursor seg2FdmCursor, FileChannel seg3Fdm){
+        FdmRecord seg1Record = readFdmRecord(seg1FdmCursor);
+        FdmRecord seg2Record = readFdmRecord(seg2FdmCursor);
         while(seg1Record != null && seg2Record != null){
             if(seg1Record.compareTo(seg2Record) < 0){
                 writeFdmRecord(seg1Record, seg3Fdm);
                 // read next fieldTerm
-                seg1Record = readFdmRecord(seg1FdmBuffer);
+                seg1Record = readFdmRecord(seg1FdmCursor);
             } else if (seg1Record.compareTo(seg2Record) > 0) {
                 writeFdmRecord(seg2Record, seg3Fdm);
-                seg2Record = readFdmRecord(seg2FdmBuffer);
+                seg2Record = readFdmRecord(seg2FdmCursor);
             } else {
                 writeFdmRecord(seg1Record, seg2Record, seg3Fdm);
-                seg1Record = readFdmRecord(seg1FdmBuffer);
-                seg2Record = readFdmRecord(seg2FdmBuffer);
+                seg1Record = readFdmRecord(seg1FdmCursor);
+                seg2Record = readFdmRecord(seg2FdmCursor);
             }
         }
         while (seg1Record != null){
             writeFdmRecord(seg1Record, seg3Fdm);
             // read next fieldTerm
-            seg1Record = readFdmRecord(seg1FdmBuffer);
+            seg1Record = readFdmRecord(seg1FdmCursor);
         }
         while (seg2Record != null){
             writeFdmRecord(seg2Record, seg3Fdm);
-            seg2Record = readFdmRecord(seg2FdmBuffer);
+            seg2Record = readFdmRecord(seg2FdmCursor);
         }
     }
 
@@ -249,25 +251,20 @@ public class IndexMerger {
         String seg3TimPath = directory.generateSegFile("3.tim");
         String seg3FrqPath = directory.generateSegFile("3.frq");
         String seg3FdmPath = directory.generateSegFile("3.fdm");
-        try {
+        // 合并是单线程的，用局部 Arena 管住这批映射，退出即解除
+        try (Arena arena = Arena.ofConfined()) {
             FileChannel seg3Tim  = new RandomAccessFile(seg3TimPath, "rw").getChannel();
             FileChannel seg3Frq = new RandomAccessFile(seg3FrqPath, "rw").getChannel();
             FileChannel seg3Fdm = new RandomAccessFile(seg3FdmPath, "rw").getChannel();
-            MappedByteBuffer seg1TimBuffer = MMap.mmapFile(files.get("1.tim").toString());
-            MappedByteBuffer seg2TimBuffer = MMap.mmapFile(files.get("2.tim").toString());
-            MappedByteBuffer seg1FrqBuffer = MMap.mmapFile(files.get("1.frq").toString());
-            MappedByteBuffer seg2FrqBuffer = MMap.mmapFile(files.get("2.frq").toString());
-            MappedByteBuffer seg1FdmBuffer = MMap.mmapFile(files.get("1.fdm").toString());
-            MappedByteBuffer seg2FdmBuffer = MMap.mmapFile(files.get("2.fdm").toString());
-            mergeFdm(seg1FdmBuffer, seg2FdmBuffer, seg3Fdm);
-            MMap.unMMap(seg1FdmBuffer);
-            MMap.unMMap(seg2FdmBuffer);
+            SegmentCursor seg1TimCursor = new SegmentCursor(MMap.mmapFile(files.get("1.tim").toString(), arena));
+            SegmentCursor seg2TimCursor = new SegmentCursor(MMap.mmapFile(files.get("2.tim").toString(), arena));
+            SegmentCursor seg1FrqCursor = new SegmentCursor(MMap.mmapFile(files.get("1.frq").toString(), arena));
+            SegmentCursor seg2FrqCursor = new SegmentCursor(MMap.mmapFile(files.get("2.frq").toString(), arena));
+            SegmentCursor seg1FdmCursor = new SegmentCursor(MMap.mmapFile(files.get("1.fdm").toString(), arena));
+            SegmentCursor seg2FdmCursor = new SegmentCursor(MMap.mmapFile(files.get("2.fdm").toString(), arena));
+            mergeFdm(seg1FdmCursor, seg2FdmCursor, seg3Fdm);
             seg3Fdm.close();
-            mergeTim(seg1TimBuffer,seg1FrqBuffer, seg2TimBuffer, seg2FrqBuffer, seg3Tim, seg3Frq);
-            MMap.unMMap(seg1TimBuffer);
-            MMap.unMMap(seg1FrqBuffer);
-            MMap.unMMap(seg2TimBuffer);
-            MMap.unMMap(seg2FrqBuffer);
+            mergeTim(seg1TimCursor,seg1FrqCursor, seg2TimCursor, seg2FrqCursor, seg3Tim, seg3Frq);
             seg3Tim.close();
             seg3Frq.close();
         } catch (IOException e) {
@@ -329,13 +326,13 @@ public class IndexMerger {
         return BkdFileReader.readAllFieldPoints(bkdPath);
     }
 
-    public void mergeFDX(ArrayList<int[]> seg2FDX, FileChannel seg1FdxFC, FileChannel seg1FdtFC){
+    public void mergeFDX(ArrayList<long[]> seg2FDX, FileChannel seg1FdxFC, FileChannel seg1FdtFC){
         try {
             long limit = seg1FdtFC.size();
             WrapLong fdxPos = new WrapLong(seg1FdxFC.size());
             for (int i = 0; i < seg2FDX.size(); i++) {
-                int[] item = seg2FDX.get(i);
-                int docID = item[0];
+                long[] item = seg2FDX.get(i);
+                int docID = (int) item[0];
                 long offset = item[1] + limit;
                 DataOutput.writeVInt(docID, seg1FdxFC, fdxPos);
                 DataOutput.writeVLong(offset, seg1FdxFC, fdxPos);
@@ -346,24 +343,23 @@ public class IndexMerger {
         }
     }
 
-    public void mergeFDT(FileChannel seg1FdtFC,  MappedByteBuffer seg2FDTBuffer,
-                         ArrayList<int[]> seg2FDX){
+    public void mergeFDT(FileChannel seg1FdtFC,  MemorySegment seg2FDT,
+                         ArrayList<long[]> seg2FDX){
         try {
             long base = seg1FdtFC.size();
-            long limit = seg2FDTBuffer.limit();
-            int left, right;
+            long limit = seg2FDT.byteSize();
+            // 偏移全程 long：被合并的 .fdt 可能超过 2 GiB（旧实现这里 (int) 窄化后必错）
+            long left, right;
             for (int i = 0; i < seg2FDX.size(); i++) {
                 // calculate original start and length
                 left = seg2FDX.get(i)[1];
                 if(i < seg2FDX.size() - 1){
                     right = seg2FDX.get(i+1)[1];
                 }else{
-                    right = (int) limit;
+                    right = limit;
                 }
-                int length = right - left;
-                byte[] block = new byte[length];
-                seg2FDTBuffer.position(left);
-                seg2FDTBuffer.get(block, 0, length);
+                int length = (int) (right - left);
+                byte[] block = DataInput.readBytes(seg2FDT, left, length);
                 ByteBuffer buffer = ByteBuffer.wrap(block);
                 seg1FdtFC.write(buffer, base + left);
             }
@@ -374,25 +370,23 @@ public class IndexMerger {
     }
 
     public void mergeStored(HashMap<String, Path> files){
-        try {
+        try (Arena arena = Arena.ofConfined()) {
             FileChannel seg1FdtFC = null, seg1FdxFC = null;
-            MappedByteBuffer seg2FdtBuffer = null ,seg2FdxBuffer = null;
             seg1FdxFC = new RandomAccessFile(files.get("1.fdx").toString(), "rw").getChannel();
             seg1FdtFC = new RandomAccessFile(files.get("1.fdt").toString(), "rw").getChannel();
-            seg2FdxBuffer = MMap.mmapFile(files.get("2.fdx").toString());
-            seg2FdtBuffer = MMap.mmapFile(files.get("2.fdt").toString());
-            ArrayList<int[]> seg2FDX = new ArrayList<>();
-            while (seg2FdxBuffer.position() < seg2FdxBuffer.limit()){
-                int seg2DocID = DataInput.readVint(seg2FdxBuffer);
-                int seg2FDToffset = (int) DataInput.readVlong(seg2FdxBuffer);
-                seg2FDX.add(new int[]{seg2DocID, seg2FDToffset});
+            SegmentCursor seg2FdxCursor = new SegmentCursor(MMap.mmapFile(files.get("2.fdx").toString(), arena));
+            MemorySegment seg2FdtSegment = MMap.mmapFile(files.get("2.fdt").toString(), arena);
+            ArrayList<long[]> seg2FDX = new ArrayList<>();
+            while (seg2FdxCursor.hasRemaining()){
+                int seg2DocID = seg2FdxCursor.readVint();
+                // 块偏移必须是 long：.fdt 可超过 2 GiB
+                long seg2FDToffset = seg2FdxCursor.readVlong();
+                seg2FDX.add(new long[]{seg2DocID, seg2FDToffset});
             }
             mergeFDX(seg2FDX, seg1FdxFC, seg1FdtFC);
-            mergeFDT(seg1FdtFC, seg2FdtBuffer, seg2FDX);
+            mergeFDT(seg1FdtFC, seg2FdtSegment, seg2FDX);
             seg1FdxFC.close();
             seg1FdtFC.close();
-            MMap.unMMap(seg2FdxBuffer);
-            MMap.unMMap(seg2FdtBuffer);
         } catch (FileNotFoundException e) {
             log.error("file not found during mergeStored");
             System.exit(1);
