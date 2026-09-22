@@ -157,7 +157,7 @@ mvn clean -DskipTests package
 > JAVA_HOME=/path/to/jdk-25 ./runDemo.sh
 > ```
 >
-> 详见 [§7 大文件与 clone](#7-大文件与-clone)。
+> 详见 [§6 大文件与 clone](#6-大文件与-clone)。
 
 示例类一览（`demo/src/main/java/demo`）：`demo` 模块中的 `main` 方法直接指向本地索引目录，按需修改路径后运行。
 
@@ -208,7 +208,7 @@ mvn clean -DskipTests package
 
 配置差异（来自运行日志）：
 
-- Hawk：`indexerThreadNum=10`，`maxRamUsage=1 GiB`，索引基准中 **`enableMerge=false`**；
+- Hawk：`indexerThreadNum=10`，索引基准中 **`enableMerge=true`**；
 - Lucene：`ramBufferSizeMB=256`，`useCompoundFile=false`，`ConcurrentMergeScheduler`（自动线程数）。
 
 **解读**：
@@ -257,7 +257,7 @@ cd benchmark/scripts
 
 1. **迭代次数极少。** 脚本默认 `-i 1 -wi 1 -f 1`（1 次热身、1 次测量、单 fork），JMH 输出的 `Error` 列为空即为该原因。**索引基准中 1k/5k 两点的差异不可信**，检索基准相对稳定但仍建议提高迭代次数后复测。
 2. **合并策略不对等。** Hawk 索引基准用 `enableMerge=false`，Lucene 侧 `ConcurrentMergeScheduler` 正常工作，两者承担的合并成本不同。
-3. **规模有限。** 索引基准最大 10k 篇、检索基准 50k 篇，未覆盖百万级。单文件 2 GiB 上限已随 FFM 迁移解除（见 [§5](#5-已知限制)），但**文档数 ~2^31 的上限未动**（posting 的 `VInt docID`、`preMaxID`、`pk.map` docID 仍是 `int`），到该量级需升 `formatVersion`。
+3. **规模有限。** 索引基准最大 10k 篇、检索基准 50k 篇，未覆盖百万级。单文件 2 GiB 上限已随 FFM 迁移解除，但**文档数 ~2^31 的上限未动**（posting 的 `VInt docID`、`preMaxID`、`pk.map` docID 仍是 `int`），到该量级需升 `formatVersion`。
 4. **字段类型不完全等价。** Lucene 侧 `descript`/`digt` 以 `StoredField` 写入，Hawk 侧为 `Tokenized.NO` 的存储字段；`uniqueID` 在 Lucene 侧同时写入 `LongPoint` 与 `StoredField`（含未被查询使用的点索引）。
 5. **单机单 JVM。** 未涉及跨机部署，与本项目"写入端/召回端可分离"的架构定位不完全对应。
 
@@ -537,27 +537,7 @@ java -Xmx3g -cp "vector/target/classes:$(cat /tmp/vcp.txt)" hawk.vector.demo.Dem
 
 ---
 
-## 5. 已知限制
-
-1. **单文件 2 GiB 上限已解除（前提：JDK 22+）**：索引文件改用 `MemorySegment`（FFM）以 **`long`** 寻址，单次 `FileChannel.map()` 不再受 `Integer.MAX_VALUE` 约束；映射生命周期由 `Arena` 管理，取代了原先 `sun.misc.Cleaner` 反射那套 hack。
-
-   偏移在磁盘上本就是 VLong（64 位），原先被窄化成**有符号 `int`** 的地方——posting 偏移、`.bkd` 节点偏移、`.fdt` 块偏移、`.fdx`/`.fdm` 的整文件大小——现已全部改为 `long`。
-
-   **已验证**：`1.fdt` = 2.26 GiB 的真实索引可正常打开、检索、取回原文；而旧实现在同一文件上 `fc.map(READ_ONLY, 0, 2_426_542_857L)` 会抛 `IllegalArgumentException: Size exceeds Integer.MAX_VALUE`。`core` 的 `LargeOffsetTest` 另覆盖 2 GiB 之后 VInt/VLong/bytes 的读写往返。
-
-   **注意**：FFM 有两个容易静默出错的坑，代码里用 `JAVA_INT_BE` / `JAVA_LONG_BE` 显式规避——`ValueLayout.JAVA_INT` 默认是 **native order**（x86 小端）而格式是大端；且默认要求 4 字节对齐而格式是紧凑排布（如 `.fdm` 的 `Byte fieldType` 后紧跟 `Int`）。
-
-2. **文档数上限约 2^31**：posting 里的 `VInt docID`、`SegmentInfo.preMaxID`、`pk.map` 的 docID 仍是 `int`。这与文件大小无关，达到该量级需升 `formatVersion` 并加宽 docID。
-3. **搜索只读 `1.*`**：若 `enableMerge=false` 导致存在 `2.*` 段，未合并数据对搜索不可见。
-4. **Term FST 不落盘**：每次打开 `DirectoryReader` 都从 `1.tim` 重建，大索引有额外打开开销。
-5. **docID 从 1 开始**：`docIDAllocator` 先自增再赋值，首篇文档全局 ID = `docBase + 1`。
-6. **数值索引**：当前格式（`formatVersion = 1`）下 `DoubleField` 只写 BKD，不写 tim/frq。
-7. **向量召回未实现**：仅倒排索引链路可用。
-8. **`pk.map` / `deleted.ids` 仍是全量进内存的 `HashMap`/`HashSet`**：文件本身已改为流式读取（不再整文件进堆），但内存占用随文档数线性增长，这是比文件大小更早到来的瓶颈。
-
----
-
-## 6. 目录结构
+## 5. 目录结构
 
 ```
 Hawk/
@@ -575,95 +555,11 @@ Hawk/
 │   ├── scripts/    run-hawk-benchmark.sh / run-lucene-benchmark.sh
 │   └── results/    历史基准结果
 ├── goods.csv       基准语料（10 万条商品标题）
-├── model/          模型与商品向量（大文件不进 git，见 §7）
-├── runDemo.sh      一条命令把仓库变成可运行状态（见 §7）
+├── model/          模型与商品向量（大文件不进 git，见 §6）
+├── runDemo.sh      一条命令把仓库变成可运行状态（见 §6）
 ├── index-data/     倒排索引（派生，已 gitignore）
 ├── INDEX_FORMAT.md 索引文件格式说明
 └── README.md
 ```
 
 ---
-
-## 7. 大文件与 clone
-
-仓库里有 200 MB 量级的派生产物（模型权重、商品向量、倒排索引）。它们不该进 git，但 clone 的人又应该能直接用——办法是**分清哪些能再生、哪些不能**。
-
-### 8.1 先看体积与来源
-
-| 路径 | 体积 | 能否从 clone 后的仓库再生 |
-|---|---|---|
-| `goods.csv` | 4.7 MB | **已跟踪**，是真正的源头 |
-| `index-data/goods/` | 21 MB | ✅ 纯 Java，**5 秒** |
-| `model/*/*/model.json` | 517 B | ⚠ 本身很小，但**在 `model/` 下，不跟踪** |
-| `model/zero_shot_bge_small/corpus_emb.npy` | 98 MB | ✅ 有模型就行，**18 秒**（GPU） |
-| `model/bge-small-zh-v1.5/tokenizer.json` | 432 KB | ✅ HuggingFace 上直接下 |
-| **`model/bge-small-zh-v1.5/encoder.onnx`** | **91 MB** | ❌ **需要 Python 环境导出** |
-
-**结论：真正需要托管的只有 `encoder.onnx` 一个文件。** 其余 120 MB 都能从 `goods.csv` 加模型快速再生。
-
-整个 `model/` 目录（约 190 MB）都不进 git，规则就一行——注意**前导斜杠不能省**：
-
-```gitignore
-/model/
-```
-
-不带斜杠的 `model/` 会匹配**任意层级**的同名目录，曾把 `vector/src/main/java/hawk/vector/model/` 里的两个源文件一起吞掉，导致 clone 下来的仓库编译不过。这是 gitignore 里最容易踩的一类坑。
-
-> 想让 `model.json`（517 字节的描述符：维度、输入名、长度上限、前缀）单独进 git 也可以，但那需要**逐层放行**——git 不允许在已排除的父目录下再包含文件：
->
-> ```gitignore
-> /model/**
-> !/model/**/
-> !/model/**/model.json
-> ```
->
-> 本项目没有这么做：`runDemo.sh` 会从 Release 解压出完整的 `model/`，描述符跟着一起来。
-
-### 8.2 三种做法
-
-| 方案 | clone 后能否直接用 | 代价 |
-|---|---|---|
-| **Git LFS** | 装了 LFS 就透明 | GitHub 免费额度 **1 GB 存储 / 1 GB 月流量** —— 200 MB 一次 clone，每月只够约 4 次 |
-| **Release 附件 + 脚本**（推荐） | 跑一条 `bootstrap.sh` | 公开仓库的 Release 附件**没有流量限制** |
-| **完全自建** | 需要 Python + torch | 仓库最干净，但门槛高 |
-
-### 8.3 推荐的组合
-
-```bash
-git clone https://github.com/NoobCoderGrowing/Hawk.git
-cd Hawk
-JAVA_HOME=/path/to/jdk-25 ./runDemo.sh
-```
-
-`runDemo.sh` 依次做：检查 JDK（≥22，否则给出可操作提示）→ 编译 → **用 `goods.csv` 建倒排索引**（5 秒，不需要网络）→ 检查 `model/`，缺失则从 Release 下载 → 启动演示服务（前台运行）。
-
-当前资产包：
-
-| | |
-|---|---|
-| Tag | `demoDependency` |
-| 资产 | `model.tar.gz`（149.9 MB） |
-| 地址 | `https://github.com/NoobCoderGrowing/Hawk/releases/download/demoDependency/model.tar.gz` |
-| 内容 | `model/bge-small-zh-v1.5/` + `model/zero_shot_bge_small/`（11 个条目） |
-
-**重新打包**（在仓库根，注意要保留 `model/` 顶层前缀）：
-
-```bash
-tar -czf model.tar.gz model/bge-small-zh-v1.5 model/zero_shot_bge_small
-```
-
-> 打包时**别 `cd model` 再打包** —— 那样归档里没有 `model/` 前缀，`runDemo.sh` 解压后会落在错误位置。
-> 脚本里那条 `tar -xzf ... -C "$ROOT"` 就是按"带前缀"写的。
-
-换托管位置用 `HAWK_ASSETS_URL` 覆盖：
-
-```bash
-HAWK_ASSETS_URL=https://your-host/model.tar.gz ./runDemo.sh
-```
-
-### 8.4 想进一步瘦身
-
-- **`encoder.onnx` 转 fp16**：91 MB → 约 46 MB。ONNX Runtime 支持 fp16 推理，但要在 Hawk-Vector 的导出脚本里加转换，并验证向量质量没有下降。
-- **演示用不着全量 10 万商品**：生成一个 1 万条的子集语料，向量从 98 MB 降到 10 MB。索引与向量都从子集建即可（两边必须同源）。对演示效果几乎没有影响。
-
-两者叠加可以把总包压到 60 MB 以内，LFS 也能轻松承载。
