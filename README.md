@@ -343,9 +343,13 @@ model/bge-small-zh-v1.5/
 
 ```
 model/zero_shot_bge_small/
-├── corpus_emb.npy       # (N, D) 商品向量
-└── corpus_emb_ids.npy   # (N,)   行号 → 商品真实 ID 的映射
+├── corpus_emb.npy       # (100001, 512) float16 —— goods.csv 每条 title 的向量
+└── corpus_emb_ids.npy   # (100001,)     int64   —— 行号 → 商品 ID 的映射
 ```
+
+**商品库与倒排链路统一为 hawk 主仓库的 `goods.csv`**：取 `title` 列编码成向量，第一列（`id`，0-based，0…100000）作为商品 ID。
+
+由此得到一个有用的事实：**`ids[i] == i`，即 ordinal 本身就等于商品 ID**（恒等映射）。`Demo` 里仍保留 `ids[ordinal]` 这层查表，因为换成语料 ID 非顺序的数据集时它就不能省。
 
 `.npy` 结构（v1.0 / v2.0 均支持）：
 
@@ -354,7 +358,7 @@ model/zero_shot_bge_small/
 2 字节    版本 (major, minor)
 2 或 4     header 长度（小端；v1.0 为 2 字节，v2.0 为 4 字节）
 n 字节    header：Python dict 字面量，如
-          {'descr': '<f2', 'fortran_order': False, 'shape': (1002494, 512), }
+          {'descr': '<f2', 'fortran_order': False, 'shape': (100001, 512), }
 ...       数据（64 字节对齐后开始）
 ```
 
@@ -364,6 +368,23 @@ n 字节    header：Python dict 字面量，如
 |---|---|---|
 | `corpus_emb.npy` | `<f2` / `<f4` | **一律读成 fp32 输出**（fp16 自动转换） |
 | `corpus_emb_ids.npy` | `<i8` / `<i4` | 一维，列数必须为 1 |
+
+**如何生成**：由 Python 侧的 **Hawk-Vector** 项目（与本仓库平级）编码产出：
+
+```bash
+cd /opt/java_project/Hawk-Vector
+./scripts/encode.sh configs/zero_shot_bge_small.yaml \
+    --corpus  /opt/java_project/Hawk/goods.csv \
+    --out     /opt/java_project/Hawk/model/zero_shot_bge_small/corpus_emb.npy
+# 用时约 18s（RTX 3060，100,001 篇，~5,900 doc/s）
+```
+
+几个要点：
+
+- `--corpus` 可以传**任意 `id \t 文本` 的文件**，多出来的列会被忽略——所以 `goods.csv`（`id \t title \t price`）**不需要做格式转换**。
+- `ids` 的起点**不要求是 1**：Hawk-Vector 里 `Corpus` 会推出连续区间的起点（ecom 是 1、goods.csv 是 0），两者都走 O(1) 位置索引；区间有空洞或重复时自动回退到 dict。
+- `configs/` 与本命令**无关**——那个配置是给 ecom 的 dev/test 评测用的，改它会破坏评测的语料对应关系，所以生成商品向量走独立的一次性命令。
+- 长度上限沿用 config 里的 `max_len_doc: 64`。goods.csv 标题 **p99 恰好也是 64 字**，因此只有约 1% 被截断，无需调整。
 
 ### 4.4 ordinal 与业务主键
 
@@ -375,37 +396,70 @@ public record SearchHits(int[] ordinals, float[] scores)   // 按分数降序
 
 **建索引时按什么顺序喂入向量，ordinal 就是什么顺序。** `JVectorIndex` 不做任何主键映射——调用方要保持"喂入顺序"与自己的主键表一致。这正是 `corpus_emb_ids.npy` 必须与 `corpus_emb.npy` **配套**的原因：只有 `ids[ordinals[i]]` 才是商品 ID。
 
+#### 拿到商品 ID 之后：取回商品原文
+
+商品原文存在**倒排那一侧**的索引里，用 `Searcher.docByUniqueId(long)` 取：
+
+```java
+Document doc = searcher.docByUniqueId(productId);          // productId = ids[ordinals[i]]
+String title = ((StringField) doc.getFieldMap().get("title")).getValue();
+```
+
+**参数是商品唯一 ID（`PrimaryKeyField` 的值，即 `pk.map` 的 key），不是全局 docID。** 两者数值上没有任何关系——全局 docID 由索引线程的**完成顺序**决定，不是提交顺序（实测：商品 ID `0` 落在 docID `2` 上、商品 ID `23198` 落在 docID `23191` 上）。
+
+这个区别很危险，因为**混用不会报错**：两者数值区间重合，传错了索引越界检查过不去。
+
+```
+正确用法  docByUniqueId(23198) → PVC直插管g件110变75缩口排水弯头…
+错误用法  doc(new ScoreDoc(0f, 23198)) → 反监控防追踪反窃听私密的轿车防偷拍…
+```
+
+两个完全不同的商品，**但调用不报任何错**。所以 `Searcher` 只暴露按业务主键取文的方法，不鼓励直接拼 `ScoreDoc`。
+
+**返回值**：`null` 表示该 ID 不存在、或对应文档已被**软删除**。注意删除不会从 `pk.map` 抹掉条目（靠 `deleted.ids` 在检索时过滤），所以"ID 存在于 pk.map"不等于"文档可读"。
+
+于是向量链路与倒排链路的完整闭环是：
+
+```
+query 文本 → TextEncoder → 向量 → JVectorIndex → ordinal → ids[ordinal] = 商品ID
+                                                                    ↓ pk.map
+                                              商品原文 ← docByUniqueId ←┘
+```
+
 ### 4.5 演示代码
 
 `vector/src/main/java/hawk/vector/demo/Demo.java`，端到端把每一块串起来：
 
 ```java
 public class Demo {
-    private static final int LIMIT = 10000;
+    private static final String VECTOR_DIR = "model/zero_shot_bge_small";
+    private static final String MODEL_DIR = "model/bge-small-zh-v1.5";
 
     public static void main(String[] args) throws Exception {
-        // 1) 读商品向量，以及 行号 → 商品真实 ID 的映射
-        float[][] matrix = NpyReader.readFloatMatrix(
-                Path.of("model/zero_shot_bge_small/corpus_emb.npy"), LIMIT);
-        long[] ids = NpyReader.readLongArray(
-                Path.of("model/zero_shot_bge_small/corpus_emb_ids.npy"), LIMIT);
+        // 查询词可由命令行覆盖；默认取 goods.csv 里真实存在的商品词
+        String text = args.length > 0 ? args[0] : "老黄冰糖";
+        int topK = args.length > 1 ? Integer.parseInt(args[1]) : 10;
+
+        // 1) 读商品向量，以及 行号 → 商品 ID 的映射（全部 100,001 条）
+        float[][] matrix = NpyReader.readFloatMatrix(Path.of(VECTOR_DIR, "corpus_emb.npy"));
+        long[] ids = NpyReader.readLongArray(Path.of(VECTOR_DIR, "corpus_emb_ids.npy"));
         System.out.printf("商品向量 %d × %d%n", matrix.length, matrix[0].length);
 
         // 2) 建索引
         try (JVectorIndex index = JVectorIndex.build(matrix)) {
             // 3) 加载模型，把 query 文本编码成向量
-            try (TextEncoder encoder = new TextEncoder(Path.of("model/bge-small-zh-v1.5"))) {
-                String text = "大宝护手霜";
+            try (TextEncoder encoder = new TextEncoder(Path.of(MODEL_DIR))) {
                 float[] query = encoder.encodeOne(text, Role.QUERY);
 
                 // 4) 检索
-                SearchHits hits = index.search(query, 10, Bits.ALL);
+                SearchHits hits = index.search(query, topK, Bits.ALL);
 
-                // 5) ordinal 映射回商品真实 ID
+                // 5) ordinal 映射回商品 ID
                 int[] ordinals = hits.ordinals();
                 for (int i = 0; i < ordinals.length; i++) {
+                    long productId = ids[ordinals[i]];
                     System.out.printf("  #%d  %.4f  ordinal=%-6d 商品ID=%d%n",
-                            i + 1, hits.scores()[i], ordinals[i], ids[ordinals[i]]);
+                            i + 1, hits.scores()[i], ordinals[i], productId);
                 }
             }
         }
@@ -420,19 +474,26 @@ public class Demo {
 ```bash
 mvn -q -pl vector -am -DskipTests package
 mvn -q -pl vector dependency:build-classpath -Dmdep.outputFile=/tmp/vcp.txt
-java -Xmx2g -cp "vector/target/classes:$(cat /tmp/vcp.txt)" hawk.vector.demo.Demo
+java -Xmx3g -cp "vector/target/classes:$(cat /tmp/vcp.txt)" hawk.vector.demo.Demo
+java -Xmx3g -cp "vector/target/classes:$(cat /tmp/vcp.txt)" hawk.vector.demo.Demo "镀锌弯头" 5
 ```
 
-实测输出（本机，`model/` 为 100 万条商品向量的前 1 万条）：
+> 堆要给到 3g：100,001 × 512 读成 fp32 后是约 205 MB，加上 jvector 的图结构会更高；
+> `NpyReader` 会在读之前预检堆空间，不够会给出可操作的提示而不是直接 OOM。
+
+实测输出（本机 RTX 3060，商品库为 goods.csv 全部 100,001 条）：
 
 ```
-[建索引] 10,000 条 × 512 维  M=16 efC=100  用时 1.3s
-查询「大宝护手霜」top-10：
-  #1  0.8462  ordinal=191    商品ID=192
-  #2  0.8445  ordinal=8966   商品ID=8967
-  #3  0.8292  ordinal=2739   商品ID=2740
+[建索引] 100,001 条 × 512 维  M=16 efC=100  用时 15.9s
+查询「老黄冰糖」top-10：
+  #1  0.9197  ordinal=49732  商品ID=49732      → 老冰糖黄冰糖散装5斤甘蔗老式冰糖碎2500克多晶冰糖特级正宗小粒
+  #2  0.8817  ordinal=43621  商品ID=43621      → 富昌银京黄冰糖400g/袋老冰糖多晶冰糖烘焙原料茶饮甜汤甜品
+  #3  0.8785  ordinal=23888  商品ID=23888      → 太古黄冰糖1kg*2袋 食用糖烹饪红烧肉煲汤煮粥糖水柠檬酵素青梅酱
+  #4  0.8641  ordinal=30954  商品ID=30954      → 广西柳冰黄冰糖泡酒孝酵素多晶冰糖中冰红糖块【整袋30斤包邮】
   ...
 ```
+
+（`→` 后的商品标题是事后用 `goods.csv` 第 `商品ID` 行对出来的，`Demo` 本身只打印 ID。）
 
 ### 4.6 索引实现与依赖
 
@@ -449,10 +510,11 @@ java -Xmx2g -cp "vector/target/classes:$(cat /tmp/vcp.txt)" hawk.vector.demo.Dem
 
 ### 4.7 当前状态
 
-- 模块可端到端跑通（§4.5 实测）。
-- **尚未与倒排做混合召回**，也没有接入 `recall` 的检索链路——目前是独立链路。
+- 模块可端到端跑通（§4.5 实测），商品库已与倒排链路**统一为 `goods.csv`**。
+- **尚未与倒排做混合召回**，也没有接入 `recall` 的检索链路——目前是独立链路。两条链路现在共享同一套商品 ID（`goods.csv` 第一列），做归并时主键是对得上的。
 - `VectorIndex` 与 `TextEncoder` 里各留了一个 `main` 方法，是硬编码路径的临时调试脚手架，且 `catch` 块吞掉了异常（只打印 "model loading failed"）；正式用法请参照 `Demo`。
-- `model/` 目录不在版本控制内，需要自行从 Python 侧导出。
+- `model/` 目录不在版本控制内，需要自行从 Python 侧导出（见 §4.3）。
+- `model/zero_shot_bge_small/` 里还留着 `dev_pred.*` / `test_pred.tsv` —— 那是**旧的 ecom 语料**的评测产物，与现在的 `corpus_emb.npy`（goods.csv）已经不配套，需要时请重新跑评测生成。
 
 ---
 

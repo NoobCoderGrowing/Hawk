@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    vector 模块的日志配置。
+
+    logback 在没有配置文件时用的是 DEBUG 级别的内置默认（不是常说的 INFO），
+    而 DJL 的 tokenizers 与 jvector 在 DEBUG 下会刷大量逐条日志，
+    所以这里显式把根级别定在 INFO。
+
+    需要排查 tokenizers/JNI 问题时，把 root 或对应 logger 调到 DEBUG 即可。
+-->
+<configuration>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 第三方库在 DEBUG 下过于吵，单独压到 WARN -->
+    <logger name="ai.djl" level="WARN"/>
+    <logger name="io.github.jbellis.jvector" level="WARN"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+</configuration>

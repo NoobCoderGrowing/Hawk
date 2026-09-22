@@ -332,6 +332,28 @@ public class Searcher {
         return null;
     }
 
+    /**
+     * 按**商品唯一 ID**取回原文。
+     *
+     * <p>参数是 {@code PrimaryKeyField} 的值，也就是 {@code pk.map} 里的 **key**，
+     * <b>不是全局 docID</b>。两者在数值上没有任何关系 —— 全局 docID 是按索引线程的
+     * **完成顺序**分配的，不是提交顺序。混用不会抛异常，只会**静默返回另一个商品**，
+     * 所以对外只暴露这个按业务主键取文的方法，调用方没有机会把两者写混。
+     *
+     * <p>典型用途：向量召回给出商品 ID 后，回到倒排这一侧取商品原文。
+     *
+     * @param uniqueId 商品唯一 ID（{@code PrimaryKeyField}）
+     * @return 文档；该 ID 不存在、或对应文档已被软删除时返回 {@code null}
+     */
+    public Document docByUniqueId(long uniqueId){
+        Integer docId = directoryReader.getPkMap().get(uniqueId);
+        if (docId == null) {
+            return null;
+        }
+        // 复用 doc()：它内部会做 isLive 检查，已删除的文档同样返回 null
+        return doc(new ScoreDoc(0f, docId));
+    }
+
     public void close(){
         directoryReader.close();
     }
