@@ -15,6 +15,7 @@
         <module>core</module>
         <module>demo</module>
         <module>benchmark</module>
+        <module>vector</module>
     </modules>
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -30,59 +31,55 @@
         <lombok.version>1.18.38</lombok.version>
     </properties>
 
-<!--    子项目必然继承-->
-    <dependencies>
+<!--
+    以前这里是 <dependencies>，会**无条件被所有子模块继承**，导致每个模块都背上
+    Spring Boot Web / MyBatis / MySQL / fastjson / lz4 —— 连完全用不到的模块也一样。
+    更严重的是：vector 模块在这个 classpath 下加载 ONNX Runtime 的原生库会段错误
+    （多个 jar 的组合触发，具体机制未定位）。
 
-<!--        <dependency>-->
-<!--            <groupId>org.springframework.cloud</groupId>-->
-<!--            <artifactId>spring-cloud-starter-zookeeper-discovery</artifactId>-->
-<!--        </dependency>-->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.mybatis.spring.boot</groupId>
-            <artifactId>mybatis-spring-boot-starter</artifactId>
-            <version>2.3.0</version>
-        </dependency>
-
-        <dependency>
-            <groupId>mysql</groupId>
-            <artifactId>mysql-connector-java</artifactId>
-            <version>5.1.12</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <!-- 1.18.22 无法在 JDK 25 的 javac 上跑注解处理，会静默不生成 @Data/@Slf4j 成员 -->
-            <version>${lombok.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>com.alibaba</groupId>
-            <artifactId>fastjson</artifactId>
-            <version>1.2.75</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.lz4</groupId>
-            <artifactId>lz4-java</artifactId>
-            <version>1.8.0</version>
-        </dependency>
-    </dependencies>
-
+    现在改为 <dependencyManagement>：只统一**版本**，各模块按需显式声明。
+    这是 Maven 的标准做法，代价是每个模块要多写几行。
+-->
 <!--    dependencyManagement中项目选择继承,及子项目必须写明dependency才继承-->
     <dependencyManagement>
         <dependencies>
             <!-- 这里引入最新的SpringCloud依赖 -->
+
+            <!-- === 原来被全模块继承的依赖，现在只统一版本 === -->
+            <!-- Spring Boot 自己的制品（spring-boot-starter*、jackson 等）
+                 不在这里列：spring-boot-starter-parent 已经在管版本。
+                 在子 pom 的 dependencyManagement 里写**无版本**条目不会回落到父级，
+                 反而会让 Maven 报 "version is missing"。 -->
+            <dependency>
+                <groupId>org.mybatis.spring.boot</groupId>
+                <artifactId>mybatis-spring-boot-starter</artifactId>
+                <version>2.3.0</version>
+            </dependency>
+            <dependency>
+                <groupId>mysql</groupId>
+                <artifactId>mysql-connector-java</artifactId>
+                <version>5.1.12</version>
+            </dependency>
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <!-- 1.18.22 无法在 JDK 25 的 javac 上跑注解处理，会静默不生成 @Data/@Slf4j 成员 -->
+                <version>${lombok.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>fastjson</artifactId>
+                <version>1.2.75</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lz4</groupId>
+                <artifactId>lz4-java</artifactId>
+                <version>1.8.0</version>
+            </dependency>
+            <!-- jackson-databind 不在这里声明：spring-boot-starter-parent 已经在管它的版本，
+                 在这里再写一条**无版本的**条目会让 Maven 报 "version is missing"，
+                 因为子 pom 自己 dependencyManagement 里的条目不会回落到父级 -->
+
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>

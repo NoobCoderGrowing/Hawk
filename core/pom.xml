@@ -21,6 +21,28 @@
         </plugins>
     </build>
     <dependencies>
+        <!-- @Slf4j 生成的代码引用 org.slf4j.Logger。
+             版本不在本项目声明 —— spring-boot-starter-parent 已经统一管理 slf4j-api。 -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+
+        <!-- 注解处理：@Data / @Slf4j 等的成员由它生成。
+             1.18.22 在 JDK 25 的 javac 上会**静默不生成**成员，版本必须是 1.18.38。 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.lz4</groupId>
+            <artifactId>lz4-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

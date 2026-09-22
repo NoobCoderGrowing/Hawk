@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>hawk</artifactId>
+        <groupId>com.hawk</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>vector</artifactId>
+
+    <!--
+        稠密向量召回：文本 → 向量（ONNX + 分词）→ ANN 检索（jvector/HNSW）。
+
+        这个模块**不依赖 Hawk 的任何其他模块**（core/segment/indexer/recall 都不依赖），
+        它是一条独立的召回链路。将来要和倒排做混合召回时再引入依赖。
+
+        注意：父 pom 的 <dependencies> 会被所有子模块继承，所以这里也会拿到
+        Spring Boot Web / MyBatis / MySQL / fastjson / lz4 —— 对本模块大部分用不上，
+        但这是本项目的既有约定。
+    -->
+
+    <dependencies>
+        <!-- 推理。生产要 GPU 时换成 com.microsoft.onnxruntime:onnxruntime_gpu -->
+        <dependency>
+            <groupId>com.microsoft.onnxruntime</groupId>
+            <artifactId>onnxruntime</artifactId>
+            <version>1.30.0</version>
+        </dependency>
+
+        <!-- 分词：JNI 封装 Rust 的 tokenizers，直接读 tokenizer.json，
+             原生支持 WordPiece / BPE / Unigram —— 「任意模型权重」的关键 -->
+        <dependency>
+            <groupId>ai.djl.huggingface</groupId>
+            <artifactId>tokenizers</artifactId>
+            <version>0.38.0</version>
+        </dependency>
+
+        <!-- ANN 索引：纯 Java，无 JNI。HNSW + 磁盘驻留 + PQ/BQ 量化 -->
+        <dependency>
+            <groupId>io.github.jbellis</groupId>
+            <artifactId>jvector</artifactId>
+            <version>4.0.1</version>
+        </dependency>
+
+        <!-- 读 model.json 描述符。版本由 spring-boot-starter-parent 统一管理，
+             不必也不该在这里写死 —— 写死了会和 Spring Boot 管理的版本打架。 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- 日志：**不引 log4j**。
+             父 pom 继承的 spring-boot-starter-logging 已经提供了：
+               · logback-classic   → SLF4J 的实现
+               · jul-to-slf4j      → 桥接 java.util.logging（jvector 的 disk 包用它）
+               · log4j-to-slf4j    → 桥接 log4j2 API
+             再引 log4j-core 会变成两个 SLF4J binding，反而冲突。
+             日志级别在 src/main/resources/logback.xml 里配。 -->
+    </dependencies>
+
+</project>

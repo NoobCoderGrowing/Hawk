@@ -2,7 +2,10 @@
 
 Hawk 是一个**垂直搜索引擎**的检索内核实现：写入端（indexer）与召回端（recall）解耦，支持中文分词、倒排索引、BM25 打分、数值范围查询与主键级别的软删除。
 
-本仓库聚焦**倒排索引**这条链路。
+召回侧有**两条并列的链路**：倒排索引（§1）与稠密向量召回（§4）。两者目前相互独立，尚未做混合召回。
+
+> **倒排链路**：`core` / `segment` / `indexer` / `recall` / `demo` / `benchmark`
+> **向量链路**：`vector`（独立模块，不依赖上述任何一个）
 
 > 索引文件格式的逐字节说明见 [`INDEX_FORMAT.md`](INDEX_FORMAT.md)。
 >
@@ -22,16 +25,17 @@ hawk (pom)
 ├── segment     中文分词：N-最短路径分词、词图、标点与词典资源
 ├── indexer     写入层：IndexWriter / DocWriter / IndexMerger
 ├── recall      召回层：DirectoryReader / Searcher / Query / Similarity
-└── demo        示例：写索引、按词/串/数值范围检索、删除文档
+├── demo        示例：写索引、按词/串/数值范围检索、删除文档
+└── vector      稠密向量召回：ONNX 文本编码 + HNSW 索引（详见 §4）
 ```
 
 依赖关系：
 
 ```
-              recall  indexer
-                 │    ╱   │
-                 │  ╱     │
-              segment   core
+              recall  indexer        vector
+                 │    ╱   │            │
+                 │  ╱     │            │  （不依赖任何其他模块）
+              segment   core          ┘
 ```
 
 - `indexer` 依赖 `core` + `segment`；`recall` 依赖 `core` + `segment`；**`indexer` 与 `recall` 之间无直接依赖**，二者仅通过磁盘上的索引目录通信——这正是"写入端与召回端解耦"在代码层面的体现：可以分别部署到不同进程/机器。
@@ -234,13 +238,225 @@ cd benchmark/scripts
 
 1. **迭代次数极少。** 脚本默认 `-i 1 -wi 1 -f 1`（1 次热身、1 次测量、单 fork），JMH 输出的 `Error` 列为空即为该原因。**索引基准中 1k/5k 两点的差异不可信**，检索基准相对稳定但仍建议提高迭代次数后复测。
 2. **合并策略不对等。** Hawk 索引基准用 `enableMerge=false`，Lucene 侧 `ConcurrentMergeScheduler` 正常工作，两者承担的合并成本不同。
-3. **规模有限。** 索引基准最大 10k 篇、检索基准 50k 篇，未覆盖百万级。单文件 2 GiB 上限已随 FFM 迁移解除（见 [§4](#4-已知限制)），但**文档数 ~2^31 的上限未动**（posting 的 `VInt docID`、`preMaxID`、`pk.map` docID 仍是 `int`），到该量级需升 `formatVersion`。
+3. **规模有限。** 索引基准最大 10k 篇、检索基准 50k 篇，未覆盖百万级。单文件 2 GiB 上限已随 FFM 迁移解除（见 [§5](#5-已知限制)），但**文档数 ~2^31 的上限未动**（posting 的 `VInt docID`、`preMaxID`、`pk.map` docID 仍是 `int`），到该量级需升 `formatVersion`。
 4. **字段类型不完全等价。** Lucene 侧 `descript`/`digt` 以 `StoredField` 写入，Hawk 侧为 `Tokenized.NO` 的存储字段；`uniqueID` 在 Lucene 侧同时写入 `LongPoint` 与 `StoredField`（含未被查询使用的点索引）。
 5. **单机单 JVM。** 未涉及跨机部署，与本项目"写入端/召回端可分离"的架构定位不完全对应。
 
 ---
 
-## 4. 已知限制
+## 4. 向量召回
+
+`vector/` 是一条**独立的稠密向量召回链路**，与倒排索引并列（不是它的补充）。它**不依赖 `core` / `segment` / `indexer` / `recall` 中的任何一个**——将来要做向量 + BM25 混合召回时，才需要引入依赖。
+
+```
+商品向量 (.npy) ──► JVectorIndex (HNSW) ──┐
+                                          ├─► top-K ──► ordinal ──► 商品 ID
+query 文本 ──► TextEncoder (ONNX) ──► float[] ─┘
+```
+
+### 4.1 核心设计：query 向量化 ←→ 商品向量库 的解耦
+
+解耦边界定义在 `VectorIndex` 这一个接口上（`vector/index/VectorIndex.java`）：
+
+```java
+public interface VectorIndex extends Closeable {
+    int size();
+    int dimension();
+    SearchHits search(float[] query, int topK);              // 不带过滤
+    SearchHits search(float[] query, int topK, Bits acceptOrds);  // 带过滤
+}
+```
+
+**参数是 `float[]`，不是文本，也不是任何模型类型。** 索引只回答"离这个向量最近的 top-K 是谁"，完全不关心这个向量是 bge 编的、别的模型编的、还是合成数据。
+
+这条边界带来三件事：
+
+- **索引可以被别的东西复用**，也可以**用合成向量独立测试**——不需要加载模型就能验证索引本身；
+- **换模型不动索引代码**，换索引实现（例如换 Lucene 以获得向量 + BM25 同引擎混合召回）调用方不动；
+- **"模型与索引是否匹配"由调用方校验**，不是索引层的职责——索引层也拿不到这个信息（它只知道维度和 `float[]`）。
+
+于是模块天然分成两半，各自独立演进：
+
+| 半边 | 类 | 职责 |
+|---|---|---|
+| **query 向量化** | `model/TextEncoder` + `model/ModelDescriptor` | 文本 → L2 归一化向量；完全由 `model.json` 驱动，对具体模型零假设 |
+| **商品向量库** | `index/JVectorIndex` + `index/NpyReader` | 商品向量 → HNSW 索引 → top-K |
+
+**把两者接起来是调用方的职责**——`Demo` 就是这么做的，见 §4.5。
+
+### 4.2 支持的模型文件格式
+
+一个模型 = 一个目录，含描述符 + ONNX 图 + tokenizer：
+
+```
+model/bge-small-zh-v1.5/
+├── model.json        # 描述符：Java 侧唯一的可变配置来源
+├── encoder.onnx      # ONNX 图（pooling 与 L2 归一化已烘进图里）
+└── tokenizer.json    # HF tokenizer（WordPiece / BPE / Unigram）
+```
+
+`model.json` 字段：
+
+| 字段 | 含义 |
+|---|---|
+| `name` | 模型标识 |
+| `fingerprint` | 权重指纹（`sha256:...`）。**调用方据此校验"索引与模型是否匹配"** |
+| `dim` | 向量维度 |
+| `pooling` | 池化方式（已烘在图里，此处仅作记录） |
+| `onnx.file` / `inputNames` / `outputName` | ONNX 图文件名，及图**实际**具有的输入输出名 |
+| `tokenizer.file` | `tokenizer.json` |
+| `preprocess.maxLenQuery` / `maxLenDoc` | 两侧长度上限（非对称模型不同） |
+| `preprocess.queryPrefix` / `docPrefix` | 两侧前缀（E5 这类非对称模型需要） |
+| `preprocess.encodeBatchSize` | 编码分块大小，默认 64 |
+
+实际使用的 `model/bge-small-zh-v1.5/model.json`：
+
+```json
+{
+  "name": "BAAI/bge-small-zh-v1.5",
+  "fingerprint": "sha256:e1429e5b64154dc3687fd726f507ae604d281afd28ca2d5fb3750c9ad152c326",
+  "dim": 512,
+  "pooling": "cls",
+  "onnx": {
+    "file": "encoder.onnx",
+    "inputNames": ["input_ids", "attention_mask", "token_type_ids"],
+    "outputName": "vector"
+  },
+  "tokenizer": { "file": "tokenizer.json" },
+  "preprocess": { "maxLenQuery": 32, "maxLenDoc": 64, "queryPrefix": "", "docPrefix": "", "encodeBatchSize": 64 }
+}
+```
+
+**"支持任意模型"靠的是把假设全部外置**：
+
+- 维度、输入名、长度上限、前缀**全部从描述符读**，Java 代码里没有任何与具体模型相关的常量；
+- **只喂图实际具有的输入**——BERT 系含 `token_type_ids`，XLM-R 系不含，代码不会为"统一"而塞空壳张量；
+- 分词交给 DJL `HuggingFaceTokenizer` 直接读 `tokenizer.json`，**原生支持 WordPiece / BPE / Unigram**，不需要 Java 侧实现分词算法；
+- **pooling 与 L2 归一化烘在 ONNX 图里，Java 侧不做任何后处理**——否则每支持一个新模型都要加一段 Java 逻辑，"任意模型"就无从谈起；
+- 启动时校验描述符声明的输入输出与图实际一致，**对不上就启动即失败**，避免一路跑到检索结果变垃圾才被发现。
+
+> 模型目录由 Python 侧 `hawk_vector.export.export_onnx` 产出（不在此仓库）。`model/` 已在 `.gitignore` 中。
+
+### 4.3 商品向量文件格式
+
+用 NumPy `.npy`——语料向量由 Python 编码产出，直接读可省掉一次格式转换和中间产物：
+
+```
+model/zero_shot_bge_small/
+├── corpus_emb.npy       # (N, D) 商品向量
+└── corpus_emb_ids.npy   # (N,)   行号 → 商品真实 ID 的映射
+```
+
+`.npy` 结构（v1.0 / v2.0 均支持）：
+
+```
+6 字节    magic "\x93NUMPY"
+2 字节    版本 (major, minor)
+2 或 4     header 长度（小端；v1.0 为 2 字节，v2.0 为 4 字节）
+n 字节    header：Python dict 字面量，如
+          {'descr': '<f2', 'fortran_order': False, 'shape': (1002494, 512), }
+...       数据（64 字节对齐后开始）
+```
+
+支持的 dtype：
+
+| 文件 | 可用 dtype | 说明 |
+|---|---|---|
+| `corpus_emb.npy` | `<f2` / `<f4` | **一律读成 fp32 输出**（fp16 自动转换） |
+| `corpus_emb_ids.npy` | `<i8` / `<i4` | 一维，列数必须为 1 |
+
+### 4.4 ordinal 与业务主键
+
+`SearchHits` 返回的是 **ordinal（向量在索引里的行号）**，不是业务主键：
+
+```java
+public record SearchHits(int[] ordinals, float[] scores)   // 按分数降序
+```
+
+**建索引时按什么顺序喂入向量，ordinal 就是什么顺序。** `JVectorIndex` 不做任何主键映射——调用方要保持"喂入顺序"与自己的主键表一致。这正是 `corpus_emb_ids.npy` 必须与 `corpus_emb.npy` **配套**的原因：只有 `ids[ordinals[i]]` 才是商品 ID。
+
+### 4.5 演示代码
+
+`vector/src/main/java/hawk/vector/demo/Demo.java`，端到端把每一块串起来：
+
+```java
+public class Demo {
+    private static final int LIMIT = 10000;
+
+    public static void main(String[] args) throws Exception {
+        // 1) 读商品向量，以及 行号 → 商品真实 ID 的映射
+        float[][] matrix = NpyReader.readFloatMatrix(
+                Path.of("model/zero_shot_bge_small/corpus_emb.npy"), LIMIT);
+        long[] ids = NpyReader.readLongArray(
+                Path.of("model/zero_shot_bge_small/corpus_emb_ids.npy"), LIMIT);
+        System.out.printf("商品向量 %d × %d%n", matrix.length, matrix[0].length);
+
+        // 2) 建索引
+        try (JVectorIndex index = JVectorIndex.build(matrix)) {
+            // 3) 加载模型，把 query 文本编码成向量
+            try (TextEncoder encoder = new TextEncoder(Path.of("model/bge-small-zh-v1.5"))) {
+                String text = "大宝护手霜";
+                float[] query = encoder.encodeOne(text, Role.QUERY);
+
+                // 4) 检索
+                SearchHits hits = index.search(query, 10, Bits.ALL);
+
+                // 5) ordinal 映射回商品真实 ID
+                int[] ordinals = hits.ordinals();
+                for (int i = 0; i < ordinals.length; i++) {
+                    System.out.printf("  #%d  %.4f  ordinal=%-6d 商品ID=%d%n",
+                            i + 1, hits.scores()[i], ordinals[i], ids[ordinals[i]]);
+                }
+            }
+        }
+    }
+}
+```
+
+注意第 2 步和第 3 步是**两个彼此独立的资源，生命周期互不相干**——索引不需要模型，模型也不需要索引，`Demo` 只是把两者接起来。**这就是 §4.1 那条解耦边界在代码上的体现。**
+
+运行（工作目录须为仓库根，`model/` 在根下）：
+
+```bash
+mvn -q -pl vector -am -DskipTests package
+mvn -q -pl vector dependency:build-classpath -Dmdep.outputFile=/tmp/vcp.txt
+java -Xmx2g -cp "vector/target/classes:$(cat /tmp/vcp.txt)" hawk.vector.demo.Demo
+```
+
+实测输出（本机，`model/` 为 100 万条商品向量的前 1 万条）：
+
+```
+[建索引] 10,000 条 × 512 维  M=16 efC=100  用时 1.3s
+查询「大宝护手霜」top-10：
+  #1  0.8462  ordinal=191    商品ID=192
+  #2  0.8445  ordinal=8966   商品ID=8967
+  #3  0.8292  ordinal=2739   商品ID=2740
+  ...
+```
+
+### 4.6 索引实现与依赖
+
+`JVectorIndex` 基于 **jvector 4.0.1**（纯 Java、无 JNI，HNSW + 磁盘驻留 + PQ/BQ 量化）。默认参数：`M=16`、`efConstruction=100`、`rerankK=256`、相似度函数为**余弦**。
+
+关键依赖：
+
+| 依赖 | 用途 |
+|---|---|
+| `com.microsoft.onnxruntime:onnxruntime` | 推理。要 GPU 换成 `onnxruntime_gpu` |
+| `ai.djl.huggingface:tokenizers` | 分词，JNI 封装 Rust `tokenizers`，直接读 `tokenizer.json` |
+| `io.github.jbellis:jvector` | ANN 索引 |
+| `com.fasterxml.jackson.core:jackson-databind` | 读 `model.json`（版本由 Spring Boot 统一管理） |
+
+### 4.7 当前状态
+
+- 模块可端到端跑通（§4.5 实测）。
+- **尚未与倒排做混合召回**，也没有接入 `recall` 的检索链路——目前是独立链路。
+- `VectorIndex` 与 `TextEncoder` 里各留了一个 `main` 方法，是硬编码路径的临时调试脚手架，且 `catch` 块吞掉了异常（只打印 "model loading failed"）；正式用法请参照 `Demo`。
+- `model/` 目录不在版本控制内，需要自行从 Python 侧导出。
+
+---
+
+## 5. 已知限制
 
 1. **单文件 2 GiB 上限已解除（前提：JDK 22+）**：索引文件改用 `MemorySegment`（FFM）以 **`long`** 寻址，单次 `FileChannel.map()` 不再受 `Integer.MAX_VALUE` 约束；映射生命周期由 `Arena` 管理，取代了原先 `sun.misc.Cleaner` 反射那套 hack。
 
@@ -260,7 +476,7 @@ cd benchmark/scripts
 
 ---
 
-## 5. 目录结构
+## 6. 目录结构
 
 ```
 Hawk/
@@ -269,10 +485,16 @@ Hawk/
 ├── indexer/        IndexWriter、DocWriter、IndexMerger
 ├── recall/         DirectoryReader、Searcher、Query、Similarity
 ├── demo/           使用示例
+├── vector/         稠密向量召回（独立模块，详见 §4）
+│   └── src/main/java/hawk/vector/
+│       ├── model/  ModelDescriptor（model.json）、TextEncoder（ONNX + 分词）
+│       ├── index/  VectorIndex（解耦边界）、JVectorIndex、NpyReader、SearchHits
+│       └── demo/   Demo（端到端示例）
 ├── benchmark/      JMH 基准（Hawk vs Lucene）
 │   ├── scripts/    run-hawk-benchmark.sh / run-lucene-benchmark.sh
 │   └── results/    历史基准结果
 ├── goods.csv       基准语料（10 万条商品标题）
+├── model/          模型与商品向量（已 gitignore，需自行导出）
 ├── INDEX_FORMAT.md 索引文件格式说明
 └── README.md
 ```
