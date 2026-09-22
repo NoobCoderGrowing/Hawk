@@ -1,0 +1,334 @@
+/*
+ * Hawk 检索演示 —— 样式
+ *
+ * 设计取舍见 README §7。三条硬约束：
+ *   1. 衬线只给商品标题（标题是索引条目，不是 UI 文本）
+ *   2. 颜色只表达两件事：当前在哪个通道、查询词命中了标题里哪几个字
+ *   3. 层级靠留白，不用卡片 / 阴影 / 渐变
+ */
+
+:root {
+  --paper: #f5f6f8;
+  --ink: #14171c;
+  --muted: #6b7280;
+  --rule: #e4e7eb;
+  --fulltext: #1d4ed8;
+  --vector: #0f766e;
+  --mark: #fde68a;
+  --danger: #9a3412;
+
+  /* 商品标题用衬线：它是数据，是索引条目，不是界面文字 */
+  --serif: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "SimSun", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* 数字用等宽 + 表格数字，保证分数能逐行对齐比较 */
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  --accent: var(--fulltext);
+}
+
+/* 当前通道色由 data-mode 驱动，页面里所有强调色都跟着它走 */
+.page[data-mode="vector"] {
+  --accent: var(--vector);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.page {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 56px 24px 96px;
+}
+
+/* ---------------------------------------------------------------- 页眉 */
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 40px;
+}
+
+.masthead h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.masthead-meta {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 元信息之间用留白分隔，不用「·」这类连接符 */
+.sep {
+  display: inline-block;
+  width: 14px;
+}
+
+/* ---------------------------------------------------------------- 标签页 */
+
+.tabs {
+  display: flex;
+  gap: 28px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tab {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  margin-bottom: -1px;
+  padding: 0 0 12px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tab[aria-selected="true"] {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- 说明 */
+
+.hint {
+  margin: 20px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+/* ---------------------------------------------------------------- 查询 */
+
+.querybar {
+  display: flex;
+  gap: 12px;
+  margin: 12px 0 40px;
+}
+
+.querybar input {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ink);
+  border-radius: 0;
+  padding: 10px 2px;
+  font: inherit;
+  font-size: 17px;
+  color: var(--ink);
+}
+
+.querybar input::placeholder {
+  color: #a9b0ba;
+}
+
+.querybar input:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+  border-bottom-width: 2px;
+}
+
+.querybar button {
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  padding: 10px 22px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.querybar button:disabled {
+  background: #c8ced6;
+  cursor: default;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- 提示语 */
+
+.notice {
+  margin: 0 0 24px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.notice-error {
+  color: var(--danger);
+}
+
+.notice-quiet {
+  margin-top: 24px;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- 结果 */
+
+.stats {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  /* 一次编排好的亮相：只在新结果出现时，回应"搜索"这个动作 */
+  animation: reveal 180ms ease-out;
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.hit {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  gap: 0 16px;
+  align-items: baseline;
+  padding: 18px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.hits > .hit:first-child {
+  border-top: 0;
+  padding-top: 4px;
+}
+
+.rank {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.title {
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.5;
+  /* 商品标题是无空格的长中文串，靠行距和字号拉开呼吸感 */
+  word-break: break-word;
+}
+
+.title mark {
+  background: var(--mark);
+  color: inherit;
+  padding: 1px 0;
+}
+
+.gone {
+  color: var(--muted);
+  font-style: normal;
+  font-family: var(--sans);
+  font-size: 13.5px;
+}
+
+.attrs {
+  display: flex;
+  gap: 16px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.score {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- 页脚 */
+
+.footer {
+  margin-top: 64px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 62ch;
+}
+
+.footer code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- 窄屏 */
+
+@media (max-width: 560px) {
+  .page {
+    padding: 32px 16px 64px;
+  }
+
+  .hit {
+    grid-template-columns: 24px 1fr;
+  }
+
+  /* 窄屏放不下右对齐的分数列，挪到标题下方 */
+  .score {
+    grid-column: 2;
+    margin-top: 2px;
+  }
+
+  .attrs {
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hits {
+    animation: none;
+  }
+}

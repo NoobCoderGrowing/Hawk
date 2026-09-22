@@ -1,0 +1,27 @@
+server:
+  port: 8080
+
+hawk:
+  web:
+    # 倒排索引目录（含 segment.info / 1.fdt / 1.frq …）。
+    # 必须与下面的商品向量来自同一份语料，否则两个 tab 的商品 ID 对不上。
+    # 相对路径以**启动时的工作目录**为基准；按 README §5.3 的命令从仓库根启动。
+    # 用绝对路径也可以（走下面的环境变量覆盖）。
+    index-dir: ${HAWK_INDEX_DIR:index-data/goods}
+
+    # 商品向量目录：corpus_emb.npy + corpus_emb_ids.npy（见 README §4.3）
+    vector-dir: ${HAWK_VECTOR_DIR:model/zero_shot_bge_small}
+
+    # ONNX 模型目录：model.json + encoder.onnx + tokenizer.json（见 README §4.2）
+    model-dir: ${HAWK_MODEL_DIR:model/bge-small-zh-v1.5}
+
+spring:
+  jackson:
+    default-property-inclusion: non_null   # note 为 null 时不输出，前端少一个分支
+
+logging:
+  level:
+    root: INFO
+    # DJL 的分词原生库与 jvector 在 DEBUG 下会刷逐条日志
+    ai.djl: WARN
+    io.github.jbellis.jvector: WARN

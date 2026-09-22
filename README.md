@@ -5,7 +5,8 @@ Hawk 是一个**垂直搜索引擎**的检索内核实现：写入端（indexer�
 召回侧有**两条并列的链路**：倒排索引（§1）与稠密向量召回（§4）。两者目前相互独立，尚未做混合召回。
 
 > **倒排链路**：`core` / `segment` / `indexer` / `recall` / `demo` / `benchmark`
-> **向量链路**：`vector`（独立模块，不依赖上述任何一个）
+> **向量链路**：`vector`（不依赖上述任何一个）
+> **演示**：`web`（Spring Boot + React，唯一同时依赖两条链路，见 §5）
 
 > 索引文件格式的逐字节说明见 [`INDEX_FORMAT.md`](INDEX_FORMAT.md)。
 >
@@ -26,17 +27,24 @@ hawk (pom)
 ├── indexer     写入层：IndexWriter / DocWriter / IndexMerger
 ├── recall      召回层：DirectoryReader / Searcher / Query / Similarity
 ├── demo        示例：写索引、按词/串/数值范围检索、删除文档
-└── vector      稠密向量召回：ONNX 文本编码 + HNSW 索引（详见 §4）
+├── vector      稠密向量召回：ONNX 文本编码 + HNSW 索引（详见 §4）
+└── web         检索演示：Spring Boot 后端 + React 前端（详见 §5）
 ```
 
 依赖关系：
 
 ```
-              recall  indexer        vector
-                 │    ╱   │            │
-                 │  ╱     │            │  （不依赖任何其他模块）
-              segment   core          ┘
+                          web
+                        ╱     ╲
+                   recall     vector
+                      │          │
+              recall  indexer    ┘
+                 │    ╱   │
+                 │  ╱     │
+              segment   core
 ```
+
+`web` 是唯一同时依赖两条召回链路的模块——这正是它能演示"向量给商品 ID、倒排取原文"的前提。
 
 - `indexer` 依赖 `core` + `segment`；`recall` 依赖 `core` + `segment`；**`indexer` 与 `recall` 之间无直接依赖**，二者仅通过磁盘上的索引目录通信——这正是"写入端与召回端解耦"在代码层面的体现：可以分别部署到不同进程/机器。
 - `recall` 额外引入 `io.github.noobcodergrowing:JFST`，用于内存中的 Term FST。
@@ -141,6 +149,15 @@ deleted.ids      软删除主键集合
 mvn clean -DskipTests package
 ```
 
+> **刚 clone 下来？** 仓库里有约 200 MB 的派生产物（模型权重、商品向量、倒排索引）不在 git 里。
+> 一条命令搞定：
+>
+> ```bash
+> JAVA_HOME=/path/to/jdk-25 ./scripts/bootstrap.sh
+> ```
+>
+> 详见 [§8 大文件与 clone](#8-大文件与-clone)。
+
 示例类一览（`demo/src/main/java/demo`）：`demo` 模块中的 `main` 方法直接指向本地索引目录，按需修改路径后运行。
 
 | 类 | 用途 |
@@ -238,7 +255,7 @@ cd benchmark/scripts
 
 1. **迭代次数极少。** 脚本默认 `-i 1 -wi 1 -f 1`（1 次热身、1 次测量、单 fork），JMH 输出的 `Error` 列为空即为该原因。**索引基准中 1k/5k 两点的差异不可信**，检索基准相对稳定但仍建议提高迭代次数后复测。
 2. **合并策略不对等。** Hawk 索引基准用 `enableMerge=false`，Lucene 侧 `ConcurrentMergeScheduler` 正常工作，两者承担的合并成本不同。
-3. **规模有限。** 索引基准最大 10k 篇、检索基准 50k 篇，未覆盖百万级。单文件 2 GiB 上限已随 FFM 迁移解除（见 [§5](#5-已知限制)），但**文档数 ~2^31 的上限未动**（posting 的 `VInt docID`、`preMaxID`、`pk.map` docID 仍是 `int`），到该量级需升 `formatVersion`。
+3. **规模有限。** 索引基准最大 10k 篇、检索基准 50k 篇，未覆盖百万级。单文件 2 GiB 上限已随 FFM 迁移解除（见 [§6](#6-已知限制)），但**文档数 ~2^31 的上限未动**（posting 的 `VInt docID`、`preMaxID`、`pk.map` docID 仍是 `int`），到该量级需升 `formatVersion`。
 4. **字段类型不完全等价。** Lucene 侧 `descript`/`digt` 以 `StoredField` 写入，Hawk 侧为 `Tokenized.NO` 的存储字段；`uniqueID` 在 Lucene 侧同时写入 `LongPoint` 与 `StoredField`（含未被查询使用的点索引）。
 5. **单机单 JVM。** 未涉及跨机部署，与本项目"写入端/召回端可分离"的架构定位不完全对应。
 
@@ -518,7 +535,114 @@ java -Xmx3g -cp "vector/target/classes:$(cat /tmp/vcp.txt)" hawk.vector.demo.Dem
 
 ---
 
-## 5. 已知限制
+## 5. web 检索演示
+
+`web/` 是**唯一同时依赖两条召回链路**的模块：Spring Boot 后端 + React 前端，两个 tab 分别演示全文搜索与向量搜索。
+
+```
+web/
+├── pom.xml
+├── frontend/                React 源码（Vite）
+│   ├── src/App.jsx
+│   └── src/styles.css
+└── src/main/
+    ├── java/hawk/web/
+    │   ├── WebApplication.java    入口（配置名隔离，见下）
+    │   ├── SearchController.java  /api/meta、/api/search/{fulltext,vector}
+    │   └── SearchService.java     同时持有 Searcher 与 JVectorIndex/TextEncoder
+    ├── resources/hawk-web.yml     故意不叫 application.yml
+    └── resources/static/          Vite 构建产物（gitignore）
+```
+
+### 5.1 两个 tab 是两种工具，不是两个视图
+
+| | 全文搜索 | 向量搜索 |
+|---|---|---|
+| 匹配方式 | 分词后按词命中 | 整句语义邻近 |
+| 打分 | BM25（无上界） | 余弦相似度（0.8~0.9 的窄带） |
+| 该输入什么 | 标题里会出现的词，如 `老黄冰糖` | 标题里没有的说法，如 `给老人买的冰糖` |
+| 典型耗时 | ~10 ms | ~25 ms（含 ONNX 编码） |
+
+实测对比（同一句 `给老人买的冰糖`，两边的差异正是这个演示要展示的东西）：
+
+```
+全文  富昌银京黄冰糖400g/袋老冰糖多晶冰糖烘焙原料…     ← 只有「冰糖」字面命中
+向量  冰糖即食燕窝礼盒装送礼长辈中老年人营养品…      ← 理解了「给老人」
+```
+
+因为输入约定不同，**两个 tab 各自保存查询词与结果**，切换时不串味。
+
+### 5.2 向量 tab 走的就是 §4.4 那条链路
+
+```
+query → TextEncoder → 向量 → JVectorIndex → ordinal → ids[ordinal] = 商品ID
+                                                              ↓ pk.map
+                             商品原文 ← Searcher.docByUniqueId ←┘
+```
+
+`SearchService.searchVector` 里那一跳是本模块存在的意义：**向量索引只存向量，不含业务主键**，商品原文得回倒排索引取。
+
+### 5.3 运行
+
+前置：**倒排索引与商品向量必须来自同一份语料**（默认都是 `goods.csv`），否则两个 tab 的商品 ID 对不上。
+
+```bash
+# 1) 倒排索引 —— 用 goods.csv 全量建，落到 index-data/goods（已 gitignore）
+#    demo 模块的 WriteIndexFromFile 可改路径直接用；核心就三行：
+#      CorpusLoader.loadDocuments(0) → IndexWriter.addDoc(...) → commit()
+#    实测 10 万篇约 7 秒。
+
+# 2) 商品向量 —— 由 Hawk-Vector 生成（见 §4.3），落到 model/zero_shot_bge_small/
+
+# 3) 前端（首次需要）
+cd web/frontend && npm install && npm run build     # 产物落到 web/src/main/resources/static/
+
+# 4) 后端（工作目录须为仓库根，默认路径按它解析）
+mvn -pl web -am -DskipTests package
+java -Xmx3g -cp "web/target/classes:web/target/dependency/*" hawk.web.WebApplication
+# 打开 http://localhost:8080
+```
+
+> **索引里不要留删除记录。** 倒排侧有软删除（`deleted.ids`），检索时会过滤；但**向量侧没有删除概念**，
+> 被删商品的向量仍在索引里、照样被召回，于是向量 tab 会出现一条只有 ID、没有标题的命中（界面显示"该商品已从索引中删除"）。
+> 这不是 bug，是两条链路删除语义不一致的真实表现——做混合召回前需要先解决它。
+
+三个路径通过环境变量覆盖（默认值见 `hawk-web.yml`）：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `HAWK_INDEX_DIR` | `../index-data/goods` | 倒排索引目录 |
+| `HAWK_VECTOR_DIR` | `../model/zero_shot_bge_small` | `corpus_emb.npy` + `corpus_emb_ids.npy` |
+| `HAWK_MODEL_DIR` | `../model/bge-small-zh-v1.5` | ONNX 模型目录 |
+
+**`-Xmx3g` 别省**：向量索引要把 100,001 × 512 读成 fp32（约 205 MB），加上 HNSW 图结构还要更多。启动约 22 秒（建索引 16 秒 + 模型加载）。开发时前端可单独跑 `npm run dev`，Vite 会把 `/api` 代理到 8080。
+
+> **索引与向量必须来自同一份语料**，否则两个 tab 的商品 ID 对不上。默认配置指向 `goods.csv` 建的索引。
+
+### 5.4 设计取舍
+
+- **商品标题用衬线（`Source Han Serif SC` / `Songti SC`），界面文字用无衬线。** 标题是索引条目、是数据本身，按印刷目录排；不是 UI 文本。
+- **颜色只表达两件事**：当前在哪个通道（全文=蓝 `#1D4ED8`，向量=青 `#0F766E`），以及查询词命中了标题里哪几个字（琥珀底带 `#FDE68A`）。没有第三个颜色。
+- **命中词由后端返回**（分词结果），前端不自己猜——保证标出来的就是真正参与 BM25 打分的那些词。
+- **没有卡片、阴影、渐变**。层级靠留白和一条分隔线。
+- **两栏数值对齐**：排名与分数用等宽字体 + `tabular-nums`，让两边的分数能逐行扫着比。
+- 向量两路的分数**量纲不同**，所以分数按各自合适的小数位显示（BM25 两位、余弦四位），不做归一化——刻意保留这种不可比性。
+
+### 5.5 两个绕不开的坑
+
+**① Spring Boot 2.7.11 跑不了 JDK 25。** 它内置的 ASM 读不了 class 文件 major 69，在**组件扫描**阶段就抛 `Unsupported class file major version 69`，应用根本起不来（同样的限制也让 `spring-boot-maven-plugin:repackage` 打不了胖 jar）。
+
+处理方式：**只把 `web` 模块编译到 release 17**（见 `web/pom.xml` 的 `<properties>`），依赖链上的 `recall`/`vector`/`core` 仍是 25——Spring 只扫描本模块自己的类。产物改用 `maven-dependency-plugin:copy-dependencies` + classpath 启动，不走 repackage。
+
+根治要升到 Spring Boot 3.x（需 `javax.*` → `jakarta.*` 并同步升 MyBatis starter），影响面覆盖 `segment` 模块，留待后续。
+
+**② 传递依赖会带进别人的配置。** `segment` 是 `recall` 的传递依赖，而它的 jar 里有 `application.properties`，写着 `server.port=3333`（那是给 segment 自己的演示应用用的）。Spring Boot 两份都加载，`.properties` 优先级又高于 `.yml`，结果本模块的 `server.port` 被静默覆盖，Tomcat 跑到 3333 上。
+
+处理方式：本模块的配置改名 `hawk-web.yml`，并在 `WebApplication` 里设 `spring.config.name=hawk-web` —— 依赖 jar 里不会有人叫这个名字，从根上避开串扰。
+
+---
+
+## 6. 已知限制
 
 1. **单文件 2 GiB 上限已解除（前提：JDK 22+）**：索引文件改用 `MemorySegment`（FFM）以 **`long`** 寻址，单次 `FileChannel.map()` 不再受 `Integer.MAX_VALUE` 约束；映射生命周期由 `Arena` 管理，取代了原先 `sun.misc.Cleaner` 反射那套 hack。
 
@@ -538,7 +662,7 @@ java -Xmx3g -cp "vector/target/classes:$(cat /tmp/vcp.txt)" hawk.vector.demo.Dem
 
 ---
 
-## 6. 目录结构
+## 7. 目录结构
 
 ```
 Hawk/
@@ -552,11 +676,80 @@ Hawk/
 │       ├── model/  ModelDescriptor（model.json）、TextEncoder（ONNX + 分词）
 │       ├── index/  VectorIndex（解耦边界）、JVectorIndex、NpyReader、SearchHits
 │       └── demo/   Demo（端到端示例）
+├── web/            检索演示（Spring Boot + React，详见 §5）
+│   ├── frontend/   React 源码（Vite，构建产物落到 src/main/resources/static）
+│   └── src/main/java/hawk/web/  WebApplication / SearchController / SearchService
 ├── benchmark/      JMH 基准（Hawk vs Lucene）
 │   ├── scripts/    run-hawk-benchmark.sh / run-lucene-benchmark.sh
 │   └── results/    历史基准结果
 ├── goods.csv       基准语料（10 万条商品标题）
-├── model/          模型与商品向量（已 gitignore，需自行导出）
+├── model/          模型与商品向量（大文件不进 git，见 §8）
+├── scripts/        bootstrap.sh（clone 后一条命令就绪）
+├── index-data/     倒排索引（派生，已 gitignore）
 ├── INDEX_FORMAT.md 索引文件格式说明
 └── README.md
 ```
+
+---
+
+## 8. 大文件与 clone
+
+仓库里有 200 MB 量级的派生产物（模型权重、商品向量、倒排索引）。它们不该进 git，但 clone 的人又应该能直接用——办法是**分清哪些能再生、哪些不能**。
+
+### 8.1 先看体积与来源
+
+| 路径 | 体积 | 能否从 clone 后的仓库再生 |
+|---|---|---|
+| `goods.csv` | 4.7 MB | **已跟踪**，是真正的源头 |
+| `model/*/*/model.json` | 517 B | **已跟踪**（是源码，不是产物） |
+| `index-data/goods/` | 21 MB | ✅ 纯 Java，**5 秒** |
+| `model/zero_shot_bge_small/corpus_emb.npy` | 98 MB | ✅ 有模型就行，**18 秒**（GPU） |
+| `model/bge-small-zh-v1.5/tokenizer.json` | 432 KB | ✅ HuggingFace 上直接下 |
+| **`model/bge-small-zh-v1.5/encoder.onnx`** | **91 MB** | ❌ **需要 Python 环境导出** |
+
+**结论：真正需要托管的只有 `encoder.onnx` 一个文件。** 其余 120 MB 都能从 `goods.csv` 加模型快速再生。
+
+顺带一提，`model.json`（517 字节）被**特意放行**进 git——维度、输入名、长度上限、前缀都在里面，换模型就是换一个目录，它属于源码。`.gitignore` 里用了逐层放行的写法（git 不允许在已排除的父目录下再包含文件）。
+
+### 8.2 三种做法
+
+| 方案 | clone 后能否直接用 | 代价 |
+|---|---|---|
+| **Git LFS** | 装了 LFS 就透明 | GitHub 免费额度 **1 GB 存储 / 1 GB 月流量** —— 200 MB 一次 clone，每月只够约 4 次 |
+| **Release 附件 + 脚本**（推荐） | 跑一条 `bootstrap.sh` | 公开仓库的 Release 附件**没有流量限制** |
+| **完全自建** | 需要 Python + torch | 仓库最干净，但门槛高 |
+
+### 8.3 推荐的组合
+
+```bash
+git clone https://github.com/NoobCoderGrowing/Hawk.git
+cd Hawk
+JAVA_HOME=/path/to/jdk-25 ./scripts/bootstrap.sh
+```
+
+`scripts/bootstrap.sh` 会：检查 JDK（≥22，否则给出可操作提示）→ 编译 → **用 `goods.csv` 建倒排索引**（5 秒，不需要网络）→ 检查 `model/`，缺失则从 Release 下载。
+
+**只需要准备一次资产包**（在打 tag 的机器上）：
+
+```bash
+cd model
+tar -czf hawk-assets.tar.gz bge-small-zh-v1.5 zero_shot_bge_small
+# 上传到 GitHub Releases，tag 例如 assets-v1，产物名 hawk-assets.tar.gz
+```
+
+脚本里的默认地址就是 `releases/download/assets-v1/hawk-assets.tar.gz`，换地方用 `HAWK_ASSETS_URL` 覆盖：
+
+```bash
+HAWK_ASSETS_URL=https://your-host/hawk-assets.tar.gz ./scripts/bootstrap.sh
+```
+
+### 8.4 想进一步瘦身
+
+- **`encoder.onnx` 转 fp16**：91 MB → 约 46 MB。ONNX Runtime 支持 fp16 推理，但要在 Hawk-Vector 的导出脚本里加转换，并验证向量质量没有下降。
+- **演示用不着全量 10 万商品**：生成一个 1 万条的子集语料，向量从 98 MB 降到 10 MB。索引与向量都从子集建即可（两边必须同源）。对演示效果几乎没有影响。
+
+两者叠加可以把总包压到 60 MB 以内，LFS 也能轻松承载。
+
+### 8.5 前端产物
+
+`web/src/main/resources/static/` 是 Vite 的构建产物，同样 gitignore。clone 后跑一次 `cd web/frontend && npm install && npm run build` 即可——体积只有 160 KB，重建比下载快。

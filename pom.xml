@@ -16,6 +16,7 @@
         <module>demo</module>
         <module>benchmark</module>
         <module>vector</module>
+        <module>web</module>
     </modules>
     <parent>
         <groupId>org.springframework.boot</groupId>

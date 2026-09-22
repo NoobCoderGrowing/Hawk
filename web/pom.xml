@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>hawk</artifactId>
+        <groupId>com.hawk</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>web</artifactId>
+
+    <properties>
+        <!--
+            本模块单独编到 Java 17，而不是跟着父 pom 的 25。
+
+            原因：Spring Boot 2.7.11 内置的 ASM 读不了 class 文件 major 69（JDK 25），
+            会在**组件扫描**阶段就抛异常，应用根本起不来：
+                org.springframework.asm.ClassReader: Unsupported class file major version 69
+              —— 同样的限制也让 spring-boot-maven-plugin:repackage 打不了胖 jar。
+
+            Spring 只扫描本模块自己的类（hawk.web.**），所以只要这一层是 17 就够了：
+            依赖链上的 recall / vector / core 仍是 25，JVM 25 加载它们没有问题。
+            本模块也不用 FFM，降级编译不会损失任何东西。
+
+            根治办法是升到 Spring Boot 3.x（需要把 javax.* 迁到 jakarta.*，
+            并同步升 MyBatis starter），影响面覆盖 segment 模块，留待后续。
+        -->
+        <maven.compiler.release>17</maven.compiler.release>
+    </properties>
+
+    <!--
+        检索演示台：Spring Boot 后端 + React 前端。
+
+        这是唯一同时依赖**两条召回链路**的模块：
+          · recall —— 倒排检索（Searcher / StringQuery / doc）
+          · vector —— 向量检索（TextEncoder / JVectorIndex / NpyReader）
+        向量 tab 正好演示把两者接起来：向量给出商品 ID，回 recall 取原文。
+
+        前端源码在 web/frontend/，Vite 构建产物输出到
+        web/src/main/resources/static/，由 Spring Boot 直接托管。
+    -->
+
+    <dependencies>
+        <dependency>
+            <groupId>com.hawk</groupId>
+            <artifactId>recall</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.hawk</groupId>
+            <artifactId>vector</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- 版本由 spring-boot-starter-parent 管理 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+            <!--
+                不用 spring-boot-maven-plugin 的 repackage 打胖 jar：
+                2.7.11 内置的 ASM 读不了 JDK 25 的字节码（major 69），
+                报 "Unsupported class file major version 69"。
+
+                改为把依赖复制到 target/dependency/，用 classpath 直接跑：
+                  java -Xmx3g -cp "web/target/classes:web/target/dependency/*" hawk.web.WebApplication
+                开发时也可以 mvn -pl web spring-boot:run（run 目标不走 ASM，不受影响）。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/dependency</outputDirectory>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
