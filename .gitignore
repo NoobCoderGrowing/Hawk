@@ -1,0 +1,93 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+
+# Logs
+*.log
+logs/
+
+# Spring Boot
+spring-boot-*.log
+
+# Local / override config (keep example files tracked)
+application-local.yml
+application-local.yaml
+application-local.properties
+*-local.yml
+*-local.yaml
+*-local.properties
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# IDE - Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# IDE - VS Code
+.vscode/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Local Nacos runtime (bundled server + data/logs)
+z-nacos/
+z-nacos2/
+
+# Index / runtime data
+*.index
+# 注意：倒排索引目录的规则写在文件末尾，用的是锚定形式 index-data/*。
+# 这里不要写裸的 `index-data/` —— 不带前导/中间斜杠的模式会匹配**任意层级**的同名目录，
+# 把源码里的同名包一起吞掉（`model/` 就这样吞过 vector 模块的两个源文件）。
+
+# Temp files
+*.tmp
+*.swp
+*~
+.cache/
+
+benchmark/results/
+
+# 根目录下的 model/ 整个不进 git —— 约 190 MB 的模型权重与商品向量，
+# 获取方式见 runDemo.sh 与 README §8。
+#
+# 前导斜杠是必须的：不带斜杠的 `model/` 会匹配**任意层级**的同名目录，
+# 把源码里的同名包一起吞掉（曾因此漏掉 vector 模块的两个源文件）。
+/model/
+
+
+# web 模块的前端
+web/frontend/node_modules/
+# Vite 的构建产物；源在 web/frontend/，这里由 `npm run build` 生成
+web/src/main/resources/static/
+
+/index-data/
+model.tar.gz
