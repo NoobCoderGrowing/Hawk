@@ -11,24 +11,13 @@
 
     <artifactId>web</artifactId>
 
-    <properties>
-        <!--
-            本模块单独编到 Java 17，而不是跟着父 pom 的 25。
+    <!--
+        以前这里有一条 <maven.compiler.release>17</maven.compiler.release> 覆盖，
+        把本模块单独降级编译 —— 因为 Spring Boot 2.7.11 的 ASM 读不了 class 69（JDK 25）。
 
-            原因：Spring Boot 2.7.11 内置的 ASM 读不了 class 文件 major 69（JDK 25），
-            会在**组件扫描**阶段就抛异常，应用根本起不来：
-                org.springframework.asm.ClassReader: Unsupported class file major version 69
-              —— 同样的限制也让 spring-boot-maven-plugin:repackage 打不了胖 jar。
-
-            Spring 只扫描本模块自己的类（hawk.web.**），所以只要这一层是 17 就够了：
-            依赖链上的 recall / vector / core 仍是 25，JVM 25 加载它们没有问题。
-            本模块也不用 FFM，降级编译不会损失任何东西。
-
-            根治办法是升到 Spring Boot 3.x（需要把 javax.* 迁到 jakarta.*，
-            并同步升 MyBatis starter），影响面覆盖 segment 模块，留待后续。
-        -->
-        <maven.compiler.release>17</maven.compiler.release>
-    </properties>
+        升到 Spring Boot 4.1.1 / Spring Framework 7 之后不再需要：它原生支持 JDK 25，
+        本模块跟着父 pom 的 release 25 走即可。
+    -->
 
     <!--
         检索演示台：Spring Boot 后端 + React 前端。

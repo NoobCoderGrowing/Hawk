@@ -21,7 +21,12 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>2.7.11</version>
+        <!-- 4.x 才支持 JDK 25：
+             2.7.11 的 ASM 读不了 class 文件 major 69，组件扫描阶段就抛
+             "Unsupported class file major version 69"；3.x（Spring Framework 6.2）
+             官方只支持到 JDK 24。Spring Framework 7 才以 Java 25 为目标。
+             升级后 web 模块可以按 pom 里统一的 release 25 编译，不再需要降级覆盖。 -->
+        <version>4.1.1</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
@@ -44,18 +49,13 @@
 <!--    dependencyManagement中项目选择继承,及子项目必须写明dependency才继承-->
     <dependencyManagement>
         <dependencies>
-            <!-- 这里引入最新的SpringCloud依赖 -->
-
-            <!-- === 原来被全模块继承的依赖，现在只统一版本 === -->
-            <!-- Spring Boot 自己的制品（spring-boot-starter*、jackson 等）
+            <!-- === 只剩本项目模块真正用到的第三方依赖 === -->
+            <!-- Spring Boot 自己的制品（spring-boot-starter*、jackson、logback、slf4j 等）
                  不在这里列：spring-boot-starter-parent 已经在管版本。
                  在子 pom 的 dependencyManagement 里写**无版本**条目不会回落到父级，
                  反而会让 Maven 报 "version is missing"。 -->
-            <dependency>
-                <groupId>org.mybatis.spring.boot</groupId>
-                <artifactId>mybatis-spring-boot-starter</artifactId>
-                <version>2.3.0</version>
-            </dependency>
+
+            <!-- segment 用它取 com.mysql.jdbc.StringUtils（不是 JDBC 驱动用途） -->
             <dependency>
                 <groupId>mysql</groupId>
                 <artifactId>mysql-connector-java</artifactId>
@@ -81,28 +81,15 @@
                  在这里再写一条**无版本的**条目会让 Maven 报 "version is missing"，
                  因为子 pom 自己 dependencyManagement 里的条目不会回落到父级 -->
 
-            <dependency>
-                <groupId>org.springframework.cloud</groupId>
-                <artifactId>spring-cloud-dependencies</artifactId>
-                <version>2021.0.7</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-
-            <!-- 这里引入SpringCloudAlibaba依赖，2021.0.1.0版本支持SpringBoot2.6.X -->
-            <dependency>
-                <groupId>com.alibaba.cloud</groupId>
-                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
-                <version>2021.0.1.0</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-
-            <dependency>
-                <groupId>com.ctrip.framework.apollo</groupId>
-                <artifactId>apollo-client</artifactId>
-                <version>1.7.0</version>
-            </dependency>
+            <!--
+                已移除（都无模块使用，且版本停留在 Spring Boot 2.x 时代）：
+                  · org.mybatis.spring.boot:mybatis-spring-boot-starter:2.3.0
+                  · org.springframework.cloud:spring-cloud-dependencies:2021.0.7
+                  · com.alibaba.cloud:spring-cloud-alibaba-dependencies:2021.0.1.0
+                  · com.ctrip.framework.apollo:apollo-client:1.7.0
+                它们只是版本声明、不参与构建，但升到 Spring Boot 4 之后已彻底对不上，
+                留着会误导后来想接 MyBatis / Spring Cloud 的人。要用时按 Boot 4 的兼容版本重新引。
+            -->
 
         </dependencies>
     </dependencyManagement>
