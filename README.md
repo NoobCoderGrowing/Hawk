@@ -153,7 +153,7 @@ mvn clean -DskipTests package
 > 一条命令搞定：
 >
 > ```bash
-> JAVA_HOME=/path/to/jdk-25 ./scripts/bootstrap.sh
+> JAVA_HOME=/path/to/jdk-25 ./runDemo.sh
 > ```
 >
 > 详见 [§8 大文件与 clone](#8-大文件与-clone)。
@@ -684,7 +684,7 @@ Hawk/
 │   └── results/    历史基准结果
 ├── goods.csv       基准语料（10 万条商品标题）
 ├── model/          模型与商品向量（大文件不进 git，见 §8）
-├── scripts/        bootstrap.sh（clone 后一条命令就绪）
+├── runDemo.sh      一条命令跑起 web 演示（见 §8）
 ├── index-data/     倒排索引（派生，已 gitignore）
 ├── INDEX_FORMAT.md 索引文件格式说明
 └── README.md
@@ -701,15 +701,31 @@ Hawk/
 | 路径 | 体积 | 能否从 clone 后的仓库再生 |
 |---|---|---|
 | `goods.csv` | 4.7 MB | **已跟踪**，是真正的源头 |
-| `model/*/*/model.json` | 517 B | **已跟踪**（是源码，不是产物） |
 | `index-data/goods/` | 21 MB | ✅ 纯 Java，**5 秒** |
+| `model/*/*/model.json` | 517 B | ⚠ 本身很小，但**在 `model/` 下，不跟踪** |
 | `model/zero_shot_bge_small/corpus_emb.npy` | 98 MB | ✅ 有模型就行，**18 秒**（GPU） |
 | `model/bge-small-zh-v1.5/tokenizer.json` | 432 KB | ✅ HuggingFace 上直接下 |
 | **`model/bge-small-zh-v1.5/encoder.onnx`** | **91 MB** | ❌ **需要 Python 环境导出** |
 
 **结论：真正需要托管的只有 `encoder.onnx` 一个文件。** 其余 120 MB 都能从 `goods.csv` 加模型快速再生。
 
-顺带一提，`model.json`（517 字节）被**特意放行**进 git——维度、输入名、长度上限、前缀都在里面，换模型就是换一个目录，它属于源码。`.gitignore` 里用了逐层放行的写法（git 不允许在已排除的父目录下再包含文件）。
+整个 `model/` 目录（约 190 MB）都不进 git，规则就一行——注意**前导斜杠不能省**：
+
+```gitignore
+/model/
+```
+
+不带斜杠的 `model/` 会匹配**任意层级**的同名目录，曾把 `vector/src/main/java/hawk/vector/model/` 里的两个源文件一起吞掉，导致 clone 下来的仓库编译不过。这是 gitignore 里最容易踩的一类坑。
+
+> 想让 `model.json`（517 字节的描述符：维度、输入名、长度上限、前缀）单独进 git 也可以，但那需要**逐层放行**——git 不允许在已排除的父目录下再包含文件：
+>
+> ```gitignore
+> /model/**
+> !/model/**/
+> !/model/**/model.json
+> ```
+>
+> 本项目没有这么做：`runDemo.sh` 会从 Release 解压出完整的 `model/`，描述符跟着一起来。
 
 ### 8.2 三种做法
 
@@ -724,23 +740,33 @@ Hawk/
 ```bash
 git clone https://github.com/NoobCoderGrowing/Hawk.git
 cd Hawk
-JAVA_HOME=/path/to/jdk-25 ./scripts/bootstrap.sh
+JAVA_HOME=/path/to/jdk-25 ./runDemo.sh
 ```
 
-`scripts/bootstrap.sh` 会：检查 JDK（≥22，否则给出可操作提示）→ 编译 → **用 `goods.csv` 建倒排索引**（5 秒，不需要网络）→ 检查 `model/`，缺失则从 Release 下载。
+`runDemo.sh` 依次做：检查 JDK（≥22，否则给出可操作提示）→ 编译 → **用 `goods.csv` 建倒排索引**（5 秒，不需要网络）→ 检查 `model/`，缺失则从 Release 下载 → 启动 web 演示（前台运行）。
 
-**只需要准备一次资产包**（在打 tag 的机器上）：
+当前资产包：
+
+| | |
+|---|---|
+| Tag | `demoDependency` |
+| 资产 | `model.tar.gz`（149.9 MB） |
+| 地址 | `https://github.com/NoobCoderGrowing/Hawk/releases/download/demoDependency/model.tar.gz` |
+| 内容 | `model/bge-small-zh-v1.5/` + `model/zero_shot_bge_small/`（11 个条目） |
+
+**重新打包**（在仓库根，注意要保留 `model/` 顶层前缀）：
 
 ```bash
-cd model
-tar -czf hawk-assets.tar.gz bge-small-zh-v1.5 zero_shot_bge_small
-# 上传到 GitHub Releases，tag 例如 assets-v1，产物名 hawk-assets.tar.gz
+tar -czf model.tar.gz model/bge-small-zh-v1.5 model/zero_shot_bge_small
 ```
 
-脚本里的默认地址就是 `releases/download/assets-v1/hawk-assets.tar.gz`，换地方用 `HAWK_ASSETS_URL` 覆盖：
+> 打包时**别 `cd model` 再打包** —— 那样归档里没有 `model/` 前缀，`runDemo.sh` 解压后会落在错误位置。
+> 脚本里那条 `tar -xzf ... -C "$ROOT"` 就是按"带前缀"写的。
+
+换托管位置用 `HAWK_ASSETS_URL` 覆盖：
 
 ```bash
-HAWK_ASSETS_URL=https://your-host/hawk-assets.tar.gz ./scripts/bootstrap.sh
+HAWK_ASSETS_URL=https://your-host/model.tar.gz ./runDemo.sh
 ```
 
 ### 8.4 想进一步瘦身
