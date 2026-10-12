@@ -60,6 +60,9 @@ public class IndexService {
 
     private final DataSource dataSource;
 
+    /** 索引建完后通知协调器（尽力而为，失败只记日志）。 */
+    private final CoordinatorNotifier coordinatorNotifier;
+
     /** 每批多少条。构造时从配置读入 —— 既用于算 offset，也传给数据源，保证两边一致。 */
     private final int batchSize;
 
@@ -104,6 +107,7 @@ public class IndexService {
      * 一部分，放在这里"配了什么就用什么"看得见；代价是加新实现要改 {@link #buildDataSource}。
      */
     public IndexService(
+            CoordinatorNotifier coordinatorNotifier,
             @Value("${hawk.cloud.indexer.data-source.type:csv}") String dataSourceType,
             @Value("${hawk.cloud.indexer.data-source.batch-size:1000}") int batchSize,
             @Value("${hawk.cloud.indexer.data-source.file-path:goods.csv}") String filePath,
@@ -116,6 +120,7 @@ public class IndexService {
             @Value("${hawk.cloud.indexer.shard-num}") String shardNum) {
         this.batchSize = batchSize;
         this.shardNum = shardNum;
+        this.coordinatorNotifier = coordinatorNotifier;
         this.dataSource = buildDataSource(new DataSourceSettings(
                 dataSourceType, shardIndexOf(shardNum), filePath, batchSize, skipHeader,
                 mysqlUrl, mysqlUsername, mysqlPassword, mysqlTable, shardColumn));
@@ -233,6 +238,11 @@ public class IndexService {
 
         log.info("索引结束：扫过 {} 条，写入 {} 条，非本分片 {} 条，无主键 {} 条 -> {}",
                 scanned, accepted, otherShard, noPrimaryKey, indexDirPath.toAbsolutePath());
+
+        // 走到这里说明 commit 已经成功 —— 通知协调器"这个 role 的这个分片建好了、路径在哪"。
+        // 位置放在 finally 之后：commit 抛异常时不会执行到这里，也就不会发出成功的通知。
+        // 通知本身尽力而为，失败只记日志（见 CoordinatorNotifier）。
+        coordinatorNotifier.indexComplete(role, shardNum, indexDirPath.toAbsolutePath().toString());
     }
 
     /**

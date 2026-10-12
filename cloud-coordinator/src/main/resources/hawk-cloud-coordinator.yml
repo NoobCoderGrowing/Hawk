@@ -17,6 +17,16 @@ hawk:
       #   cloud/vector-recall   向量索引分片
       registry-address: ${HAWK_REGISTRY_ADDRESS:{1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}}
 
+      # 协调器自己也向注册中心登记，好让 indexer / recall 能按地址找到它并发通知。
+      # **它不是分片节点** —— 不配 shard-num / shard-id，登记出来的 key 只有一段：
+      #   /cloud/coordinator -> {ip}:{port}
+      role: ${HAWK_ROLE:coordinator}
+      ip: ${HAWK_NODE_IP:127.0.0.1}
+      # port 默认跟随 server.port（上面那个），换端口启动时不必两处都改
+      port: ${HAWK_NODE_PORT:${server.port}}
+      # 心跳重登记间隔（毫秒）
+      register-interval-ms: ${HAWK_REGISTER_INTERVAL_MS:60000}
+
       # 轮询间隔（毫秒），默认 60 秒。管的是「成员与地址」——从注册中心拉谁在册。
       poll-interval-ms: ${HAWK_COORDINATOR_POLL_MS:60000}
 
