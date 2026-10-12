@@ -2,10 +2,12 @@ package hawk.cloud.recall;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.util.Map;
 
 @SpringBootApplication
+@EnableScheduling   // RegistryRegistrar#reRegister 靠 @Scheduled 每分钟心跳式重登记
 public class RecallApplication {
 
     public static void main(String[] args) {

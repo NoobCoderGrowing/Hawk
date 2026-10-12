@@ -10,8 +10,28 @@ hawk:
       # 相对路径以**启动时的工作目录**为基准。
       index-dir: ${HAWK_INDEX_DIR:index-data/goods}
 
-      # 注册中心地址，本节点启动时向它登记。
-      registry-address: ${HAWK_REGISTRY_ADDRESS:}
+      # 注册中心（JRegistry）地址。留空则跳过登记，只记一条 WARN。两种写法都认：
+      #   · 单节点     127.0.0.1:6001
+      #   · 集群节点表 {1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}
+      # 节点表按 key 数值升序逐个试连，第一个连上的就用。
+      # 注意**不要在外面再套一层引号** —— 那会让它退化成单节点写法而解析失败。
+      registry-address: ${HAWK_REGISTRY_ADDRESS:{1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}}
+
+      # 登记内容：key = /cloud/{role}/{shard-num}/{shard-id}，value = {ip}:{port}
+      #   role      节点角色，用于区分索引节点与检索节点
+      #   shard-num 第几个分片，是一段名字（如 shard-1），不是数字
+      #   shard-id  该分片的副本编号（如 id-0）—— 一个分片有多个副本，靠它区分
+      #   ip / port 本节点对外地址，作为 value 写入；port 默认跟随 server.port，
+      #             换端口启动时不必两处都改
+      role: ${HAWK_ROLE:text-recall}
+      shard-num: ${HAWK_SHARD_NUM:shard-1}
+      shard-id: ${HAWK_SHARD_ID:id-0}
+      ip: ${HAWK_NODE_IP:127.0.0.1}
+      port: ${HAWK_NODE_PORT:${server.port}}
+
+      # 心跳式重登记间隔（毫秒）。节点只在启动时登记一次，而这条 key 可能被协调器的健康检查
+      # 误删（失败计数跨了节点重启那种情形），定期重发能把存活窗口压到一个心跳周期内。
+      register-interval-ms: ${HAWK_REGISTER_INTERVAL_MS:60000}
 
 logging:
   level:

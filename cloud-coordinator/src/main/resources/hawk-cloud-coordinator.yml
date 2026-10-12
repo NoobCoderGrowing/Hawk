@@ -6,13 +6,33 @@ server:
 hawk:
   cloud:
     coordinator:
-      # 协调器要管理的检索节点地址，逗号分隔。
-      # 目前只是占位，接入真实集群时按需改成从注册中心/配置文件加载。
-      nodes: ${HAWK_COORDINATOR_NODES:}
+      # 注册中心地址，写法与 cloud-indexer / cloud-recall 一致：
+      #   · 单节点     127.0.0.1:6001
+      #   · 集群节点表 {1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}
+      # 协调器从这里 listAll 出四类节点（见 roleType.md），每类一个字典：
+      #   cloud/text-indexer    倒排索引器
+      #   cloud/vector-indexer  向量索引器
+      #   cloud/text-recall     倒排搜索分片
+      #   cloud/vector-recall   向量索引分片
+      registry-address: ${HAWK_REGISTRY_ADDRESS:{1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}}
 
-      # 注册中心地址（本模块已依赖 JRegistryClient）。
-      registry-address: ${HAWK_REGISTRY_ADDRESS:}
+      # 轮询间隔（毫秒），默认 60 秒。管的是「成员与地址」——从注册中心拉谁在册。
+      poll-interval-ms: ${HAWK_COORDINATOR_POLL_MS:60000}
+
+      # 健康检查：探每个节点的 GET /health，连续失败到阈值就通知注册中心删 kv + 本地字典摘掉。
+      # 与上面的轮询是**独立**的两条时间线：轮询管成员，这里管存活。
+      # 15 秒 × 3 次 = 最坏约 45 秒发现。再短会在 GC / 建索引的秒级停顿上误报。
+      health-interval-ms: ${HAWK_COORDINATOR_HEALTH_MS:15000}
+      # 单次探测的超时（连接 + 响应）。假死节点靠它兜住，不然会拖住整轮。
+      health-timeout-ms: ${HAWK_COORDINATOR_HEALTH_TIMEOUT_MS:2000}
+      # 连续失败几次判死。
+      health-fail-threshold: ${HAWK_COORDINATOR_HEALTH_FAILS:3}
+      # 同时在飞的探测请求数上限。挂掉一批节点时，避免单轮耗时累加到超过间隔。
+      health-concurrency: ${HAWK_COORDINATOR_HEALTH_CONCURRENCY:8}
 
 logging:
   level:
     root: INFO
+    # NettyClient 把每一条收到的报文都按 INFO 打出来，轮询一轮就是两条全量 ls 结果。
+    # 降成 WARN：同 web 模块对 DJL / jvector 的做法。
+    io.github.noobcodergrowing.jregistryclient: WARN

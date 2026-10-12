@@ -2,10 +2,12 @@ package hawk.cloud.coordinator;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.util.Map;
 
 @SpringBootApplication
+@EnableScheduling   // NodeRegistry#poll 靠 @Scheduled 每分钟轮询注册中心
 public class CoordinatorApplication {
 
     public static void main(String[] args) {
