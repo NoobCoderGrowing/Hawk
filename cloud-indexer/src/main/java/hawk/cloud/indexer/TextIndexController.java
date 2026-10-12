@@ -10,6 +10,7 @@ import field.StringField;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -64,6 +65,18 @@ import java.util.Map;
 public class TextIndexController {
 
     private static final Logger log = LoggerFactory.getLogger(TextIndexController.class);
+
+    private final IndexService indexService;
+
+    @Value("${hawk.cloud.indexer.role}")
+    private String role;
+
+    @Value("${hawk.cloud.indexer.shard-num}")
+    private String shardNum;
+
+    public TextIndexController(IndexService indexService) {
+        this.indexService = indexService;
+    }
 
     /**
      * {@code POST /textIndex}。
@@ -134,12 +147,21 @@ public class TextIndexController {
                     field.getName(), field.isTokenized(), field.isStored());
         }
 
+        // 交给服务按批拉文档。注意这一刻起这个端点不再是瞬时返回 —— 它会真去扫一遍语料文件。
+    
+        try {
+            indexService.index(shardCount, fieldList);
+        } catch (Exception e) {
+            log.error("按批拉取文档失败", e);
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("message", "按批拉取文档失败：" + e.getMessage()));
+        }
+
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "accepted");
-        body.put("shardCount", shardCount);
-        body.put("fieldCount", fieldList.size());
-        body.put("fields", names);
-        body.put("note", "索引动作尚未实现：本接口目前只接收参数并回显");
+        body.put("role", role);
+        body.put("shardNum", shardNum);
+        body.put("note", "已开始索引");
         return ResponseEntity.ok(body);
     }
 

@@ -98,13 +98,18 @@ public class DocWriter implements Runnable {
     }
 
     private void registerPrimaryKey(Document doc) {
-        PrimaryKeyField pk = (PrimaryKeyField) doc.getFieldMap().get("uniqueID");
+        // 字段名不再是写死的 "uniqueID" —— 由 IndexConfig 指定，
+        // 数据源的列叫 id 之类时就不用迁就这个名字了。
+        String pkFieldName = config.getPrimaryKeyFieldName();
+        PrimaryKeyField pk = (PrimaryKeyField) doc.getFieldMap().get(pkFieldName);
         if (pk == null) {
-            throw new IllegalArgumentException("document missing PrimaryKeyField");
+            throw new IllegalArgumentException(
+                    "document missing PrimaryKeyField：文档里没有名为“" + pkFieldName + "”的字段"
+                            + "（该名字来自 IndexConfig.primaryKeyFieldName）");
         }
         int globalDocID = docIDAllocator.get() + directory.getSegmentInfo().getPreMaxID();
         if (pkMap.putIfAbsent(pk.getValue(), globalDocID) != null) {
-            throw new IllegalArgumentException("duplicate uniqueID: " + pk.getValue());
+            throw new IllegalArgumentException("duplicate primary key: " + pk.getValue());
         }
     }
     // doc fdm key: filed name; value1:field type, value2: field value length

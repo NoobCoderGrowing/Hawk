@@ -64,6 +64,15 @@
                 <artifactId>mysql-connector-java</artifactId>
                 <version>5.1.12</version>
             </dependency>
+            <!-- 真正的 JDBC 驱动，给 cloud-indexer 连 MySQL 用。
+                 上面那条 5.1.12 是 2012 年的，不支持 MySQL 8 默认的 caching_sha2_password
+                 （实测报 "Client does not support authentication protocol requested by server"），
+                 所以驱动得用新的；两条各司其职，不冲突。 -->
+            <dependency>
+                <groupId>com.mysql</groupId>
+                <artifactId>mysql-connector-j</artifactId>
+                <version>9.1.0</version>
+            </dependency>
             <dependency>
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok</artifactId>

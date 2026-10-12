@@ -5,9 +5,15 @@ server:
 hawk:
   cloud:
     indexer:
-      # 索引输出目录（含 segment.info / 1.fdt / 1.frq …）。
+      # 索引**根**目录。实际输出目录会再拼上角色、分片名与当日日期：
+      #   {index-dir}/{role}/{shard-num}/{yyyy-MM-dd}
+      #   例如 cloud/index/text-indexer/shard-0/2026-10-13
       # 相对路径以**启动时的工作目录**为基准。
-      index-dir: ${HAWK_INDEX_DIR:index-data/goods}
+      index-dir: ${HAWK_INDEX_DIR:cloud/index}
+
+      # 索引线程数。传给 IndexConfig，决定 IndexWriter 内部那个线程池的大小。
+      # 不配的话 IndexConfig 会用 CPU 核数（Constants.PROCESSOR_NUM），核多的机器会把并发拉满。
+      indexer-threads: ${HAWK_INDEXER_THREADS:3}
 
       # 注册中心（JRegistry）地址，格式 host:port。留空则跳过登记，只记一条 WARN。
       registry-address: ${HAWK_REGISTRY_ADDRESS:{1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}}
@@ -19,7 +25,7 @@ hawk:
       #   ip / port 本节点对外地址，作为 value 写入；port 默认跟随 server.port，
       #             换端口启动时不必两处都改
       role: ${HAWK_ROLE:text-indexer}
-      shard-num: ${HAWK_SHARD_NUM:shard-1}
+      shard-num: ${HAWK_SHARD_NUM:shard-0}
       shard-id: ${HAWK_SHARD_ID:id-0}
       ip: ${HAWK_NODE_IP:127.0.0.1}
       port: ${HAWK_NODE_PORT:${server.port}}
@@ -27,6 +33,30 @@ hawk:
       # 心跳式重登记间隔（毫秒）。节点只在启动时登记一次，而这条 key 可能被协调器的健康检查
       # 误删（失败计数跨了节点重启那种情形），定期重发能把存活窗口压到一个心跳周期内。
       register-interval-ms: ${HAWK_REGISTER_INTERVAL_MS:60000}
+      # 数据源。type 决定用哪个实现：
+      #   csv   → 读 file-path 指向的制表符分隔文件（skip-header 决定是否跳表头）
+      #   mysql → 连 url 上的库，读 table 表，按 shard-column 取模筛出本分片的行
+      # 加新实现（远端接口…）时在 IndexService.buildDataSource 里加一个 case。
+      #
+      # batch-size 归在数据源下（分页是数据源的事），IndexService 算 offset 时也读它 ——
+      # 同一个键，所以两处不会不一致。
+      data-source:
+        type: ${DATA_SOURCE:csv}
+        batch-size: ${HAWK_BATCH_SIZE:1000}
+
+        # ---- csv 用 ----
+        file-path: ${FILE_PATH:goods.csv}
+        skip-header: ${HAWK_SKIP_HEADER:true}
+
+        # ---- mysql 用 ----
+        # 密码支持 HAWK_MYSQL_PASSWORD 环境变量覆盖；这里给的是本机开发库的值，
+        # 正式环境别把口令留在配置文件里。
+        url: ${HAWK_MYSQL_URL:jdbc:mysql://127.0.0.1:3306/hawk}
+        username: ${HAWK_MYSQL_USERNAME:hawk}
+        password: ${HAWK_MYSQL_PASSWORD:hawk}
+        table: ${HAWK_MYSQL_TABLE:goods}
+        # 用来算分片的列：SQL 里是 WHERE MOD(shard-column, shardCount) = 本节点分片下标
+        shard-column: ${HAWK_MYSQL_SHARD_COLUMN:id}
 
 logging:
   level:

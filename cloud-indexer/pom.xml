@@ -43,6 +43,13 @@
             <groupId>com.alibaba</groupId>
             <artifactId>fastjson</artifactId>
         </dependency>
+
+        <!-- 连 MySQL 用的 JDBC 驱动（data-source.type=mysql 时）。版本由父 pom 的管理段指定。
+             注意与 segment 借用的 mysql:mysql-connector-java:5.1.12 是两回事，那个不是驱动。 -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

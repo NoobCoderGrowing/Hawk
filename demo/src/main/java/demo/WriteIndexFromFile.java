@@ -37,7 +37,15 @@ public class WriteIndexFromFile {
         try (BufferedReader bufferedReader = Files.newBufferedReader(corpusFile(), StandardCharsets.UTF_8)) {
             String line;
             long uniqueID = 0;
+            boolean firstLine = true;
             while ((line = bufferedReader.readLine()) != null) {
+                if (firstLine) {
+                    firstLine = false;
+                    // 只在确实像表头时才跳（理由见 BuildIndex 里的同一段注释）
+                    if (line.startsWith("uniqueID\t")) {
+                        continue;
+                    }
+                }
                 String[] strings = line.split("\t");
                 String title = strings[1];
                 float price = Float.parseFloat(strings[2]);
