@@ -2,7 +2,7 @@ package demo;
 
 import directory.MMapDirectory;
 import document.Document;
-import field.DoubleField;
+import field.NumberField;
 import field.Field;
 import field.PrimaryKeyField;
 import field.StringField;
@@ -89,9 +89,9 @@ public class BuildIndex {
         Document document = new Document();
         document.add(new PrimaryKeyField(uniqueID));
         document.add(new StringField("title", title, Field.Tokenized.YES, Field.Stored.YES));
-        document.add(new DoubleField("price", price, Field.Tokenized.YES, Field.Stored.YES));
+        document.add(new NumberField("price", price, Field.Tokenized.YES, Field.Stored.YES));
         document.add(new StringField("descript", title, Field.Tokenized.NO, Field.Stored.YES));
-        document.add(new DoubleField("digt", price, Field.Tokenized.NO, Field.Stored.YES));
+        document.add(new NumberField("digt", price, Field.Tokenized.NO, Field.Stored.YES));
         return document;
     }
 

@@ -48,7 +48,7 @@ hawk (pom)
 | 抽象 | 位置 | 职责 |
 |------|------|------|
 | `Directory` / `FSDirectory` / `MMapDirectory` | `core/directory` | 索引目录抽象；MMap 实现用于只读映射段文件 |
-| `Document` / `Field` | `core/document`、`core/field` | 文档与字段模型：`StringField`、`DoubleField`、`PrimaryKeyField` |
+| `Document` / `Field` | `core/document`、`core/field` | 文档与字段模型：`StringField`、`NumberField`、`PrimaryKeyField` |
 | `IndexWriter` / `DocWriter` | `indexer/writer` | 多线程写入、内存倒排积累、按 RAM 水位刷盘 |
 | `IndexMerger` | `indexer/writer` | 段合并，合并后只保留 `1.*` |
 | `DirectoryReader` / `MMapDirectoryReader` | `recall/reader` | 打开索引、构建 Term FST、加载 fdx/fdm/pk 映射 |

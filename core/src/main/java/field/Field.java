@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
- * 一个字段的定义 / 取值，{@code StringField} / {@code DoubleField} / {@code PrimaryKeyField} 三个实现。
+ * 一个字段的定义 / 取值，{@code StringField} / {@code NumberField} / {@code PrimaryKeyField} 三个实现。
  *
  * <h2>多态判别字段：用短名，不用全类名</h2>
  * 这里曾经是 {@code use = Id.CLASS}，也就是请求里得写 {@code "type":"field.StringField"} 这种全类名。
@@ -12,7 +12,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
  * <ul>
  *   <li>把 classpath 上任意类名交给 Jackson 实例化，对外的 HTTP 契约上是个反序列化 gadget 面；</li>
  *   <li>与实现类各自的 {@code @JsonTypeInfo} 打架（{@code StringField} 声明的是 {@code @class}，
- *       {@code DoubleField} 声明的是 {@code type}），同一个字段按静态类型不同序列化出不同形态。</li>
+ *       {@code NumberField} 声明的是 {@code type}），同一个字段按静态类型不同序列化出不同形态。</li>
  * </ul>
  * 现在统一成 {@code Id.NAME} + 显式白名单，请求里写 {@code "type":"StringField"}。
  * 名字只在这个 {@code @JsonSubTypes} 里出现一次，实现类上不再各自声明。
@@ -31,7 +31,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
         @JsonSubTypes.Type(value = StringField.class, name = "StringField"),
-        @JsonSubTypes.Type(value = DoubleField.class, name = "DoubleField"),
+        @JsonSubTypes.Type(value = NumberField.class, name = "NumberField"),
         @JsonSubTypes.Type(value = PrimaryKeyField.class, name = "PrimaryKeyField"),
 })
 public interface Field {

@@ -2,7 +2,7 @@ package demo;
 
 import directory.MMapDirectory;
 import document.Document;
-import field.DoubleField;
+import field.NumberField;
 import field.Field;
 import field.PrimaryKeyField;
 import field.StringField;
@@ -45,12 +45,12 @@ public class WriteIndexFromFile {
                 Document document = new Document();
                 PrimaryKeyField primaryKeyField = new PrimaryKeyField(uniqueID);
                 StringField stringField = new StringField("title", title, Field.Tokenized.YES, Field.Stored.YES);
-                DoubleField doubleField = new DoubleField("price", doublePrice, Field.Tokenized.YES, Field.Stored.YES);
+                NumberField numberField = new NumberField("price", doublePrice, Field.Tokenized.YES, Field.Stored.YES);
                 StringField description = new StringField("descript", title, Field.Tokenized.NO, Field.Stored.YES);
-                DoubleField priceField = new DoubleField("digt", doublePrice, Field.Tokenized.NO, Field.Stored.YES);
+                NumberField priceField = new NumberField("digt", doublePrice, Field.Tokenized.NO, Field.Stored.YES);
                 document.add(primaryKeyField);
                 document.add(stringField);
-                document.add(doubleField);
+                document.add(numberField);
                 document.add(description);
                 document.add(priceField);
                 indexWriter.addDoc(document);

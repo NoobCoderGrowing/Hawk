@@ -7,7 +7,7 @@ import util.NumberUtil;
 import java.nio.charset.StandardCharsets;
 
 @Data
-public class DoubleField implements Field {
+public class NumberField implements Field {
 
     private Tokenized isTokenized;
 
@@ -17,13 +17,13 @@ public class DoubleField implements Field {
 
     private double value;
 
-    public DoubleField(String name, Tokenized isTokenized, Stored isStored) {
+    public NumberField(String name, Tokenized isTokenized, Stored isStored) {
         this.name = name;
         this.isTokenized = isTokenized;
         this.isStored = isStored;
     }
 
-    public DoubleField(String name, double value) {
+    public NumberField(String name, double value) {
         this.name = name;
         this.value = value;
     }
@@ -34,7 +34,7 @@ public class DoubleField implements Field {
      * 会报 "Cannot map `null` into type `double`"。装箱后缺省填 0。
      */
     @JsonCreator
-    public DoubleField(String name, Double value, Tokenized isTokenized, Stored isStored) {
+    public NumberField(String name, Double value, Tokenized isTokenized, Stored isStored) {
         this.name = name;
         this.value = value == null ? 0.0 : value;
         this.isTokenized = isTokenized;

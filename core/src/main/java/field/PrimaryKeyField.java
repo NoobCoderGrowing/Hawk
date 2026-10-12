@@ -67,7 +67,7 @@ public class PrimaryKeyField implements Field {
         byte[] nameByte = name.getBytes(StandardCharsets.UTF_8);
         byte[] nameLength = NumberUtil.int2Vint(nameByte.length);
         byte[] valueByte = NumberUtil.long2Bytes(value);
-        byte[] valueLength = new byte[]{0b00001000}; // 8-byte long, same as DoubleField
+        byte[] valueLength = new byte[]{0b00001000}; // 8-byte long, same as NumberField
         byte[] result = new byte[nameByte.length + nameLength.length + valueByte.length + valueLength.length];
         int pos = 0;
         System.arraycopy(nameLength, 0, result, pos, nameLength.length);

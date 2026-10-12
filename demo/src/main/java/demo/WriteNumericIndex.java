@@ -2,7 +2,7 @@ package demo;
 
 import directory.MMapDirectory;
 import document.Document;
-import field.DoubleField;
+import field.NumberField;
 import field.Field;
 import hawk.indexer.writer.IndexWriter;
 import hawk.indexer.writer.config.IndexConfig;
@@ -22,7 +22,7 @@ public class WriteNumericIndex {
         IndexWriter indexWriter = new IndexWriter(indexConfig, mMapDirectory);
         Document doc = new Document();
         PrimaryKeyField primaryKeyField = new PrimaryKeyField(0);
-        DoubleField field = new DoubleField("price", 5.3, Field.Tokenized.YES, Field.Stored.YES);
+        NumberField field = new NumberField("price", 5.3, Field.Tokenized.YES, Field.Stored.YES);
         doc.add(primaryKeyField);
         doc.add(field);
         indexWriter.addDoc(doc);
@@ -30,13 +30,13 @@ public class WriteNumericIndex {
 
         Document doc2 = new Document();
         PrimaryKeyField primaryKeyField2 = new PrimaryKeyField(1);
-        DoubleField field2 = new DoubleField("price", 12.1, Field.Tokenized.YES, Field.Stored.YES);
+        NumberField field2 = new NumberField("price", 12.1, Field.Tokenized.YES, Field.Stored.YES);
         doc2.add(primaryKeyField2);
         doc2.add(field2);
         indexWriter.addDoc(doc2);
 //
 //        Document doc3 = new Document();
-//        DoubleField field3 = new DoubleField("price", 12.6, Field.Tokenized.YES, Field.Stored.YES);
+//        NumberField field3 = new NumberField("price", 12.6, Field.Tokenized.YES, Field.Stored.YES);
 //        doc3.add(field3);
 //        indexWriter.addDoc(doc3);
 

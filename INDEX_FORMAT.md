@@ -31,7 +31,7 @@
 | `N.fdm` | 每个字段的类型标志、总字段长度、文档数（用于 BM25 平均长度） |
 | `N.tim` | 倒排词典：`(字段名, 词项)` → `.frq` 中的 posting 偏移 |
 | `N.frq` | 每个词项的 posting 列表：docID、词频、字段长度 |
-| `N.bkd` | `DoubleField` 数值点的 BKD 树，支持范围查询 |
+| `N.bkd` | `NumberField` 数值点的 BKD 树，支持范围查询 |
 | `pk.map` | 业务主键 `uniqueID` 与全局 `docID` 的双向映射基础 |
 | `deleted.ids` | 软删除标记，posting 仍保留，检索时过滤 |
 
@@ -180,7 +180,7 @@ bytes  term               # UTF-8 词项字节
 VLong  frqFileOffset      # 该词项 posting 列表在 .frq 中的字节偏移
 ```
 
-**读取：** 仅 **StringField**（类型位 `0b00001000`）的条目会加入内存 Term FST。`DoubleField` 的数值索引只存在于 `.bkd`，不写入 tim/frq。
+**读取：** 仅 **StringField**（类型位 `0b00001000`）的条目会加入内存 Term FST。`NumberField` 的数值索引只存在于 `.bkd`，不写入 tim/frq。
 
 ---
 
@@ -217,14 +217,14 @@ VInt   valueLength
 bytes  value              # UTF-8
 ```
 
-### DoubleField / PrimaryKeyField
+### NumberField / PrimaryKeyField
 
 ```
 VInt   nameLength
 bytes  name               # UTF-8
 Byte   valueLength = 0x08 # 固定单字节，读取时按 VInt 解析为 8
 Long   value              # 8 字节大端
-                         # DoubleField: Double.doubleToLongBits(value)
+                         # NumberField: Double.doubleToLongBits(value)
                          # PrimaryKeyField: uniqueID 的 long 值
 ```
 
@@ -240,7 +240,7 @@ Long   value              # 8 字节大端
 |----|------|------|
 | 0 | `0x01` | Stored（可存储、可检索原文） |
 | 1 | `0x02` | Tokenized（参与分词索引） |
-| 2 | `0x04` | DoubleField |
+| 2 | `0x04` | NumberField |
 | 3 | `0x08` | StringField |
 | 4 | `0x10` | PrimaryKeyField |
 
@@ -251,7 +251,7 @@ Long   value              # 8 字节大端
 **写入：** `BkdFileWriter.write()`  
 **读取：** `BkdFileReader.open()` → 每字段一个 `BkdReader`
 
-仅索引 `Tokenized.YES` 的 `DoubleField`。文档处理时将 double 转为可排序 long（`NumberUtil.double2SortableLong`），再写入 BKD 点 `(sortableValue, docID)`。
+仅索引 `Tokenized.YES` 的 `NumberField`。文档处理时将 double 转为可排序 long（`NumberUtil.double2SortableLong`），再写入 BKD 点 `(sortableValue, docID)`。
 
 ### 文件头（16 字节 + 树体 + 目录）
 
@@ -340,7 +340,7 @@ addDoc(Document)
   ├─ processStoredFields()     → 内存 fdt 列表（stored 字段字节池）
   ├─ processIndexedFields()
   │    ├─ StringField (tokenized)  → 内存 ivt（field+term → posting）
-  │    ├─ DoubleField (tokenized)  → 内存 bkdFields（sortableValue + docID）
+  │    ├─ NumberField (tokenized)  → 内存 bkdFields（sortableValue + docID）
   │    └─ stored-only 字段         → 仅登记 fdm 元数据
   └─ registerPrimaryKey()      → 内存 pkMap
 
@@ -428,7 +428,7 @@ addDoc(Document)
 5. **Term FST 不落盘：** 每次打开 `DirectoryReader` 都从 `1.tim` 重建，大索引打开会有额外开销。
 6. **docID 从 1 开始：** `docIDAllocator` 先自增再赋值，首篇文档全局 ID = `docBase + 1`。
 7. **Stored 字段顺序：** `fieldMap` 中 stored 字段应位于非 stored 字段之前，以保证 `insertBlock` 连续写入时字段顺序正确。
-8. **数值索引：** 当前格式下 `DoubleField` 只写 BKD，不写 tim/frq；`Tokenized.NO` 的数值字段仅作为 stored 字段存储。
+8. **数值索引：** 当前格式下 `NumberField` 只写 BKD，不写 tim/frq；`Tokenized.NO` 的数值字段仅作为 stored 字段存储。
 
 ---
 

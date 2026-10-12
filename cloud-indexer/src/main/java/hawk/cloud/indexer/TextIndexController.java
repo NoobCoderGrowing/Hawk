@@ -35,7 +35,7 @@ import java.util.Map;
  *   "shardCount": 3,
  *   "fieldList": [
  *     {"type": "StringField",     "name": "title",    "isTokenized": "YES", "isStored": "YES"},
- *     {"type": "DoubleField",     "name": "price",    "isTokenized": "NO",  "isStored": "YES"},
+ *     {"type": "NumberField",     "name": "price",    "isTokenized": "NO",  "isStored": "YES"},
  *     {"type": "PrimaryKeyField", "name": "uniqueID", "isTokenized": "NO",  "isStored": "YES"}
  *   ]
  * }
@@ -47,7 +47,7 @@ import java.util.Map;
  * <ul>
  *   <li><b>判别字段原先是 {@code Id.CLASS}</b>：请求里得写 {@code "field.StringField"} 这种全类名。
  *       既是对外契约上的反序列化 gadget 面，又和实现类各自的 {@code @JsonTypeInfo} 打架
- *       （{@code StringField} 声明 {@code @class}、{@code DoubleField} 声明 {@code type}），
+ *       （{@code StringField} 声明 {@code @class}、{@code NumberField} 声明 {@code type}），
  *       同一个字段按静态类型不同会序列化出不同形态。</li>
  *   <li><b>字段原先声明成 {@code Enum<Field.Tokenized>}</b>，靠 {@code @JsonDeserialize(as = ...)}
  *       给 Jackson 提示。那个注解属于 {@code com.fasterxml.jackson.databind.annotation}，

@@ -4,7 +4,7 @@ import com.alibaba.fastjson.JSON;
 import directory.Directory;
 import directory.MMapDirectory;
 import document.Document;
-import field.DoubleField;
+import field.NumberField;
 import hawk.indexer.writer.config.IndexConfig;
 import hawk.recall.config.SearchConfig;
 import hawk.recall.query.NumericRangeQuery;
@@ -35,8 +35,8 @@ public class SearchByNumericRangeQuery {
             documents.add(searcher.doc(hits[i]));
         }
         Collections.sort(documents,(a,b)->{
-            double priceA = ((DoubleField) a.getFieldMap().get("price")).getValue();
-            double priceB = ((DoubleField)b.getFieldMap().get("price")).getValue();
+            double priceA = ((NumberField) a.getFieldMap().get("price")).getValue();
+            double priceB = ((NumberField)b.getFieldMap().get("price")).getValue();
             return Double.compare(priceA,priceB);
         });
 

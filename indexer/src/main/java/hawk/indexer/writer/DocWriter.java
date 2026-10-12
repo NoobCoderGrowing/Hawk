@@ -3,7 +3,7 @@ import common.ByteReference;
 import common.Pair;
 import directory.Directory;
 import document.Document;
-import field.DoubleField;
+import field.NumberField;
 import field.Field;
 import field.PrimaryKeyField;
 import field.StringField;
@@ -437,7 +437,7 @@ public class DocWriter implements Runnable {
         for (Map.Entry<String, Field> entry : fieldMap.entrySet()) {
             Field field = entry.getValue();
             if (field.isStored() == Field.Stored.YES) {
-                // 按字段类型（StringField / DoubleField / PrimaryKeyField 等）序列化为字节数组
+                // 按字段类型（StringField / NumberField / PrimaryKeyField 等）序列化为字节数组
                 byte[] fieldBytes = field.customSerialize();
                 if (bytePool.length < i + 1) {
                     bytePool = ArrayUtil.bytePoolGrow(bytePool);
@@ -498,7 +498,7 @@ public class DocWriter implements Runnable {
         if(field.isTokenized() == Field.Tokenized.YES){
             termType |= 0b00000010;
         }
-        if(field instanceof DoubleField){
+        if(field instanceof NumberField){
             termType |= 0b00000100;
         } else if (field instanceof StringField) {
             termType |= 0b00001000;
@@ -513,7 +513,7 @@ public class DocWriter implements Runnable {
             return 8;
         } else if (field instanceof StringField) {
             return ((StringField) field).getValue().length();
-        } else if (field instanceof DoubleField) {
+        } else if (field instanceof NumberField) {
             return 1;
         }
         return 0;
@@ -552,7 +552,7 @@ public class DocWriter implements Runnable {
      * <ul>
      *   <li>{@link StringField}：经 {@link IndexConfig#getAnalyzer()} 分词，每个 term 作为倒排条目；
      *       同一字段内相同 term 出现多次时词频累加。</li>
-     *   <li>{@link DoubleField}：将 double 转为可排序 long（{@link NumberUtil#double2SortableLong}），
+     *   <li>{@link NumberField}：将 double 转为可排序 long（{@link NumberUtil#double2SortableLong}），
      *       再按 {@code precisionStep} 生成多级前缀 term（{@link NumberUtil#long2PrefixString}），
      *       以支持范围查询。</li>
      * </ul>
@@ -575,8 +575,8 @@ public class DocWriter implements Runnable {
                 filedLength = ((StringField) field).getValue().length();
                 assembleFieldTermMap(fieldTermMap, filedName, filedValue, filedLength);
             }
-        } else if (field instanceof DoubleField) {
-            double value = ((DoubleField) field).getValue();
+        } else if (field instanceof NumberField) {
+            double value = ((NumberField) field).getValue();
             long sortableLong = NumberUtil.double2SortableLong(value);
             filedLength = 1;
             docBkd.put(new ByteReference(filedName), sortableLong);

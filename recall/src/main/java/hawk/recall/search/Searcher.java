@@ -1,7 +1,7 @@
 package hawk.recall.search;
 
 import document.Document;
-import field.DoubleField;
+import field.NumberField;
 import field.Field;
 import field.PrimaryKeyField;
 import field.StringField;
@@ -262,7 +262,7 @@ public class Searcher {
         } else if ((fieldType & 0b00000100)!= 0) { // double field
             long longVal = DataInput.readLong(fieldValue);
             double value = Double.longBitsToDouble(longVal);
-            return new DoubleField(fieldName, value);
+            return new NumberField(fieldName, value);
         } else if ((fieldType & 0b00010000) != 0) { // primary key field
             long value = DataInput.readLong(fieldValue);
             return new PrimaryKeyField(value);

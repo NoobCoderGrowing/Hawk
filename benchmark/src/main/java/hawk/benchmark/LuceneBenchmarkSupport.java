@@ -1,7 +1,7 @@
 package hawk.benchmark;
 
 import document.Document;
-import field.DoubleField;
+import field.NumberField;
 import field.PrimaryKeyField;
 import field.StringField;
 import org.apache.lucene.analysis.Analyzer;
@@ -57,9 +57,9 @@ public final class LuceneBenchmarkSupport {
     public static org.apache.lucene.document.Document toLuceneDocument(Document hawkDocument) {
         PrimaryKeyField primaryKeyField = (PrimaryKeyField) hawkDocument.getFieldMap().get("uniqueID");
         StringField titleField = (StringField) hawkDocument.getFieldMap().get("title");
-        DoubleField priceField = (DoubleField) hawkDocument.getFieldMap().get("price");
+        NumberField priceField = (NumberField) hawkDocument.getFieldMap().get("price");
         StringField descriptField = (StringField) hawkDocument.getFieldMap().get("descript");
-        DoubleField digtField = (DoubleField) hawkDocument.getFieldMap().get("digt");
+        NumberField digtField = (NumberField) hawkDocument.getFieldMap().get("digt");
 
         long uniqueId = primaryKeyField.getValue();
         String title = titleField.getValue();

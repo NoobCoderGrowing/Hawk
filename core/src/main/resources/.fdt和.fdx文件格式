@@ -22,7 +22,7 @@ no need to store block length, as .fdx stores every block start offset
 .tim
 [fieldLength<int>, field<bytes>, termLength<int>, term<bytes>, .frq start offset<vlong>]
 
-# BKD numeric point index (tokenized DoubleField)
+# BKD numeric point index (tokenized NumberField)
 .bkd
 [magic<int>=0x424B4431, formatVersion<int>, fieldCount<int>, directoryOffset<long>]
 [data section: inner/leaf BKD tree nodes]
