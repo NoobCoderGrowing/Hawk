@@ -1,50 +1,53 @@
 package field;
+
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.fasterxml.jackson.annotation.JsonTypeName;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import util.NumberUtil;
 import lombok.Data;
+import util.NumberUtil;
 
 import java.nio.charset.StandardCharsets;
 
 @Data
-@JsonTypeInfo(use=JsonTypeInfo.Id.CLASS, include=JsonTypeInfo.As.PROPERTY, property="type")
-@JsonTypeName("DoubleField")
-public class DoubleField implements Field{
+public class DoubleField implements Field {
 
-    @JsonDeserialize(as = Field.Tokenized.class)
-    private Enum<Field.Tokenized> isTokenized;
+    private Tokenized isTokenized;
 
-    @JsonDeserialize(as = Field.Stored.class)
-    private Enum<Field.Stored> isStored;
+    private Stored isStored;
 
     private String name;
 
     private double value;
+
+    public DoubleField(String name, Tokenized isTokenized, Stored isStored) {
+        this.name = name;
+        this.isTokenized = isTokenized;
+        this.isStored = isStored;
+    }
 
     public DoubleField(String name, double value) {
         this.name = name;
         this.value = value;
     }
 
+    /**
+     * Jackson 用的构造器。{@code value} 取装箱类型 {@code Double} 而不是基本类型：字段**定义**式的
+     * 请求体（只有 name / isTokenized / isStored，没有 value）里这个键会缺失，基本类型接不住 null，
+     * 会报 "Cannot map `null` into type `double`"。装箱后缺省填 0。
+     */
     @JsonCreator
-    public DoubleField(String name, double value, Enum<Field.Tokenized> isTokenized,
-                       Enum<Field.Stored> isStored) {
+    public DoubleField(String name, Double value, Tokenized isTokenized, Stored isStored) {
         this.name = name;
-        this.value = value;
+        this.value = value == null ? 0.0 : value;
         this.isTokenized = isTokenized;
         this.isStored = isStored;
     }
 
     @Override
-    public Enum<Tokenized> isTokenized() {
+    public Tokenized isTokenized() {
         return isTokenized;
     }
 
     @Override
-    public Enum<Stored> isStored() {
+    public Stored isStored() {
         return isStored;
     }
 

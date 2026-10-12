@@ -6,6 +6,7 @@ server:
 hawk:
   cloud:
     coordinator:
+      shard-count: ${HAWK_SHARD_COUNT:3}
       # 注册中心地址，写法与 cloud-indexer / cloud-recall 一致：
       #   · 单节点     127.0.0.1:6001
       #   · 集群节点表 {1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}

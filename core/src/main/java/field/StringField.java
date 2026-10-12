@@ -1,28 +1,27 @@
 package field;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.fasterxml.jackson.annotation.JsonTypeName;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import util.NumberUtil;
 import lombok.Data;
+import util.NumberUtil;
 
 import java.nio.charset.StandardCharsets;
 
 @Data
-@JsonTypeInfo(use=JsonTypeInfo.Id.CLASS, include= JsonTypeInfo.As.PROPERTY, property="@class")
-@JsonTypeName("StringField")
-public class StringField implements Field{
+public class StringField implements Field {
 
-    @JsonDeserialize(as = Field.Tokenized.class)
-    public Enum<Field.Tokenized> isTokenized;
+    public Tokenized isTokenized;
 
-    @JsonDeserialize(as = Field.Stored.class)
-    public Enum<Field.Stored> isStored;
+    public Stored isStored;
 
     private String name;
 
     private String value;
+
+    public StringField(String name, Tokenized isTokenized, Stored isStored) {
+        this.name = name;
+        this.isTokenized = isTokenized;
+        this.isStored = isStored;
+    }
 
     public StringField(String name, String value) {
         this.name = name;
@@ -30,8 +29,7 @@ public class StringField implements Field{
     }
 
     @JsonCreator
-    public StringField(String name, String value, Enum<Field.Tokenized> isTokenized,
-                       Enum<Field.Stored> isStored) {
+    public StringField(String name, String value, Tokenized isTokenized, Stored isStored) {
         this.name = name;
         this.value = value;
         this.isTokenized = isTokenized;
@@ -43,12 +41,12 @@ public class StringField implements Field{
     }
 
     @Override
-    public Enum<Tokenized> isTokenized() {
+    public Tokenized isTokenized() {
         return isTokenized;
     }
 
     @Override
-    public Enum<Stored> isStored() {
+    public Stored isStored() {
         return isStored;
     }
 

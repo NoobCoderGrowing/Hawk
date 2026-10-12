@@ -3,7 +3,7 @@ package field;
 import util.NumberUtil;
 
 import java.nio.charset.StandardCharsets;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.annotation.JsonCreator;
 import lombok.Data;
 
 @Data
@@ -11,11 +11,34 @@ public class PrimaryKeyField implements Field {
 
     private String name;
     private long value;
-    @JsonDeserialize(as = Field.Tokenized.class)
-    public Enum<Field.Tokenized> isTokenized;
 
-    @JsonDeserialize(as = Field.Stored.class)
-    public Enum<Field.Stored> isStored;
+    public Tokenized isTokenized;
+
+    public Stored isStored;
+
+
+    public PrimaryKeyField(String name, Tokenized isTokenized, Stored isStored) {
+        this.name = name;
+        this.isTokenized = isTokenized;
+        this.isStored = isStored;
+    }
+
+    /**
+     * Jackson 用的构造器。
+     *
+     * <p>原先这个类**没有任何 Creator 注解**，而 Lombok 的 {@code @Data} 在已有显式构造器时
+     * 不会再生无参构造器，于是 Jackson 一个可用的构造器都挑不出来，报
+     * "cannot deserialize from Object value (no delegate- or property-based Creator)"。
+     *
+     * <p>{@code value} 用装箱的 {@code Long}：字段定义式的请求体不带 value，基本类型接不住 null。
+     */
+    @JsonCreator
+    public PrimaryKeyField(String name, Long value, Tokenized isTokenized, Stored isStored) {
+        this.name = name;
+        this.value = value == null ? 0L : value;
+        this.isTokenized = isTokenized;
+        this.isStored = isStored;
+    }
 
     public PrimaryKeyField(long value) {
         this.name = "uniqueID";
@@ -25,12 +48,12 @@ public class PrimaryKeyField implements Field {
     }
 
     @Override
-    public Enum<Tokenized> isTokenized() {
+    public Tokenized isTokenized() {
         return Tokenized.NO;
     }
 
     @Override
-    public Enum<Stored> isStored() {
+    public Stored isStored() {
         return Stored.YES;
     }
 
