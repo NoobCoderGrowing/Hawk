@@ -525,7 +525,7 @@ java -Xmx3g -cp "vector/target/classes:$(cat /tmp/vcp.txt)" hawk.vector.demo.Dem
 | `com.microsoft.onnxruntime:onnxruntime` | 推理。要 GPU 换成 `onnxruntime_gpu` |
 | `ai.djl.huggingface:tokenizers` | 分词，JNI 封装 Rust `tokenizers`，直接读 `tokenizer.json` |
 | `io.github.jbellis:jvector` | ANN 索引 |
-| `com.fasterxml.jackson.core:jackson-databind` | 读 `model.json`（版本由 Spring Boot 统一管理） |
+| `com.alibaba:fastjson` | 读 `model.json`。项目里 JSON 统一用 fastjson（HTTP 层见各模块的 `FastJsonWebConfig`） |
 
 ### 4.7 当前状态
 

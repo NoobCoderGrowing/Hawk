@@ -3,10 +3,11 @@ package field;
 import util.NumberUtil;
 
 import java.nio.charset.StandardCharsets;
-import com.fasterxml.jackson.annotation.JsonCreator;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
+@NoArgsConstructor
 public class PrimaryKeyField implements Field {
 
     private String name;
@@ -32,7 +33,6 @@ public class PrimaryKeyField implements Field {
      *
      * <p>{@code value} 用装箱的 {@code Long}：字段定义式的请求体不带 value，基本类型接不住 null。
      */
-    @JsonCreator
     public PrimaryKeyField(String name, Long value, Tokenized isTokenized, Stored isStored) {
         this.name = name;
         this.value = value == null ? 0L : value;

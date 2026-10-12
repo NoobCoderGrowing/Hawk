@@ -15,9 +15,10 @@ hawk:
     # ONNX 模型目录：model.json + encoder.onnx + tokenizer.json（见 README §4.2）
     model-dir: ${HAWK_MODEL_DIR:model/bge-small-zh-v1.5}
 
-spring:
-  jackson:
-    default-property-inclusion: non_null   # note 为 null 时不输出，前端少一个分支
+# 原先这里有一段 spring.jackson.default-property-inclusion: non_null（note 为 null 时不输出，
+# 前端少一个分支）。HTTP 层的 JSON 已换成 fastjson（见 hawk.web.FastJsonWebConfig），
+# 而 fastjson 默认就**不输出值为 null 的字段** —— 线上行为不变，所以这段配置整个删掉了。
+# 留着只会让人以为还在用 Jackson。
 
 logging:
   level:

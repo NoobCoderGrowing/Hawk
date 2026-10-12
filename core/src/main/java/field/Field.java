@@ -1,39 +1,27 @@
 package field;
 
-import com.fasterxml.jackson.annotation.JsonSubTypes;
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
-
 /**
  * 一个字段的定义 / 取值，{@code StringField} / {@code NumberField} / {@code PrimaryKeyField} 三个实现。
  *
- * <h2>多态判别字段：用短名，不用全类名</h2>
- * 这里曾经是 {@code use = Id.CLASS}，也就是请求里得写 {@code "type":"field.StringField"} 这种全类名。
- * 两个问题：
- * <ul>
- *   <li>把 classpath 上任意类名交给 Jackson 实例化，对外的 HTTP 契约上是个反序列化 gadget 面；</li>
- *   <li>与实现类各自的 {@code @JsonTypeInfo} 打架（{@code StringField} 声明的是 {@code @class}，
- *       {@code NumberField} 声明的是 {@code type}），同一个字段按静态类型不同序列化出不同形态。</li>
- * </ul>
- * 现在统一成 {@code Id.NAME} + 显式白名单，请求里写 {@code "type":"StringField"}。
- * 名字只在这个 {@code @JsonSubTypes} 里出现一次，实现类上不再各自声明。
+ * <h2>多态由调用方显式分发，不依赖 JSON 框架</h2>
+ * 这里**没有也不该有 JSON 注解**。项目里 JSON 用 fastjson，而 fastjson 对接口类型只会回一个
+ * JDK 代理（不是具体子类），它的 autotype（{@code @type} 全类名）又是典型的反序列化 gadget 面。
+ * 所以多态不用框架做，由调用方按 {@code type} 显式 switch，白名单就在那段 switch 里
+ * （目前是 {@code cloud-indexer} 的 {@code TextIndexController}）。<b>加新的 Field 实现时要同步改那边。</b>
  *
- * <h2>字段类型：具体枚举，不再是 {@code Enum<...>}</h2>
- * 原先 {@code isTokenized}/{@code isStored} 声明成 {@code Enum<Field.Tokenized>}，靠
- * {@code @JsonDeserialize(as = Field.Tokenized.class)} 给 Jackson 提示。那个注解属于
- * {@code com.fasterxml.jackson.databind.annotation} 包 —— 在 Jackson 3 里它搬到了
- * {@code tools.jackson.databind.annotation}，而 Spring Boot 4 的 HTTP 层用的正是 Jackson 3，
- * 于是提示<b>被静默忽略</b>：类型擦除成 {@code java.lang.Enum}，反序列化报
- * "Cannot construct instance of java.lang.Enum"。编译期看不出来，因为 Jackson 2 的注解 jar
- * 确实还在 classpath 上。
+ * <p>曾经这里挂着一套 Jackson 注解（{@code @JsonTypeInfo} / {@code @JsonSubTypes}），
+ * 由 {@code Id.CLASS} 起家、后来改成 {@code Id.NAME} 白名单。HTTP 层换成 fastjson 后它们全部失效，
+ * 故已删除 —— 留着会让后来人以为多态是框架在管。
  *
- * <p>改用具体枚举类型后不再需要任何提示，Jackson 直接按 {@code "YES"}/{@code "NO"} 解析。
+ * <h2>字段类型用具体枚举</h2>
+ * {@code isTokenized} / {@code isStored} 直接是 {@link Tokenized} / {@link Stored}，
+ * <b>不要写成 {@code Enum<Tokenized>}</b>：那样会被类型擦除成 {@code java.lang.Enum}，
+ * 任何 JSON 框架都拿不到具体类型、反序列化必然失败。
+ *
+ * <h2>三个实现都有无参构造器</h2>
+ * fastjson 走「无参构造 + setter」实例化。只有带参构造器时它会去调那个构造器，
+ * 参数缺一个就报 {@code create instance error} —— 而「字段定义」式的请求体本来就不带 {@code value}。
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
-@JsonSubTypes({
-        @JsonSubTypes.Type(value = StringField.class, name = "StringField"),
-        @JsonSubTypes.Type(value = NumberField.class, name = "NumberField"),
-        @JsonSubTypes.Type(value = PrimaryKeyField.class, name = "PrimaryKeyField"),
-})
 public interface Field {
 
     enum Stored {

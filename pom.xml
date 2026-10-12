@@ -73,7 +73,10 @@
             <dependency>
                 <groupId>com.alibaba</groupId>
                 <artifactId>fastjson</artifactId>
-                <version>1.2.75</version>
+                <!-- 1.2.83 是 1.2.x 线的最后一个版本；JRegistryClient 内部用的也是它，
+                     升到这里可以把两边的版本拉齐（原先 1.2.75 与它的 1.2.83 并存）。
+                     再往上换就得走 fastjson2（不同 artifact、不同 API），那是另一件事。 -->
+                <version>1.2.83</version>
             </dependency>
             <dependency>
                 <groupId>org.lz4</groupId>

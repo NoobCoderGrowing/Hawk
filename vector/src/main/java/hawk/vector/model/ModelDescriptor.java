@@ -1,7 +1,6 @@
 package hawk.vector.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.alibaba.fastjson.JSON;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -15,8 +14,10 @@ import java.util.List;
  * 维度、输入名、长度、前缀全部由此而来，换模型就是换一个目录。
  *
  * <p>文件由 Python 侧 {@code hawk_vector.export.export_onnx} 产出。
+ *
+ * <p>用 fastjson 解析（原先用 Jackson）。原先那几处 {@code @JsonIgnoreProperties(ignoreUnknown = true)}
+ * 一并去掉了 —— fastjson 默认就忽略 JSON 里多出来的字段，不需要注解。
  */
-@JsonIgnoreProperties(ignoreUnknown = true)
 public class ModelDescriptor {
 
     public String name;
@@ -27,7 +28,6 @@ public class ModelDescriptor {
     public TokenizerSpec tokenizer;
     public Preprocess preprocess;
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class OnnxSpec {
         public String file;
         /** 图**实际**具有的输入名。BERT 系含 token_type_ids，XLM-R 系不含。 */
@@ -40,12 +40,10 @@ public class ModelDescriptor {
         }
     }
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class TokenizerSpec {
         public String file;
     }
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Preprocess {
         public int maxLenQuery = 32;
         public int maxLenDoc = 64;
@@ -92,7 +90,7 @@ public class ModelDescriptor {
         if (!Files.exists(path)) {
             throw new IOException("找不到描述符: " + path);
         }
-        return new ObjectMapper().readValue(Files.readAllBytes(path), ModelDescriptor.class);
+        return JSON.parseObject(Files.readAllBytes(path), ModelDescriptor.class);
     }
 
     /** 把描述符里的相对路径解析成绝对路径。 */

@@ -216,18 +216,102 @@ public class SearchService implements DisposableBean {
      *
      * <p>{@code title} 可能为 null：商品在索引里但已被软删除时 {@code docByUniqueId} 返回 null。
      */
-    public record Result(int rank, String title, double score, Long productId,
-                         Integer docId, Integer ordinal) {
+    /**
+     * 一条命中。{@code docId} 只在倒排侧有值、{@code ordinal} 只在向量侧有值 ——
+     * 两者都是"索引内部的位置"，不是业务主键；对外统一用 {@code productId}。
+     *
+     * <p>{@code title} 可能为 null：商品在索引里但已被软删除时 {@code docByUniqueId} 返回 null。
+     *
+     * <p><b>为什么是普通类而不是 record</b>：HTTP 层的 JSON 用 fastjson 序列化，而 fastjson 1.2.x
+     * **不支持 record** —— 会把 record 静默序列化成 {@code {}}（不报错），前端拿到空对象。
+     * 所以这里显式给 getter，让 fastjson 按 bean 属性输出。
+     */
+    public static class Result {
+        private final int rank;
+        private final String title;
+        private final double score;
+        private final Long productId;
+        private final Integer docId;
+        private final Integer ordinal;
+
+        public Result(int rank, String title, double score, Long productId,
+                      Integer docId, Integer ordinal) {
+            this.rank = rank;
+            this.title = title;
+            this.score = score;
+            this.productId = productId;
+            this.docId = docId;
+            this.ordinal = ordinal;
+        }
+
+        public int getRank() {
+            return rank;
+        }
+
+        public String getTitle() {
+            return title;
+        }
+
+        public double getScore() {
+            return score;
+        }
+
+        public Long getProductId() {
+            return productId;
+        }
+
+        public Integer getDocId() {
+            return docId;
+        }
+
+        public Integer getOrdinal() {
+            return ordinal;
+        }
     }
 
     /**
-     * 一次检索的完整结果。
+     * 一次检索的完整结果。同样是普通类而非 record，理由见 {@link Result}。
      *
-     * @param note  用于在界面上解释"为什么是这样"，无话可说时为 null
-     * @param terms 全文搜索的分词结果，供前端在标题里标出命中词；向量搜索为 null
+     * <p>{@code note} 用于在界面上解释"为什么是这样"，无话可说时为 null；
+     * {@code terms} 是全文搜索的分词结果，供前端在标题里标出命中词，向量搜索为 null。
+     * 两者为 null 时 fastjson 默认不输出该键（与之前 Jackson 的
+     * {@code default-property-inclusion: non_null} 行为一致）。
      */
-    public record SearchResponse(String query, List<Result> hits, long tookMs,
-                                 String note, List<String> terms) {
+    public static class SearchResponse {
+        private final String query;
+        private final List<Result> hits;
+        private final long tookMs;
+        private final String note;
+        private final List<String> terms;
+
+        public SearchResponse(String query, List<Result> hits, long tookMs,
+                              String note, List<String> terms) {
+            this.query = query;
+            this.hits = hits;
+            this.tookMs = tookMs;
+            this.note = note;
+            this.terms = terms;
+        }
+
+        public String getQuery() {
+            return query;
+        }
+
+        public List<Result> getHits() {
+            return hits;
+        }
+
+        public long getTookMs() {
+            return tookMs;
+        }
+
+        public String getNote() {
+            return note;
+        }
+
+        public List<String> getTerms() {
+            return terms;
+        }
     }
 
     @Override

@@ -1,12 +1,13 @@
 package field;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import util.NumberUtil;
 
 import java.nio.charset.StandardCharsets;
 
 @Data
+@NoArgsConstructor
 public class StringField implements Field {
 
     public Tokenized isTokenized;
@@ -28,7 +29,6 @@ public class StringField implements Field {
         this.value = value;
     }
 
-    @JsonCreator
     public StringField(String name, String value, Tokenized isTokenized, Stored isStored) {
         this.name = name;
         this.value = value;

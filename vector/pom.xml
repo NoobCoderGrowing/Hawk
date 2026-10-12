@@ -45,11 +45,14 @@
             <version>4.0.1</version>
         </dependency>
 
-        <!-- 读 model.json 描述符。版本由 spring-boot-starter-parent 统一管理，
-             不必也不该在这里写死 —— 写死了会和 Spring Boot 管理的版本打架。 -->
+        <!-- 读 model.json 描述符。用 fastjson 而非 Jackson。
+             原来这里是显式声明的 jackson-databind，项目代码改用 fastjson 后已移除 ——
+             依赖树显示没有别的依赖传递带来它，所以若 jvector 等内部需要 Jackson，
+             这一移除会暴露出来；向量检索的实跑已验证通过。
+             版本由父 pom 的管理段统一指定。 -->
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
+            <groupId>com.alibaba</groupId>
+            <artifactId>fastjson</artifactId>
         </dependency>
 
         <!-- 日志：**不引 log4j**，用 logback。

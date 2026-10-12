@@ -1,12 +1,13 @@
 package field;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import util.NumberUtil;
 
 import java.nio.charset.StandardCharsets;
 
 @Data
+@NoArgsConstructor
 public class NumberField implements Field {
 
     private Tokenized isTokenized;
@@ -27,13 +28,7 @@ public class NumberField implements Field {
         this.name = name;
         this.value = value;
     }
-
-    /**
-     * Jackson 用的构造器。{@code value} 取装箱类型 {@code Double} 而不是基本类型：字段**定义**式的
-     * 请求体（只有 name / isTokenized / isStored，没有 value）里这个键会缺失，基本类型接不住 null，
-     * 会报 "Cannot map `null` into type `double`"。装箱后缺省填 0。
-     */
-    @JsonCreator
+    
     public NumberField(String name, Double value, Tokenized isTokenized, Stored isStored) {
         this.name = name;
         this.value = value == null ? 0.0 : value;
