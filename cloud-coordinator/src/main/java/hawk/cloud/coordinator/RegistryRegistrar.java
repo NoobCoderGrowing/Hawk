@@ -239,43 +239,6 @@ public class RegistryRegistrar implements DisposableBean {
         return ip + ":" + port;
     }
 
-    // ------------------------------------------------- healthcheck 读取的状态
-
-    /** 是否配了注册中心地址。没配属于正常（本地开发常没有注册中心），不算异常。 */
-    public boolean isRegistryConfigured() {
-        return registryAddress != null && !registryAddress.isBlank();
-    }
-
-    /** 现在是否仍连着注册中心 —— 登记那一刻连上、之后掉线都会反映在这里。 */
-    public boolean isRegistered() {
-        return client != null && client.isConnected();
-    }
-
-    /** 本节点角色。 */
-    public String role() {
-        return role;
-    }
-
-    /** 第几个分片（如 {@code shard-1}）。 */
-    public String shardNum() {
-        return shardNum;
-    }
-
-    /** 该分片的副本编号（如 {@code id-0}）。 */
-    public String shardId() {
-        return shardId;
-    }
-
-    /** 本节点身份 key。协调器是 {@code /cloud/coordinator}，其余角色带 shard 段，见 {@link #registrationKey}。 */
-    public String nodeKey() {
-        return registrationKey(role, shardNum, shardId);
-    }
-
-    /** 本节点对外地址，供 health 明细展示。 */
-    public String address() {
-        return nodeAddress();
-    }
-
     /**
      * 从 {@code registry-address} 解析候选节点，返回顺序即尝试顺序。静态以便单测。
      *
