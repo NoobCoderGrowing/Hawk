@@ -47,23 +47,15 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <!-- source/target/release 由父 pom 的 maven.compiler.release 统一管理 -->
             </plugin>
-            <!-- 与 web / cloud-coordinator 一致：不打胖 jar，把运行时依赖复制到 target/dependency/ -->
+            <!-- 打成可执行胖 jar，与 web 模块一致。
+                 run: java -jar cloud-recall/target/cloud-recall-1.0-SNAPSHOT.jar
+                 开发时也可 mvn -pl cloud-recall spring-boot:run -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>copy-dependencies</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>copy-dependencies</goal>
-                        </goals>
-                        <configuration>
-                            <outputDirectory>${project.build.directory}/dependency</outputDirectory>
-                            <includeScope>runtime</includeScope>
-                        </configuration>
-                    </execution>
-                </executions>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>hawk.cloud.recall.RecallApplication</mainClass>
+                </configuration>
             </plugin>
         </plugins>
     </build>

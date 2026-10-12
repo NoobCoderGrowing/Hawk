@@ -108,8 +108,7 @@ else
   else
     warn "$INDEX_DIR 不存在 —— 用 $CORPUS 重建"
   fi
-  "$JAVA_BIN" -cp "demo/target/classes:demo/target/dependency/*" \
-              demo.BuildIndex "$CORPUS" "$INDEX_DIR"
+  "$JAVA_BIN" -jar demo/target/demo-1.0-SNAPSHOT.jar "$CORPUS" "$INDEX_DIR"
   ok "$INDEX_DIR"
 fi
 
@@ -208,5 +207,4 @@ exec "$JAVA_BIN" -Xmx3g \
   -Dhawk.web.index-dir="$INDEX_DIR" \
   -Dhawk.web.vector-dir="$VECTOR_DIR" \
   -Dhawk.web.model-dir="$MODEL_DIR" \
-  -cp "web/target/classes:web/target/dependency/*" \
-  hawk.web.WebApplication
+  -jar web/target/web-1.0-SNAPSHOT.jar

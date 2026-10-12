@@ -51,29 +51,15 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <!-- source/target/release 由父 pom 的 maven.compiler.release 统一管理 -->
             </plugin>
-            <!--
-                与 web 模块一致：不用 spring-boot-maven-plugin 的 repackage 打胖 jar，
-                改为把运行时依赖复制到 target/dependency/，用 classpath 直接跑：
-                  java -cp "cloud-coordinator/target/classes:cloud-coordinator/target/dependency/*" \
-                       hawk.coordinator.CoordinatorApplication
-                开发时也可以 mvn -pl cloud-coordinator spring-boot:run
-            -->
+            <!-- 打成可执行胖 jar，与 web 模块一致。
+                 run: java -jar cloud-coordinator/target/cloud-coordinator-1.0-SNAPSHOT.jar
+                 开发时也可 mvn -pl cloud-coordinator spring-boot:run -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>copy-dependencies</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>copy-dependencies</goal>
-                        </goals>
-                        <configuration>
-                            <outputDirectory>${project.build.directory}/dependency</outputDirectory>
-                            <includeScope>runtime</includeScope>
-                        </configuration>
-                    </execution>
-                </executions>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>hawk.cloud.coordinator.CoordinatorApplication</mainClass>
+                </configuration>
             </plugin>
         </plugins>
     </build>

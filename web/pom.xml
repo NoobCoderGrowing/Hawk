@@ -57,30 +57,21 @@
                 <artifactId>maven-compiler-plugin</artifactId>
             </plugin>
             <!--
-                不用 spring-boot-maven-plugin 的 repackage 打胖 jar：
-                2.7.11 内置的 ASM 读不了 JDK 25 的字节码（major 69），
-                报 "Unsupported class file major version 69"。
+                打成可执行胖 jar。父 pom 是 spring-boot-starter-parent 4.1.1，
+                它的 pluginManagement 已预绑定 repackage 执行，这里声明插件即可。
 
-                改为把依赖复制到 target/dependency/，用 classpath 直接跑：
-                  java -Xmx3g -cp "web/target/classes:web/target/dependency/*" hawk.web.WebApplication
-                开发时也可以 mvn -pl web spring-boot:run（run 目标不走 ASM，不受影响）。
+                （早先不走这条路：Boot 2.7.11 内置的 ASM 读不了 JDK 25 字节码
+                  （major 69），repackage 直接失败。升到 Boot 4 后该障碍已不存在。）
+
+                原先那套「copy-dependencies 平铺到 target/dependency/ 再拼 classpath」
+                已取消，启动方式见 runDemo.sh。
             -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>copy-dependencies</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>copy-dependencies</goal>
-                        </goals>
-                        <configuration>
-                            <outputDirectory>${project.build.directory}/dependency</outputDirectory>
-                            <includeScope>runtime</includeScope>
-                        </configuration>
-                    </execution>
-                </executions>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>hawk.web.WebApplication</mainClass>
+                </configuration>
             </plugin>
         </plugins>
     </build>

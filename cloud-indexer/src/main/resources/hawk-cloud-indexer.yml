@@ -9,8 +9,19 @@ hawk:
       # 相对路径以**启动时的工作目录**为基准。
       index-dir: ${HAWK_INDEX_DIR:index-data/goods}
 
-      # 注册中心地址，本节点启动时向它登记。
+      # 注册中心（JRegistry）地址，格式 host:port。留空则跳过登记，只记一条 WARN。
       registry-address: ${HAWK_REGISTRY_ADDRESS:}
+
+      # 登记路径 /cloud/{role}/{shard-num}/{shard-id}/{ip:port} 的占位符取值。
+      #   role      节点角色，用于区分索引节点与检索节点
+      #   shard-num 分片总数
+      #   shard-id  本节点持有的分片编号（0 起）
+      #   ip / port 本节点对外地址；port 默认跟随 server.port，换端口启动时不必两处都改
+      role: ${HAWK_ROLE:indexer}
+      shard-num: ${HAWK_SHARD_NUM:1}
+      shard-id: ${HAWK_SHARD_ID:0}
+      ip: ${HAWK_NODE_IP:127.0.0.1}
+      port: ${HAWK_NODE_PORT:${server.port}}
 
 logging:
   level:
