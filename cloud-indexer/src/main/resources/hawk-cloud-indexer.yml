@@ -1,0 +1,17 @@
+server:
+  # web=8080、segment 演示应用=3333、cloud-coordinator=8090，这里另起一个避免冲突。
+  port: ${HAWK_CLOUD_INDEXER_PORT:8091}
+
+hawk:
+  cloud:
+    indexer:
+      # 索引输出目录（含 segment.info / 1.fdt / 1.frq …）。
+      # 相对路径以**启动时的工作目录**为基准。
+      index-dir: ${HAWK_INDEX_DIR:index-data/goods}
+
+      # 注册中心地址，本节点启动时向它登记。
+      registry-address: ${HAWK_REGISTRY_ADDRESS:}
+
+logging:
+  level:
+    root: INFO

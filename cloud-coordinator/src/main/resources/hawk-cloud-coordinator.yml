@@ -1,0 +1,18 @@
+server:
+  # web 模块占 8080、segment 演示应用占 3333，
+  # cloud-indexer 占 8091、cloud-recall 占 8092，这里 8090 避免冲突。
+  port: ${HAWK_CLOUD_COORDINATOR_PORT:8090}
+
+hawk:
+  cloud:
+    coordinator:
+      # 协调器要管理的检索节点地址，逗号分隔。
+      # 目前只是占位，接入真实集群时按需改成从注册中心/配置文件加载。
+      nodes: ${HAWK_COORDINATOR_NODES:}
+
+      # 注册中心地址（本模块已依赖 JRegistryClient）。
+      registry-address: ${HAWK_REGISTRY_ADDRESS:}
+
+logging:
+  level:
+    root: INFO

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>hawk</artifactId>
+        <groupId>com.hawk</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>cloud-recall</artifactId>
+
+    <!--
+        检索服务的云端形态：把 recall 库包一层 Spring Boot HTTP 接口，
+        并作为检索节点向注册中心登记。包名 hawk.cloud.recall ——
+        hawk.recall 已被 recall 库模块占用。
+
+        需要向量召回时再补 vector 依赖（web 模块就是 recall + vector 两条链路）。
+    -->
+
+    <dependencies>
+        <dependency>
+            <groupId>com.hawk</groupId>
+            <artifactId>recall</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- 版本由 spring-boot-starter-parent 管理 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- 注册中心客户端：与 recall 的 JFST 同源，版本不在父 pom 统一管理，就地声明 -->
+        <dependency>
+            <groupId>io.github.noobcodergrowing</groupId>
+            <artifactId>JRegistryClient</artifactId>
+            <version>1.0.1</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <!-- source/target/release 由父 pom 的 maven.compiler.release 统一管理 -->
+            </plugin>
+            <!-- 与 web / cloud-coordinator 一致：不打胖 jar，把运行时依赖复制到 target/dependency/ -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/dependency</outputDirectory>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

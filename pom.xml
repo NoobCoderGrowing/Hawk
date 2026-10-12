@@ -17,6 +17,9 @@
         <module>benchmark</module>
         <module>vector</module>
         <module>web</module>
+        <module>cloud-coordinator</module>
+        <module>cloud-indexer</module>
+        <module>cloud-recall</module>
     </modules>
     <parent>
         <groupId>org.springframework.boot</groupId>
