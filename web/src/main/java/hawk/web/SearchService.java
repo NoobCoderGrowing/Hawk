@@ -11,13 +11,6 @@ import hawk.recall.reader.DirectoryReader;
 import hawk.recall.search.ScoreDoc;
 import hawk.recall.search.Searcher;
 import hawk.segment.core.anlyzer.NShortestPathAnalyzer;
-import hawk.vector.index.JVectorIndex;
-import hawk.vector.index.NpyReader;
-import hawk.vector.index.SearchHits;
-import hawk.vector.model.ModelDescriptor;
-import hawk.vector.model.TextEncoder;
-
-import io.github.jbellis.jvector.util.Bits;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,50 +26,29 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 把两条召回链路装进一个进程：
+ * 检索演示台的后端：倒排一路（{@link Searcher} + {@link StringQuery}，BM25 打分）。
  *
- * <ul>
- *   <li><b>倒排</b>：{@link Searcher} + {@link StringQuery}，BM25 打分</li>
- *   <li><b>向量</b>：{@link TextEncoder} 编码 query → {@link JVectorIndex} 取 top-K</li>
- * </ul>
+ * <p>启动时一次性加载索引，之后所有请求只读。
  *
- * <h2>向量这一侧的完整链路</h2>
- * 向量索引只给出 <b>ordinal</b>（行号）。要拿到商品原文，得走：
- * <pre>
- *   ordinal → ids[ordinal] = 商品ID → Searcher.docByUniqueId(商品ID) → 商品标题
- * </pre>
- * 中间的 {@code pk.map} 查表由 {@code docByUniqueId} 封装 —— 商品 ID 与全局 docID
- * 数值上毫无关系（docID 按索引线程完成顺序分配），混用不会报错、只会静默返回别的商品，
- * 所以这一层不能绕开。
- *
- * <p>启动时一次性加载索引与模型，之后所有请求只读。索引构建（10 万条向量建 HNSW）
- * 需要十几秒，属预期。
+ * <p><b>向量那一路已移除。</b> vector 模块正在重建（见 {@code VECTOR_MODULE_REBUILD.md}），
+ * 它的对外形状（{@code VectorIndexWriter} / {@code VectorSearcher}）与旧实现完全不同，
+ * 所以这里先只保留倒排。等向量侧重写完再按新 API 接回来 —— 那时应当复用
+ * {@code VectorSearcher}，而不是像以前那样在这里自己读 {@code .npy}、自己建 HNSW。
  */
 @Service
 public class SearchService implements DisposableBean {
 
     private static final Logger log = LoggerFactory.getLogger(SearchService.class);
 
-    /** 用于查找商品的字段。倒排与向量两侧都取这一个字段。 */
+    /** 用于查找商品的字段。 */
     private static final String FIELD = "title";
 
     @Value("${hawk.web.index-dir}")
     private String indexDir;
 
-    @Value("${hawk.web.vector-dir}")
-    private String vectorDir;
-
-    @Value("${hawk.web.model-dir}")
-    private String modelDir;
-
     private NShortestPathAnalyzer analyzer;
     private DirectoryReader reader;
     private Searcher searcher;
-    private JVectorIndex vectorIndex;
-    private TextEncoder encoder;
-
-    /** ordinal → 商品 ID。向量索引不存业务主键，这层映射是必需的。 */
-    private long[] productIds;
 
     @PostConstruct
     void load() throws Exception {
@@ -84,7 +56,7 @@ public class SearchService implements DisposableBean {
         if (!Files.exists(idx.resolve("segment.info"))) {
             throw new IllegalStateException(
                     "索引目录里没有 segment.info：" + idx.toAbsolutePath()
-                            + "\n  先用 goods.csv 建一个索引，或改 application.yml 里的 hawk.web.index-dir");
+                            + "\n  先用 goods.csv 建一个索引，或改配置里的 hawk.web.index-dir");
         }
 
         this.analyzer = new NShortestPathAnalyzer(1);
@@ -93,31 +65,9 @@ public class SearchService implements DisposableBean {
         this.reader = DirectoryReader.open(MMapDirectory.open(idx));
         this.searcher = new Searcher(reader, new SearchConfig(analyzer), new IndexFormatConfig());
         log.info("倒排索引已加载: {} ({} 篇)", idx.toAbsolutePath(), reader.getTotalDoc());
-
-        Path vec = Paths.get(vectorDir);
-        Path embPath = vec.resolve("corpus_emb.npy");
-        Path idsPath = vec.resolve("corpus_emb_ids.npy");
-        if (!Files.exists(embPath) || !Files.exists(idsPath)) {
-            throw new IllegalStateException(
-                    "向量文件缺失：需要 " + embPath.toAbsolutePath() + " 与 " + idsPath.toAbsolutePath()
-                            + "\n  生成方式见 README §4.3");
-        }
-        // 注意内存：全部读成 fp32 后是 N×D×4 字节，10 万×512 约 205 MB，
-        // 加上 HNSW 图结构还要更多 —— 启动要 -Xmx3g 起步。
-        float[][] matrix = NpyReader.readFloatMatrix(embPath);
-        this.productIds = NpyReader.readLongArray(idsPath);
-        if (matrix.length != productIds.length) {
-            throw new IllegalStateException("向量条数 " + matrix.length
-                    + " 与 ID 条数 " + productIds.length + " 不一致");
-        }
-        this.vectorIndex = JVectorIndex.build(matrix);
-        log.info("向量索引已建立: {} 条 × {} 维", matrix.length, matrix[0].length);
-
-        this.encoder = new TextEncoder(Paths.get(modelDir));
-        log.info("模型已加载: {}", encoder.descriptor().name);
     }
 
-    // ------------------------------------------------------------------ 全文搜索
+    // ------------------------------------------------------------------ 检索
 
     /**
      * 词项检索。{@link StringQuery} 会先分词，再按 MUST（全部词命中）查，
@@ -136,8 +86,8 @@ public class SearchService implements DisposableBean {
                     continue;   // 已被软删除
                 }
                 String title = stringField(doc, FIELD);
-                out.add(new Result(i + 1, title, hits[i].getScore(), primaryKey(doc),
-                        hits[i].docID, null));
+                out.add(new Result(i + 1, title, hits[i].getScore(),
+                        primaryKey(doc), hits[i].docID));
             }
         }
         String note = (hits == null || hits.length == 0)
@@ -155,46 +105,8 @@ public class SearchService implements DisposableBean {
         return terms;
     }
 
-    // ------------------------------------------------------------------ 向量搜索
-
-    /**
-     * 语义检索。query 文本 → 向量 → HNSW 取 top-K → ordinal → 商品 ID → 回倒排取原文。
-     */
-    public SearchResponse searchVector(String query, int topK) throws Exception {
-        long t0 = System.nanoTime();
-        float[] vec = encoder.encodeOne(query, ModelDescriptor.Role.QUERY);
-        long encodeMs = System.nanoTime() - t0;
-
-        SearchHits hits = vectorIndex.search(vec, topK, Bits.ALL);
-        int[] ordinals = hits.ordinals();
-
-        List<Result> out = new ArrayList<>(ordinals.length);
-        for (int i = 0; i < ordinals.length; i++) {
-            int ordinal = ordinals[i];
-            long productId = productIds[ordinal];
-
-            // 关键一跳：商品 ID 在倒排这一侧才有原文
-            Document doc = searcher.docByUniqueId(productId);
-            String title = doc == null ? null : stringField(doc, FIELD);
-
-            out.add(new Result(i + 1, title, hits.scores()[i], productId, null, ordinal));
-        }
-        long tookMs = (System.nanoTime() - t0) / 1_000_000;
-        // 向量这一路没有"命中词"可言 —— 它是整句语义匹配，不是词项匹配。
-        return new SearchResponse(query, out, tookMs,
-                "其中编码 query 用了 " + encodeMs / 1_000_000 + " ms（ONNX 推理）。", null);
-    }
-
     public long totalDocs() {
         return reader.getTotalDoc();
-    }
-
-    public long indexedVectors() {
-        return vectorIndex == null ? 0 : vectorIndex.size();
-    }
-
-    public String modelName() {
-        return encoder == null ? null : encoder.descriptor().name;
     }
 
     // ------------------------------------------------------------------ 取字段
@@ -211,14 +123,7 @@ public class SearchService implements DisposableBean {
     }
 
     /**
-     * 一条命中。{@code docId} 只在倒排侧有值、{@code ordinal} 只在向量侧有值 ——
-     * 两者都是"索引内部的位置"，不是业务主键；对外统一用 {@code productId}。
-     *
-     * <p>{@code title} 可能为 null：商品在索引里但已被软删除时 {@code docByUniqueId} 返回 null。
-     */
-    /**
-     * 一条命中。{@code docId} 只在倒排侧有值、{@code ordinal} 只在向量侧有值 ——
-     * 两者都是"索引内部的位置"，不是业务主键；对外统一用 {@code productId}。
+     * 一条命中。{@code docId} 是"索引内部的位置"，不是业务主键；对外统一用 {@code productId}。
      *
      * <p>{@code title} 可能为 null：商品在索引里但已被软删除时 {@code docByUniqueId} 返回 null。
      *
@@ -232,16 +137,13 @@ public class SearchService implements DisposableBean {
         private final double score;
         private final Long productId;
         private final Integer docId;
-        private final Integer ordinal;
 
-        public Result(int rank, String title, double score, Long productId,
-                      Integer docId, Integer ordinal) {
+        public Result(int rank, String title, double score, Long productId, Integer docId) {
             this.rank = rank;
             this.title = title;
             this.score = score;
             this.productId = productId;
             this.docId = docId;
-            this.ordinal = ordinal;
         }
 
         public int getRank() {
@@ -263,19 +165,14 @@ public class SearchService implements DisposableBean {
         public Integer getDocId() {
             return docId;
         }
-
-        public Integer getOrdinal() {
-            return ordinal;
-        }
     }
 
     /**
      * 一次检索的完整结果。同样是普通类而非 record，理由见 {@link Result}。
      *
      * <p>{@code note} 用于在界面上解释"为什么是这样"，无话可说时为 null；
-     * {@code terms} 是全文搜索的分词结果，供前端在标题里标出命中词，向量搜索为 null。
-     * 两者为 null 时 fastjson 默认不输出该键（与之前 Jackson 的
-     * {@code default-property-inclusion: non_null} 行为一致）。
+     * {@code terms} 是分词结果，供前端在标题里标出命中词。
+     * 两者为 null 时 fastjson 默认不输出该键。
      */
     public static class SearchResponse {
         private final String query;
@@ -316,12 +213,6 @@ public class SearchService implements DisposableBean {
 
     @Override
     public void destroy() {
-        if (vectorIndex != null) {
-            vectorIndex.close();
-        }
-        if (encoder != null) {
-            encoder.close();
-        }
         if (reader != null) {
             reader.close();
         }

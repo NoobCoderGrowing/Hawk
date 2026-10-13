@@ -6,6 +6,8 @@ import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -18,8 +20,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
-
-import hawk.vector.model.ModelDescriptor.Role;
 
 /**
  * 文本编码器：文本 → L2 归一化的向量。
@@ -40,6 +40,8 @@ import hawk.vector.model.ModelDescriptor.Role;
  */
 public class TextEncoder implements Closeable {
 
+    private static final Logger log = LoggerFactory.getLogger(TextEncoder.class);
+
     private final ModelDescriptor descriptor;
     private final OrtEnvironment env;
     private final OrtSession session;
@@ -56,8 +58,21 @@ public class TextEncoder implements Closeable {
      */
     private final Map<ModelDescriptor.Role, HuggingFaceTokenizer> tokenizers;
     private final ReentrantLock lock = new ReentrantLock();
+    /** 实际落在哪个设备上。见 {@link OnnxDevice}。 */
+    private final OnnxDevice.Resolved device;
 
+    /** 默认设备：{@link OnnxDevice.Kind#AUTO} —— 有 GPU 用 GPU，没有回退 CPU。 */
     public TextEncoder(Path modelDir) throws IOException, OrtException {
+        this(modelDir, OnnxDevice.Kind.AUTO, 0, null);
+    }
+
+    /**
+     * @param device    设备选择。{@code AUTO} 是需求里的"默认 GPU，没有就 CPU"
+     * @param gpuDevice CUDA 设备号，一般 0
+     * @param cudaLibDir 可选：CUDA 运行时的库目录，非 null 时先预加载（见 {@link OnnxDevice#preloadNativeLibs}）
+     */
+    public TextEncoder(Path modelDir, OnnxDevice.Kind device, int gpuDevice, Path cudaLibDir)
+            throws IOException, OrtException {
         this.descriptor = ModelDescriptor.load(modelDir);
 
         Path onnxPath = descriptor.resolveFile(modelDir, descriptor.onnx.file);
@@ -66,9 +81,14 @@ public class TextEncoder implements Closeable {
         }
 
         this.env = OrtEnvironment.getEnvironment();
-        OrtSession.SessionOptions opts = new OrtSession.SessionOptions();
-        opts.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
-        this.session = env.createSession(onnxPath.toString(), opts);
+        // SessionOptions 用完要关：它持有原生资源。以前每个进程只建一个 encoder 看不出来，
+        // 现在 writer/searcher 各建各的，不关就会随创建次数泄漏。
+        try (OrtSession.SessionOptions opts = new OrtSession.SessionOptions()) {
+            opts.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
+            this.device = OnnxDevice.configure(opts, device, gpuDevice, cudaLibDir);
+            this.session = env.createSession(onnxPath.toString(), opts);
+        }
+        log.info("ONNX 会话已建立：{}，设备 {}", descriptor.name, this.device.detail());
 
         this.tokenizers = new EnumMap<>(ModelDescriptor.Role.class);
         for (ModelDescriptor.Role role : ModelDescriptor.Role.values()) {
@@ -230,6 +250,16 @@ public class TextEncoder implements Closeable {
         return "doc".equalsIgnoreCase(s) ? ModelDescriptor.Role.DOC : ModelDescriptor.Role.QUERY;
     }
 
+    /**
+     * 实际生效的设备。
+     *
+     * <p><b>以它为准判断是否真在 GPU 上</b>：ONNX Runtime 存在静默降级 —— CUDA 初始化失败时
+     * 它可能继续用 CPU 而不报错。{@code device().onGpu()} 才是可信的信号。
+     */
+    public OnnxDevice.Resolved device() {
+        return device;
+    }
+
     @Override
     public void close() {
         try {
@@ -240,17 +270,5 @@ public class TextEncoder implements Closeable {
         for (HuggingFaceTokenizer tk : tokenizers.values()) {
             tk.close();
         }
-    }
-
-    public static void main(String[] args) {
-        try {
-            TextEncoder encoder = new TextEncoder(Path.of("your model path"));
-            float[] vector = encoder.encodeOne("hello", Role.QUERY);
-            System.out.println(vector.length);
-        } catch (Exception e) {
-            System.out.println("model loading failed");
-            System.exit(1);
-        }
-        
     }
 }

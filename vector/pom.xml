@@ -12,22 +12,41 @@
     <artifactId>vector</artifactId>
 
     <!--
-        稠密向量召回：文本 → 向量（ONNX + 分词）→ ANN 检索（jvector/HNSW）。
+        向量索引 SDK —— 与 indexer 定位一致：单机、单进程、无分片的索引器，
+        只不过它把文本变成**向量索引**而不是倒排。
 
-        这个模块**不依赖 Hawk 的任何其他模块**（core/segment/indexer/recall 都不依赖），
-        它是一条独立的召回链路。将来要和倒排做混合召回时再引入依赖。
+        骨架照抄 indexer：
+          indexer.writer.IndexWriter           ↔ vector.writer.VectorIndexWriter
+          indexer.writer.config.IndexConfig    ↔ vector.writer.config.VectorIndexConfig
+          segment 的 Analyzer（文本→词项）      ↔ vector.model.TextEncoder（文本→向量）
+          recall.search.Searcher               ↔ vector.search.VectorSearcher
+          recall.search.ScoreDoc               ↔ vector.search.VectorHit
 
-        注意：父 pom 的 <dependencies> 会被所有子模块继承，所以这里也会拿到
-        Spring Boot Web / MyBatis / MySQL / fastjson / lz4 —— 对本模块大部分用不上，
-        但这是本项目的既有约定。
+        因此**依赖 core**（document.Document / field.Field / directory.PkMapStore 都在那里）。
+        这条依赖取代了原先"本模块不依赖 Hawk 任何模块"的约定：输入模型要和 indexer 共用，
+        主键映射要复用 directory 的既有格式。core 是最底层模块，无框架依赖。
     -->
 
+    <properties>
+        <!-- 推理制品。默认 CPU 版（任何机器都能跑）；要 GPU 用 -Pgpu 换成 CUDA 版。
+             这里插值的是 artifactId —— 两个制品同版本、同 API，只有原生库不同。 -->
+        <onnxruntime.artifact>onnxruntime</onnxruntime.artifact>
+        <onnxruntime.version>1.30.0</onnxruntime.version>
+    </properties>
+
     <dependencies>
-        <!-- 推理。生产要 GPU 时换成 com.microsoft.onnxruntime:onnxruntime_gpu -->
+        <!-- 输入模型（Document / Field）与主键映射（PkMapStore）—— 与 indexer 共用同一套 -->
+        <dependency>
+            <groupId>com.hawk</groupId>
+            <artifactId>core</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- 推理。-Pgpu 换成 onnxruntime_gpu（约 670 MB，且要求宿主机有 CUDA 12 运行时） -->
         <dependency>
             <groupId>com.microsoft.onnxruntime</groupId>
-            <artifactId>onnxruntime</artifactId>
-            <version>1.30.0</version>
+            <artifactId>${onnxruntime.artifact}</artifactId>
+            <version>${onnxruntime.version}</version>
         </dependency>
 
         <!-- 分词：JNI 封装 Rust 的 tokenizers，直接读 tokenizer.json，
@@ -83,5 +102,28 @@
             <artifactId>jul-to-slf4j</artifactId>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <!--
+            构建：mvn -pl vector -am -Pgpu package
+
+            换成 onnxruntime_gpu，通过 ${onnxruntime.artifact} 生效。
+
+            ⚠️ GPU 版**不打包 CUDA 运行时**。实测（ldd）CUDA EP 依赖宿主机提供
+               libcudart.so.12 / libcublas.so.12 / libcublasLt.so.12 / libcurand.so.10
+               （cuDNN 已静态链接进那个 597 MB 的 .so）。
+               缺了这些库，addCUDA() 会抛 OrtException —— OnnxDevice 会按配置回退到 CPU。
+
+            若不便在宿主机装 CUDA 12，可把库集中到一个目录，用
+               VectorIndexConfig.setCudaLibDir(Path)
+               让 OnnxDevice 在建设备前 System.load 预加载（免设 LD_LIBRARY_PATH）。
+        -->
+        <profile>
+            <id>gpu</id>
+            <properties>
+                <onnxruntime.artifact>onnxruntime_gpu</onnxruntime.artifact>
+            </properties>
+        </profile>
+    </profiles>
 
 </project>

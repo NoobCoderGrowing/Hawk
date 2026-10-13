@@ -1,4 +1,4 @@
-package hawk.vector.index;
+package hawk.vector.util;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;

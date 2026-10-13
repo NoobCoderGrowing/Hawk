@@ -27,8 +27,6 @@ public class SearchController {
     public Map<String, Object> meta() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("totalDocs", service.totalDocs());
-        m.put("indexedVectors", service.indexedVectors());
-        m.put("model", service.modelName());
         return m;
     }
 
@@ -40,22 +38,6 @@ public class SearchController {
             return badRequest("请输入查询词。");
         }
         return ResponseEntity.ok(service.searchFullText(query, clamp(topK)));
-    }
-
-    @GetMapping("/search/vector")
-    public ResponseEntity<?> vector(@RequestParam(name = "q") String q,
-                                    @RequestParam(name = "topK", defaultValue = "20") int topK) {
-        String query = q == null ? "" : q.trim();
-        if (query.isEmpty()) {
-            return badRequest("请输入查询词。");
-        }
-        try {
-            return ResponseEntity.ok(service.searchVector(query, clamp(topK)));
-        } catch (Exception e) {
-            // 编码失败通常意味着模型或原生库有问题，把原因原样带出去，别吞
-            return ResponseEntity.status(500).body(Map.of(
-                    "message", "向量编码失败：" + e.getMessage()));
-        }
     }
 
     private static int clamp(int topK) {

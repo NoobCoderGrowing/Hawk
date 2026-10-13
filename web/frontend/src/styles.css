@@ -13,7 +13,6 @@
   --muted: #6b7280;
   --rule: #e4e7eb;
   --fulltext: #1d4ed8;
-  --vector: #0f766e;
   --mark: #fde68a;
   --danger: #9a3412;
 
@@ -26,10 +25,7 @@
   --accent: var(--fulltext);
 }
 
-/* 当前通道色由 data-mode 驱动，页面里所有强调色都跟着它走 */
-.page[data-mode="vector"] {
-  --accent: var(--vector);
-}
+/* 强调色以前由 data-mode 驱动切换通道，现在只剩全文一路，固定用 --fulltext（见 :root） */
 
 * {
   box-sizing: border-box;

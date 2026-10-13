@@ -22,10 +22,12 @@
     <!--
         检索演示台：Spring Boot 后端 + React 前端。
 
-        这是唯一同时依赖**两条召回链路**的模块：
-          · recall —— 倒排检索（Searcher / StringQuery / doc）
-          · vector —— 向量检索（TextEncoder / JVectorIndex / NpyReader）
-        向量 tab 正好演示把两者接起来：向量给出商品 ID，回 recall 取原文。
+        只依赖 recall —— 倒排检索（Searcher / StringQuery / doc）。
+
+        原先它还依赖 vector，是唯一同时接两条召回链路的模块，页面上有两个 tab。
+        向量那一路已移除（vector 模块正在重建，见 VECTOR_MODULE_REBUILD.md），
+        现在只有全文搜索。接回来时应当复用重建后的 VectorSearcher，
+        而不是像以前那样在这里自己读 .npy、自己建 HNSW。
 
         前端源码在 web/frontend/，Vite 构建产物输出到
         web/src/main/resources/static/，由 Spring Boot 直接托管。
@@ -37,11 +39,12 @@
             <artifactId>recall</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
-        <dependency>
-            <groupId>com.hawk</groupId>
-            <artifactId>vector</artifactId>
-            <version>1.0-SNAPSHOT</version>
-        </dependency>
+
+        <!--
+            原先这里还有 com.hawk:vector —— 本模块曾是唯一同时依赖两条召回链路的模块。
+            向量那一路已移除（见 SearchService 的类注释），依赖随之删掉。
+            等 vector 模块重建完（VECTOR_MODULE_REBUILD.md）再按新的 VectorSearcher 接回来。
+        -->
 
         <!-- 版本由 spring-boot-starter-parent 管理 -->
         <dependency>
@@ -70,7 +73,7 @@
                   （major 69），repackage 直接失败。升到 Boot 4 后该障碍已不存在。）
 
                 原先那套「copy-dependencies 平铺到 target/dependency/ 再拼 classpath」
-                已取消，启动方式见 runDemo.sh。
+                已取消，现在直接跑 target/web-1.0-SNAPSHOT.jar。
             -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>

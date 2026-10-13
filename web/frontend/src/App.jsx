@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-// 两个 tab 是两种检索工具，不是同一件事的两个视图 —— 所以各自的查询词、示例、说明都不同。
+// 检索模式。目前只有全文搜索一路 —— 向量那一路已移除（vector 模块正在重建，
+// 见 VECTOR_MODULE_REBUILD.md）。模式仍是数组，接回第二路时加一项即可。
 const MODES = [
   {
     id: 'fulltext',
@@ -8,13 +9,6 @@ const MODES = [
     endpoint: '/api/search/fulltext',
     hint: '按词命中。输入能在商品标题里出现的词。',
     placeholder: '老黄冰糖',
-  },
-  {
-    id: 'vector',
-    label: '向量搜索',
-    endpoint: '/api/search/vector',
-    hint: '按语义邻近。可以用标题里没有的说法。',
-    placeholder: '给老人买的冰糖',
   },
 ]
 
@@ -77,27 +71,26 @@ export default function App() {
         {meta && (
           <p className="masthead-meta">
             倒排 {meta.totalDocs.toLocaleString('en-US')} 篇
-            <span className="sep" />
-            向量 {meta.indexedVectors.toLocaleString('en-US')} 条
-            <span className="sep" />
-            {meta.model}
           </p>
         )}
       </header>
 
-      <nav className="tabs" role="tablist">
-        {MODES.map((m) => (
-          <button
-            key={m.id}
-            role="tab"
-            aria-selected={m.id === mode}
-            className="tab"
-            onClick={() => switchMode(m.id)}
-          >
-            {m.label}
-          </button>
-        ))}
-      </nav>
+      {/* 只有一个模式时不显示 tab 栏 —— 单独一个 tab 没有可切换的对象 */}
+      {MODES.length > 1 && (
+        <nav className="tabs" role="tablist">
+          {MODES.map((m) => (
+            <button
+              key={m.id}
+              role="tab"
+              aria-selected={m.id === mode}
+              className="tab"
+              onClick={() => switchMode(m.id)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       <p className="hint">{active.hint}</p>
 
@@ -122,8 +115,7 @@ export default function App() {
 
       <footer className="footer">
         <p>
-          索引与向量都来自 <code>goods.csv</code>，商品 ID 即该文件第一列。
-          向量一路由 <code>ordinal</code> 换算出商品 ID，再回到倒排索引取原文。
+          索引来自 <code>goods.csv</code>，商品 ID 即该文件第一列。
         </p>
       </footer>
     </div>
@@ -177,17 +169,16 @@ function Hit({ hit, terms }) {
 
       <span className="body">
         <span className="title">
-          {/* null 表示这个商品在倒排索引里已被软删除 —— 向量索引里还留着它的向量 */}
+          {/* null 表示这个商品已被软删除 */}
           {hit.title ? mark(hit.title, terms) : <em className="gone">该商品已从索引中删除</em>}
         </span>
         <span className="attrs">
           <span>商品 ID {hit.productId}</span>
-          {hit.ordinal != null && <span>ordinal {hit.ordinal}</span>}
           {hit.docId != null && <span>doc {hit.docId}</span>}
         </span>
       </span>
 
-      <span className="score">{hit.score.toFixed(hit.ordinal != null ? 4 : 2)}</span>
+      <span className="score">{hit.score.toFixed(2)}</span>
     </li>
   )
 }
