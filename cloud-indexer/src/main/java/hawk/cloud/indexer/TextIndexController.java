@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
 import field.Field;
+import field.FieldType;
 import field.NumberField;
 import field.PrimaryKeyField;
 import field.StringField;
@@ -123,12 +124,9 @@ public class TextIndexController {
 
             Field field;
             try {
-                field = switch (type == null ? "" : type) {
-                    case "StringField" -> item.toJavaObject(StringField.class);
-                    case "NumberField" -> item.toJavaObject(NumberField.class);
-                    case "PrimaryKeyField" -> item.toJavaObject(PrimaryKeyField.class);
-                    default -> null;
-                };
+                // 白名单由 FieldType 统一维护 —— 加新字段类型只改那一个枚举
+                FieldType fieldType = FieldType.byJsonName(type == null ? "" : type);
+                field = fieldType == null ? null : item.toJavaObject(fieldType.fieldClass());
             } catch (RuntimeException e) {
                 // 枚举值写错之类 —— 是客户端问题，给 400 而不是 500
                 return badRequest("fieldList[" + i + "] 解析失败：" + e.getMessage());

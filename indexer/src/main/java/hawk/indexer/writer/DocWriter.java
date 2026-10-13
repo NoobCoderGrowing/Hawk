@@ -4,6 +4,7 @@ import common.Pair;
 import directory.Directory;
 import document.Document;
 import field.NumberField;
+import field.FieldType;
 import field.LongField;
 import field.Field;
 import field.PrimaryKeyField;
@@ -504,29 +505,12 @@ public class DocWriter implements Runnable {
         if(field.isTokenized() == Field.Tokenized.YES){
             termType |= 0b00000010;
         }
-        if(field instanceof NumberField){
-            termType |= 0b00000100;
-        } else if (field instanceof StringField) {
-            termType |= 0b00001000;
-        } else if (field instanceof PrimaryKeyField) {
-            termType |= 0b00010000;
-        } else if (field instanceof LongField) {
-            termType |= 0b00100000;
-        }
+        termType |= FieldType.of(field).bit();
         return termType;
     }
 
     private int storedOnlyFieldLength(Field field) {
-        if (field instanceof PrimaryKeyField) {
-            return 8;
-        } else if (field instanceof StringField) {
-            return ((StringField) field).getValue().length();
-        } else if (field instanceof NumberField) {
-            return 1;
-        } else if (field instanceof LongField) {
-            return 8;
-        }
-        return 0;
+        return FieldType.of(field).fieldLengthOf(field);
     }
 
     public void assembleFieldTypeMap(HashMap<ByteReference, Pair<byte[], Integer>> fieldTypeMap, byte[] fieldName, byte[] type,
@@ -574,27 +558,20 @@ public class DocWriter implements Runnable {
                                     HashMap<ByteReference, Long> docBkd){
         HashMap<ByteReference, Pair<byte[], Integer>> fieldTypeMap = (HashMap) pair.getLeft();
         HashMap<FieldTermPair, int[]> fieldTermMap = (HashMap) pair.getRight();
+        FieldType type = FieldType.of(field);
         byte termType = getFieldType(field);
         byte[] filedName = field.serializeName();
-        int filedLength = 0;
-        if (field instanceof StringField){
-            HashSet<Term> termSet = config.getAnalyzer().anlyze(((StringField) field).getValue(),
-                    ((StringField) field).getName());
-            for (Term t : termSet) {
-                byte[] filedValue = t.getValue().getBytes(StandardCharsets.UTF_8);
-                filedLength = ((StringField) field).getValue().length();
-                assembleFieldTermMap(fieldTermMap, filedName, filedValue, filedLength);
+        int filedLength = type.fieldLengthOf(field);
+        if (type == FieldType.STRING) {
+            // 文本：分词 → 倒排
+            StringField sf = (StringField) field;
+            for (Term t : config.getAnalyzer().anlyze(sf.getValue(), sf.getName())) {
+                assembleFieldTermMap(fieldTermMap, filedName,
+                        t.getValue().getBytes(StandardCharsets.UTF_8), filedLength);
             }
-        } else if (field instanceof NumberField) {
-            double value = ((NumberField) field).getValue();
-            long sortableLong = NumberUtil.double2SortableLong(value);
-            filedLength = 1;
-            docBkd.put(new ByteReference(filedName), sortableLong);
-        } else if (field instanceof LongField) {
-            // long 走另一套保序编码（只翻符号位），**没有 double 的 2^53 精度上限**
-            long value = ((LongField) field).getValue();
-            filedLength = 1;
-            docBkd.put(new ByteReference(filedName), NumberUtil.long2SortableLong(value));
+        } else if (type.isNumericPoint()) {
+            // 数值：编成保序 long → BKD。两种数值类型编码不同，由 FieldType 决定
+            docBkd.put(new ByteReference(filedName), type.encodePoint(field));
         }
         assembleFieldTypeMap(fieldTypeMap, filedName, new byte[]{termType}, filedLength);
     }

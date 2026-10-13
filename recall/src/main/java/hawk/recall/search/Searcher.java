@@ -4,6 +4,7 @@ import common.IndexFormatConfig;
 import common.Pair;
 import document.Document;
 import field.Field;
+import field.FieldType;
 import field.LongField;
 import field.NumberField;
 import field.PrimaryKeyField;
@@ -158,7 +159,7 @@ public class Searcher {
      * 真正需要省内存的是词项 posting，那个走 {@link TermScorer} 顺序读、不物化。
      */
     private ArrayDocIdIterator rangeIterator(RangeQuery query) {
-        BkdReader bkdReader = requireNumericField(query.field(), DOUBLE_BIT, "double");
+        BkdReader bkdReader = requireNumericField(query.field(), FieldType.NUMBER.bit(), "double");
 
         // 开闭区间在 sortable long 上实现：该编码单调，±1 等价于"下一个可表示的 double"
         long minValue = NumberUtil.double2SortableLong(query.lower());
@@ -189,9 +190,6 @@ public class Searcher {
         //    单独查范围时看不出问题（顺序迭代不需要顺序），一旦进交集就会让二分查找给出错答案。
         return new ArrayDocIdIterator(sortedDistinct(arr));
     }
-
-    /** fdm 里 "NumberField"（double）的类型位。 */
-    private static final byte DOUBLE_BIT = 0b00000100;
 
     /**
      * 取数值字段的 BKD，并**校验它的类型**。
@@ -240,7 +238,7 @@ public class Searcher {
      * （{@code long2SortableLong} 只翻符号位，无精度损失），并且开区间是精确的 ±1。
      */
     private ArrayDocIdIterator longRangeIterator(LongRangeQuery query) {
-        BkdReader bkdReader = requireNumericField(query.field(), LongField.TYPE_BIT, "long");
+        BkdReader bkdReader = requireNumericField(query.field(), FieldType.LONG.bit(), "long");
 
         // long 的编码是稠密的，开区间 ±1 精确；注意边界溢出（MIN/MAX 的开区间等于空集）
         long minValue = NumberUtil.long2SortableLong(query.lower());
@@ -290,23 +288,11 @@ public class Searcher {
     // ------------------------------------------------------------------ 取原文
 
     public Field createField(String fieldName, byte[] fieldValue) {
-        HashMap<String, Pair<byte[], Float>> fdmMap = this.directoryReader.getFDMMap();
-        byte fieldType = fdmMap.get(fieldName).getLeft()[0];
-        if ((fieldType & 0b00001000) != 0) { // String field
-            String value = new String(fieldValue, StandardCharsets.UTF_8);
-            return new StringField(fieldName, value);
-        } else if ((fieldType & 0b00000100) != 0) { // double field
-            long longVal = DataInput.readLong(fieldValue);
-            double value = Double.longBitsToDouble(longVal);
-            return new NumberField(fieldName, value);
-        } else if ((fieldType & 0b00010000) != 0) { // primary key field
-            long value = DataInput.readLong(fieldValue);
-            return new PrimaryKeyField(value);
-        } else if ((fieldType & 0b00100000) != 0) { // long field
-            long value = DataInput.readLong(fieldValue);
-            return new LongField(fieldName, value, Field.Tokenized.NO, Field.Stored.YES);
-        }
-        return null;
+        byte typeByte = this.directoryReader.getFDMMap().get(fieldName).getLeft()[0];
+        // 类型位解出类型，低两位还原 stored / tokenized —— 这些信息本来就在同一个字节里
+        return FieldType.byBit(typeByte).decodeStored(fieldName, fieldValue,
+                (typeByte & 0b00000010) != 0 ? Field.Tokenized.YES : Field.Tokenized.NO,
+                (typeByte & 0b00000001) != 0 ? Field.Stored.YES : Field.Stored.NO);
     }
 
     // return: left offset + right offset

@@ -1,6 +1,7 @@
 package hawk.recall.request;
 
 import field.LongField;
+import field.FieldType;
 import hawk.recall.reader.DirectoryReader;
 
 import java.util.ArrayList;
@@ -34,10 +35,6 @@ import java.util.Set;
  */
 public record Schema(Set<String> textFields, Set<String> doubleFields, Set<String> longFields) {
 
-    /** fdm 里 "NumberField" 的类型位。 */
-    private static final byte DOUBLE_BIT = 0b00000100;
-    /** fdm 里 "StringField" 的类型位。 */
-    private static final byte STRING_BIT = 0b00001000;
     /** fdm 里 "Tokenized.YES" 的类型位 —— 只有置了它才真的建了倒排。 */
     private static final byte TOKENIZED_BIT = 0b00000010;
 
@@ -57,16 +54,27 @@ public record Schema(Set<String> textFields, Set<String> doubleFields, Set<Strin
         for (String field : reader.getFDMMap().keySet()) {
             // fdm 的 value 是 Pair<byte[], Float>：Left[0] 是类型位图，Right 是平均字段长度
             byte type = reader.getFDMMap().get(field).getLeft()[0];
-            // 必须同时是 StringField **且** Tokenized.YES：只存原文的字符串字段
-            // （如 goods 索引里的 descript）没有倒排，查它只会静默返回空。
-            if ((type & STRING_BIT) != 0 && (type & TOKENIZED_BIT) != 0) {
-                text.add(field);
-            }
-            if ((type & DOUBLE_BIT) != 0 && bkd.contains(field)) {
-                dbl.add(field);
-            }
-            if ((type & LongField.TYPE_BIT) != 0 && bkd.contains(field)) {
-                lng.add(field);
+            boolean tokenized = (type & TOKENIZED_BIT) != 0;
+            switch (FieldType.byBit(type)) {
+                // 文本必须**建了倒排**才算可检索：只存原文的字符串字段（如 goods 里的
+                // descript）查它只会静默返回空
+                case STRING -> {
+                    if (tokenized) {
+                        text.add(field);
+                    }
+                }
+                // 数值必须真的在 BKD 里 —— 类型位标了但没写成点的字段搜不到
+                case NUMBER -> {
+                    if (bkd.contains(field)) {
+                        dbl.add(field);
+                    }
+                }
+                case LONG -> {
+                    if (bkd.contains(field)) {
+                        lng.add(field);
+                    }
+                }
+                case PRIMARY_KEY -> { /* 主键只进 pk.map，不做范围检索 */ }
             }
         }
         return new Schema(text, dbl, lng);

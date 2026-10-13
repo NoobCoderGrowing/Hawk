@@ -8,6 +8,7 @@ import hawk.cloud.indexer.dataSource.OriDocument;
 import directory.MMapDirectory;
 import document.Document;
 import field.Field;
+import field.FieldType;
 import field.NumberField;
 import field.PrimaryKeyField;
 import field.StringField;
@@ -342,29 +343,15 @@ public class IndexService {
             return null;
         }
         try {
-            if (def instanceof StringField) {
-                return new StringField(name, String.valueOf(value), def.isTokenized(), def.isStored());
-            }
-            if (def instanceof NumberField) {
-                return new NumberField(name, asDouble(value), def.isTokenized(), def.isStored());
-            }
-            if (def instanceof PrimaryKeyField) {
-                return new PrimaryKeyField(name, asLong(value), def.isTokenized(), def.isStored());
-            }
+            // 类型分发交给 FieldType —— 加新字段类型只改那一个枚举
+            return FieldType.of(def).fromRawValue(name, value, def.isTokenized(), def.isStored());
         } catch (NumberFormatException e) {
+            // NumberFormatException 是 IllegalArgumentException 的子类，必须放前面
             log.warn("字段 {} 的值“{}”转不成数字，跳过该字段", name, value);
             return null;
+        } catch (IllegalArgumentException e) {
+            log.warn("{}，跳过字段 {}", e.getMessage(), name);
+            return null;
         }
-        log.warn("认不出的字段定义类型 {}，跳过字段 {}", def.getClass().getSimpleName(), name);
-        return null;
-    }
-
-    /** 数字或能解析成数字的字符串都接受 —— 数据源（如 CSV）可能一切都给字符串。 */
-    private static double asDouble(Object value) {
-        return value instanceof Number number ? number.doubleValue() : Double.parseDouble(String.valueOf(value).trim());
-    }
-
-    private static long asLong(Object value) {
-        return value instanceof Number number ? number.longValue() : Long.parseLong(String.valueOf(value).trim());
     }
 }
