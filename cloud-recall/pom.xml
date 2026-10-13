@@ -36,7 +36,7 @@
         <dependency>
             <groupId>io.github.noobcodergrowing</groupId>
             <artifactId>JRegistryClient</artifactId>
-            <version>1.0.4</version>
+            <version>1.0.5</version>
         </dependency>
 
         <!-- HTTP 层的 JSON 换成 fastjson（见 FastJsonWebConfig）。此前只是 JRegistryClient

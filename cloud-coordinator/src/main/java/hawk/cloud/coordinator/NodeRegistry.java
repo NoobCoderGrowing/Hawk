@@ -13,7 +13,6 @@ import org.springframework.stereotype.Component;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +44,15 @@ import java.util.Map;
  * <h2>怎么拿到「所有」节点</h2>
  * 用 {@code JRegistryClient.listAll(path)}（1.0.4 新增，走 {@code type="ls"}）列出某个路径
  * 下的所有键值对。它返回整棵子树里的**叶子**，也就是每个已登记节点的 {@code ip:port}。
+ *
+ * <h2>谁在线由注册中心说了算</h2>
+ * <b>协调器不再自己探活。</b>注册中心（服务端 1.0.5 起）跟踪每个 client 登记的 key 的上下线状态，
+ * {@code ls} 回包里每条 KV 带一个 {@code offline} 标记，见 {@code KV#isOffline()}。
+ * 所以这里只做一件事：**轮询并把在线的 KV 收进字典**，{@code offline=true} 的直接跳过 ——
+ * 于是节点掉线会自然地表现为"下一轮它不在列表里"，日志上就是一条「下线」。
+ *
+ * <p>（早先这里配了一套 health check：协调器主动探每个节点的 {@code /health}、连续失败就删注册中心的
+ * kv 并摘掉本地节点。注册中心自己能判上下线之后就多余了，那套代码已移除。）
  *
  * <h2>变化的判定</h2>
  * 每轮对每个 role 拉全量，展平成 {@code shard-num/shard-id -> ip:port} 后与上一轮逐个比对，
@@ -78,12 +86,6 @@ public class NodeRegistry implements DisposableBean {
 
     /** 未配置 registry-address 时只警告一次，不要每分钟刷一行。 */
     private boolean warnedUnconfigured;
-
-    /**
-     * 改字典的互斥锁。两条路径会改字典：{@link #poll()} 整体替换、{@link #condemn} 摘掉一个节点。
-     * 不加锁的话两者会互相覆盖 —— 健康检查刚判死的节点会被紧接着的轮询按注册中心旧内容写回来。
-     */
-    private final Object dictLock = new Object();
 
     // ---------------------------------------------------------------- 四个字典
     // 每个都是 shard-num -> (shard-id -> ip:port) 两层。整体替换（volatile 换引用），读侧不加锁。
@@ -120,132 +122,54 @@ public class NodeRegistry implements DisposableBean {
             return;
         }
 
-        // 拉取与替换都放在锁里：fetch 只有几十毫秒，但期间若被 condemn 插进来摘节点，
-        // 随后这里的整体替换会把它又写回去。
-        synchronized (dictLock) {
-            Map<String, Map<String, String>> newTextIndexers = fetchNodes(ROLE_TEXT_INDEXER);
-            Map<String, Map<String, String>> newVectorIndexers = fetchNodes(ROLE_VECTOR_INDEXER);
-            Map<String, Map<String, String>> newTextRecalls = fetchNodes(ROLE_TEXT_RECALL);
-            Map<String, Map<String, String>> newVectorRecalls = fetchNodes(ROLE_VECTOR_RECALL);
+        Map<String, Map<String, String>> newTextIndexers = fetchNodes(ROLE_TEXT_INDEXER);
+        Map<String, Map<String, String>> newVectorIndexers = fetchNodes(ROLE_VECTOR_INDEXER);
+        Map<String, Map<String, String>> newTextRecalls = fetchNodes(ROLE_TEXT_RECALL);
+        Map<String, Map<String, String>> newVectorRecalls = fetchNodes(ROLE_VECTOR_RECALL);
 
-            logChanges(ROLE_TEXT_INDEXER, textIndexers, newTextIndexers);
-            logChanges(ROLE_VECTOR_INDEXER, vectorIndexers, newVectorIndexers);
-            logChanges(ROLE_TEXT_RECALL, textRecalls, newTextRecalls);
-            logChanges(ROLE_VECTOR_RECALL, vectorRecalls, newVectorRecalls);
+        logChanges(ROLE_TEXT_INDEXER, textIndexers, newTextIndexers);
+        logChanges(ROLE_VECTOR_INDEXER, vectorIndexers, newVectorIndexers);
+        logChanges(ROLE_TEXT_RECALL, textRecalls, newTextRecalls);
+        logChanges(ROLE_VECTOR_RECALL, vectorRecalls, newVectorRecalls);
 
-            this.textIndexers = newTextIndexers;
-            this.vectorIndexers = newVectorIndexers;
-            this.textRecalls = newTextRecalls;
-            this.vectorRecalls = newVectorRecalls;
+        this.textIndexers = newTextIndexers;
+        this.vectorIndexers = newVectorIndexers;
+        this.textRecalls = newTextRecalls;
+        this.vectorRecalls = newVectorRecalls;
 
-            log.debug("轮询完成：{}",
-                    summarize(newTextIndexers, newVectorIndexers, newTextRecalls, newVectorRecalls));
-        }
+        log.debug("轮询完成：{}",
+                summarize(newTextIndexers, newVectorIndexers, newTextRecalls, newVectorRecalls));
     }
 
-    /**
-     * 判死一个节点：先让注册中心删掉对应的 kv，再从本地字典摘掉它。
-     *
-     * <p>删除走的是 {@code JRegistryClient.delete(key)}，key 用带前导斜杠的
-     * {@code /cloud/{role}/{shard-num}/{shard-id}} —— 与登记时写入的形式一致。
-     * （{@code KeyPath.split} 会剥掉首尾斜杠，所以和 {@code ls} 返回的不带斜杠形式等价。）
-     *
-     * <p>注意 {@code delete} 是单向发送、不等回执：调用返回不代表注册中心已落库。若删除没生效，
-     * 下一轮 {@link #poll()} 会把这个节点又拉回来，再被判死一次 —— 会形成慢速自愈循环，
-     * 但不会误删活节点。
-     */
-    public void condemn(String role, String shardNum, String shardId) {
-        String absoluteKey = "/" + ROOT + "/" + role + "/" + shardNum + "/" + shardId;
-        if (client != null && client.isConnected()) {
-            client.delete(absoluteKey);
-        } else {
-            log.warn("注册中心未连接，只从本地字典移除，未通知注册中心：{}", absoluteKey);
-        }
-
-        synchronized (dictLock) {
-            switch (role) {
-                case ROLE_TEXT_INDEXER -> textIndexers = without(textIndexers, shardNum, shardId);
-                case ROLE_VECTOR_INDEXER -> vectorIndexers = without(vectorIndexers, shardNum, shardId);
-                case ROLE_TEXT_RECALL -> textRecalls = without(textRecalls, shardNum, shardId);
-                case ROLE_VECTOR_RECALL -> vectorRecalls = without(vectorRecalls, shardNum, shardId);
-                default -> log.warn("未知 role，未从字典移除：{}", absoluteKey);
-            }
-        }
-    }
-
-    /** 复制一份字典并摘掉 {@code shardNum/shardId}；该分片空了就一并去掉分片。 */
-    private static Map<String, Map<String, String>> without(Map<String, Map<String, String>> byShard,
-                                                            String shardNum, String shardId) {
-        Map<String, String> replicas = byShard.get(shardNum);
-        if (replicas == null || !replicas.containsKey(shardId)) {
-            return byShard;   // 没有可摘的，原样返回
-        }
-        Map<String, Map<String, String>> copy = new LinkedHashMap<>(byShard);
-        Map<String, String> remaining = new LinkedHashMap<>(replicas);
-        remaining.remove(shardId);
-        if (remaining.isEmpty()) {
-            copy.remove(shardNum);
-        } else {
-            copy.put(shardNum, remaining);
-        }
-        return copy;
-    }
-
-    /** 列出某个 role 子树下的所有叶子，按 shard-num / shard-id 两层归类。 */
+    /** 列出某个 role 子树下的所有在线节点，按 shard-num / shard-id 两层归类。 */
     private Map<String, Map<String, String>> fetchNodes(String role) {
-        String path = ROOT + "/" + role;
-        List<KV> kvs = client.listAll(path);
+        List<KV> kvs = client.listAll(ROOT + "/" + role);
         if (kvs == null) {
             // listAll 把「路径不存在」和「请求失败」都表示成 null。走到这里说明连接是好的
             // （ensureConnected 已确认），所以按「该 role 当前一个节点都没有」处理。
             return Map.of();
         }
+
         Map<String, Map<String, String>> out = new LinkedHashMap<>();
         for (KV kv : kvs) {
-            String absolute = absoluteKey(path, kv.getKey());
-            String[] shardAndId = splitShardAndId(role, absolute);
-            if (shardAndId == null) {
-                log.warn("[{}] 这个键不是 {}/{}/{shard-num}/{shard-id} 的形状，已跳过：{}",
-                        role, ROOT, role, absolute);
+            // 注册中心跟踪每个 key 的上下线状态（KV#isOffline，服务端 1.0.5 起）。
+            // 字典只收在线的 —— 掉线的节点不该出现在协调器的节点表里，于是它掉线后
+            // 下一轮就不在列表里，日志上自然是一条「下线」。
+            if (kv.isOffline()) {
                 continue;
             }
-            out.computeIfAbsent(shardAndId[0], k -> new LinkedHashMap<>())
-                    .put(shardAndId[1], kv.getData() == null ? "" : new String(kv.getData(), StandardCharsets.UTF_8));
+            // ls 返回的是绝对路径，形如 cloud/{role}/{shard-num}/{shard-id}
+            String[] parts = kv.getKey().split("/");
+            if (parts.length != 4 || !ROOT.equals(parts[0]) || !role.equals(parts[1])) {
+                log.warn("[{}] 这个键不是 {}/{}/{{shard-num}}/{{shard-id}} 的形状，已跳过：{}",
+                        role, ROOT, role, kv.getKey());
+                continue;
+            }
+            out.computeIfAbsent(parts[2], k -> new LinkedHashMap<>())
+                    .put(parts[3], kv.getData() == null
+                            ? "" : new String(kv.getData(), StandardCharsets.UTF_8));
         }
         return out;
-    }
-
-    /**
-     * 从绝对 key（{@code cloud/{role}/{shard-num}/{shard-id}}）里取出后两段。
-     * 层级对不上时返回 {@code null}。静态以便单测。
-     *
-     * @return {@code [shard-num, shard-id]}
-     */
-    static String[] splitShardAndId(String role, String absoluteKey) {
-        String[] parts = absoluteKey.split("/");
-        if (parts.length != 4 || !ROOT.equals(parts[0]) || !role.equals(parts[1])) {
-            return null;
-        }
-        return new String[]{parts[2], parts[3]};
-    }
-
-    /**
-     * 把 listAll 返回的 key 还原成绝对路径。
-     *
-     * <p>服务端 {@code StateMachine.ls} 的注释说返回的是绝对完整路径，但实测**查询深度 ≥ 2 时
-     * 最外层那段会丢**：{@code ls("cloud/text-indexer")} 返回 {@code text-indexer/shard-1/id-0}，
-     * 而 {@code ls("cloud")} 返回 {@code cloud/text-indexer/shard-1/id-0}。原因是 collectKVs 的
-     * prefix 从空串起步，而不是从「被查节点的父路径」起。
-     *
-     * <p>这里两种都兼容：已经是绝对路径就原样用，否则补上查询路径的父段。服务端哪天修了，
-     * 这段照样成立。
-     */
-    private static String absoluteKey(String queryPath, String returned) {
-        if (returned.equals(queryPath) || returned.startsWith(queryPath + "/")) {
-            return returned;
-        }
-        int slash = queryPath.lastIndexOf('/');
-        return slash < 0 ? returned : queryPath.substring(0, slash + 1) + returned;
     }
 
     /** 与上一轮快照比对，把上线 / 下线 / 地址变更记进日志。 */
@@ -354,28 +278,6 @@ public class NodeRegistry implements DisposableBean {
     /** 向量索引分片：shard-num -> (shard-id -> ip:port)。 */
     public Map<String, Map<String, String>> vectorRecalls() {
         return vectorRecalls;
-    }
-
-    /** 一个节点的引用，供健康检查遍历四个字典用。 */
-    public record NodeRef(String role, String shardNum, String shardId, String address) {
-    }
-
-    /** 四个字典里的全部节点。 */
-    public List<NodeRef> allNodes() {
-        List<NodeRef> out = new ArrayList<>();
-        collect(out, ROLE_TEXT_INDEXER, textIndexers);
-        collect(out, ROLE_VECTOR_INDEXER, vectorIndexers);
-        collect(out, ROLE_TEXT_RECALL, textRecalls);
-        collect(out, ROLE_VECTOR_RECALL, vectorRecalls);
-        return out;
-    }
-
-    private static void collect(List<NodeRef> out, String role, Map<String, Map<String, String>> byShard) {
-        for (Map.Entry<String, Map<String, String>> shard : byShard.entrySet()) {
-            for (Map.Entry<String, String> replica : shard.getValue().entrySet()) {
-                out.add(new NodeRef(role, shard.getKey(), replica.getKey(), replica.getValue()));
-            }
-        }
     }
 
     @Override

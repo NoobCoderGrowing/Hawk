@@ -30,16 +30,6 @@ hawk:
       # 轮询间隔（毫秒），默认 60 秒。管的是「成员与地址」——从注册中心拉谁在册。
       poll-interval-ms: ${HAWK_COORDINATOR_POLL_MS:60000}
 
-      # 健康检查：探每个节点的 GET /health，连续失败到阈值就通知注册中心删 kv + 本地字典摘掉。
-      # 与上面的轮询是**独立**的两条时间线：轮询管成员，这里管存活。
-      # 15 秒 × 3 次 = 最坏约 45 秒发现。再短会在 GC / 建索引的秒级停顿上误报。
-      health-interval-ms: ${HAWK_COORDINATOR_HEALTH_MS:15000}
-      # 单次探测的超时（连接 + 响应）。假死节点靠它兜住，不然会拖住整轮。
-      health-timeout-ms: ${HAWK_COORDINATOR_HEALTH_TIMEOUT_MS:2000}
-      # 连续失败几次判死。
-      health-fail-threshold: ${HAWK_COORDINATOR_HEALTH_FAILS:3}
-      # 同时在飞的探测请求数上限。挂掉一批节点时，避免单轮耗时累加到超过间隔。
-      health-concurrency: ${HAWK_COORDINATOR_HEALTH_CONCURRENCY:8}
 
 logging:
   level:
