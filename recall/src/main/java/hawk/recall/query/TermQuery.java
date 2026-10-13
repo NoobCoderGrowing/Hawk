@@ -1,15 +1,22 @@
 package hawk.recall.query;
 
-import lombok.Data;
+import java.util.Objects;
 
-@Data
-public class TermQuery extends Query{
+/**
+ * 词项查询：某个字段等于某个**词**。
+ *
+ * <p>注意 {@code term} 是**已经分好的词**，不是用户输入的原文 —— 原文要经
+ * {@code StringQuery#getTermQueryList(analyzer)}（或请求层的编译）先摊平。
+ */
+public record TermQuery(String field, String term) implements Query {
 
-    private String field;
-    private String term;
+    public TermQuery {
+        Objects.requireNonNull(field, "field 不能为空");
+        Objects.requireNonNull(term, "term 不能为空");
+    }
 
-    public TermQuery(String fieldName, String term) {
-        this.field = fieldName;
-        this.term = term;
+    /** 便于流式拼装。 */
+    public static TermQuery of(String field, String term) {
+        return new TermQuery(field, term);
     }
 }

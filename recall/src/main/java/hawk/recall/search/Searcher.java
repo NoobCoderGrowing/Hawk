@@ -1,265 +1,238 @@
 package hawk.recall.search;
 
+import common.IndexFormatConfig;
+import common.Pair;
 import document.Document;
-import field.NumberField;
 import field.Field;
+import field.NumberField;
 import field.PrimaryKeyField;
 import field.StringField;
-import hawk.recall.config.SearchConfig;
 import hawk.recall.query.BooleanQuery;
-import hawk.recall.query.NumericRangeQuery;
+import hawk.recall.query.MatchAllQuery;
+import hawk.recall.query.MatchNoneQuery;
+import hawk.recall.query.Occur;
 import hawk.recall.query.Query;
-import hawk.recall.query.StringQuery;
+import hawk.recall.query.RangeQuery;
 import hawk.recall.query.TermQuery;
 import hawk.recall.reader.DirectoryReader;
-import hawk.recall.reader.TermFstUtil;
-import hawk.recall.similarity.Similarity;
-import hawk.segment.core.Term;
-import hawk.segment.core.anlyzer.Analyzer;
-import io.github.noobcodergrowing.JFST.FST;
-import io.github.noobcodergrowing.JFST.fstNode;
-import io.github.noobcodergrowing.JFST.fstPair;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import net.jpountz.lz4.LZ4FastDecompressor;
-
 import util.DataInput;
 import util.NumberUtil;
-import util.WrapLong;
 import util.bkd.BkdReader;
-import common.IndexFormatConfig;
-import common.Pair;
-
 
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeMap;
 
+/**
+ * 检索执行 —— 把一棵 {@link Query} 跑成 {@link TopDocs}。
+ *
+ * <h2>Searcher 不认识"文本"</h2>
+ * 这里只处理**已经分好词**的 {@link Query}。分词是"请求层"的事
+ * （{@code StringQuery#getTermQueryList(analyzer)} 或 {@code RequestCompiler}），
+ * 所以本类**不需要 analyzer** —— 构造器也不收 {@code SearchConfig}。
+ *
+ * <h2>执行模型：拉取式迭代器</h2>
+ * 检索是"拉"的：{@link DocIdIterator} 按**升序 docID** 逐个吐文档，收集器逐个收。
+ * 组合器（{@link ConjunctionScorer} leapfrog 求交、{@link DisjunctionScorer} 堆求并、
+ * {@link BooleanScorer} 合成四种角色）全程只持有游标，**不物化中间结果**。
+ *
+ * <p>对比改前：每个叶子先出完整 {@code ScoreDoc[]}，布尔组合在数组上做集合运算。
+ * 那是 O(命中数) 内存；现在是 O(子句数)。
+ *
+ * <h2>已知局限</h2>
+ * {@link ScoreMode#TOP_SCORES} 目前**还没有真正省分数计算** —— 提前终止需要块最大分
+ * （block-max WAND）那类上界信息，尚未实现。所以 TOP_SCORES 与 COMPLETE 当前等价，
+ * 但接口形状已经就位，实现可以后补而不动调用方。
+ */
 @Slf4j
 @Data
 public class Searcher {
 
     private DirectoryReader directoryReader;
 
-    private SearchConfig searchConfig;
-
     private IndexFormatConfig indexFormatConfig;
 
-    public Searcher(DirectoryReader directoryReader, SearchConfig searchConfig, IndexFormatConfig indexFormatConfig) {
+    public Searcher(DirectoryReader directoryReader, IndexFormatConfig indexFormatConfig) {
         this.directoryReader = directoryReader;
-        this.searchConfig = searchConfig;
         this.indexFormatConfig = indexFormatConfig;
     }
 
-    public ScoreDoc[] searchString(StringQuery query){
-        Analyzer analyzer = searchConfig.getAnalyzer();
-        HashSet<Term> terms = analyzer.anlyze(query.getValue(), query.getField());
-        ScoreDoc[][] scoreDocs = new ScoreDoc[terms.size()][];
-        int i = 0;
-        BooleanQuery andQuery = new BooleanQuery(BooleanQuery.Operation.MUST);
-        BooleanQuery orQuery = new BooleanQuery(BooleanQuery.Operation.SHOULD);
-        for (Term term: terms) {
-            String field = term.getFieldName();
-            String termStr = term.getValue();
-            TermQuery termQuery = new TermQuery(field, termStr);
-            andQuery.addQuery(termQuery);
-            orQuery.addQuery(termQuery);
-        }
-        ScoreDoc[] andSearchRet = booleanSearch(andQuery);
-        if(andSearchRet!=null && andSearchRet.length != 0) return andSearchRet;
-        ScoreDoc[] orSearchRet = booleanSearch(orQuery);
-        return orSearchRet;
+    // ------------------------------------------------------------------ 入口
+
+    /** 默认 {@link ScoreMode#TOP_SCORES}。 */
+    public TopDocs search(Query query, int limit) {
+        return search(query, limit, ScoreMode.TOP_SCORES);
     }
 
-    public ScoreDoc[] searchTerm(TermQuery query){
-        String field = query.getField();
-        String term = query.getTerm();
-        HashMap<String, Pair<byte[], Float>> fdmMap = directoryReader.getFDMMap();
-        float averageDocLength = fdmMap.get(field).getRight();
-        FST termFST = directoryReader.getTermFST();
-        MemorySegment frqBuffer = directoryReader.getFRQBuffer();
-        fstPair<ArrayList<fstNode>, Long> searchRet =
-                termFST.search(TermFstUtil.toCharArray(TermFstUtil.termKey(field, term)));
-        if (searchRet == null) {
-            return null;
-        }
-        // 偏移全程用 long：posting 偏移在磁盘上是 VLong，.frq 可超过 2 GiB
-        WrapLong frqOffsetWrapper = new WrapLong(searchRet.getValue());
-        int termFrequency = DataInput.readVintAt(frqBuffer, frqOffsetWrapper);
-        List<ScoreDoc> hits = new ArrayList<>();
-        for (int i = 0; i < termFrequency; i++) {
-            int docID = DataInput.readVintAt(frqBuffer, frqOffsetWrapper);
-            int docFrequency = DataInput.readVintAt(frqBuffer,frqOffsetWrapper);
-            int docFieldLength = DataInput.readVintAt(frqBuffer,frqOffsetWrapper);
-            if (!directoryReader.isLive(docID)) {
-                continue;
-            }
-            float score = Similarity.BM25(directoryReader.numDocs(),termFrequency, docFrequency,
-                    docFieldLength, averageDocLength);
-            ScoreDoc hit = new ScoreDoc(score, docID);
-            hits.add(hit);
-        }
-        return hits.toArray(new ScoreDoc[0]);
-    }
+    /**
+     * 检索。
+     *
+     * @param limit     最多返回多少条；**总数不受它影响**
+     * @param scoreMode 要不要打分。纯筛选查询用 {@link ScoreMode#NO_SCORES} 可省掉整条打分链路
+     */
+    public TopDocs search(Query query, int limit, ScoreMode scoreMode) {
+        Objects.requireNonNull(query, "query");
+        Objects.requireNonNull(scoreMode, "scoreMode");
 
-    public ScoreDoc[] searchNumericRange(NumericRangeQuery query) {
-        return searchNumericRange(query, Integer.MAX_VALUE);
-    }
+        boolean scoring = scoreMode.needsScores();
+        Scorer scorer = eval(query, scoring);
+        TopScoreDocCollector collector = new TopScoreDocCollector(limit, scoring);
 
-    public ScoreDoc[] searchNumericRange(NumericRangeQuery query, int topN) {
-        if (topN <= 0) {
-            return new ScoreDoc[0];
+        for (int doc = scorer.nextDoc(); doc != DocIdIterator.NO_MORE_DOCS; doc = scorer.nextDoc()) {
+            collector.collect(doc, scorer.score());
         }
-        String field = query.getField();
-        double lower = query.getLower();
-        double upper = query.getUpper();
-        BkdReader bkdReader = directoryReader.getBkdReaders().get(field);
-        if (bkdReader == null) {
-            return new ScoreDoc[0];
-        }
-        long minValue = NumberUtil.double2SortableLong(lower);
-        long maxValue = NumberUtil.double2SortableLong(upper);
-        if (topN == Integer.MAX_VALUE) {
-            List<ScoreDoc> hits = new ArrayList<>();
-            bkdReader.intersect(minValue, maxValue, docId -> {
-                if (directoryReader.isLive(docId)) {
-                    hits.add(new ScoreDoc(0, docId));
-                }
-                return true;
-            });
-            return hits.toArray(new ScoreDoc[0]);
-        }
-        TopScoreDocCollector collector = new TopScoreDocCollector(topN);
-        boolean checkLive = directoryReader.hasDeletions();
-        bkdReader.intersect(minValue, maxValue, docId -> {
-            if (checkLive && !directoryReader.isLive(docId)) {
-                return !collector.isSaturated(0f);
-            }
-            collector.collect(0f, docId);
-            return !collector.isSaturated(0f);
-        });
         return collector.topDocs();
     }
 
+    // ------------------------------------------------------------------ 把 Query 编成 Scorer 树
 
-    public ScoreDoc[] booleanSearch(BooleanQuery query){
-        Enum<BooleanQuery.Operation> operationEnum = query.getOperation();
-        if(operationEnum == BooleanQuery.Operation.MUST) return andSearch(query);
-        return orSearch(query);
+    private Scorer eval(Query query, boolean scoring) {
+        return switch (query) {
+            case TermQuery t -> termScorer(t, scoring);
+            case RangeQuery r -> new ConstantScorer(rangeIterator(r), 0f);
+            case BooleanQuery b -> booleanScorer(b, scoring);
+            case MatchAllQuery ignored -> new ConstantScorer(matchAllIterator(), 0f);
+            case MatchNoneQuery ignored -> ConstantScorer.empty();
+        };
     }
 
-    public ScoreDoc binarySearch(ScoreDoc[] list, ScoreDoc target){
-        int first = 0;
-        int last = list.length -1;
-
-        int mid = (first + last) / 2;
-        while (first <= last) {
-            if (list[mid].docID < target.docID) {
-                first = mid + 1;
-            } else if (list[mid].docID == target.docID) {
-                return list[mid];
-            } else if (list[mid].docID > target.docID) {
-                last = mid - 1;
-            }
-            mid = (first + last) / 2;
-        }
-        return null;
+    private Scorer termScorer(TermQuery query, boolean scoring) {
+        TermScorer scorer = TermScorer.of(directoryReader, query.field(), query.term(), scoring);
+        // 词不存在是**正常情况**（这个字段里没这个词），返回空而不是报错
+        return scorer == null ? ConstantScorer.empty() : scorer;
     }
 
-    public ScoreDoc[] andSearch(BooleanQuery booleanQuery){
-        List<Query> queries = booleanQuery.getQueries();
-        List<ScoreDoc[]> hitsList = new ArrayList<>();
-        for (int i = 0; i < queries.size(); i++) { // recall each term
-            Query query = queries.get(i);
-            ScoreDoc[] hits;
-            if(query instanceof TermQuery){
-                hits = searchTerm((TermQuery) query);
-            }else if(query instanceof NumericRangeQuery){
-                hits = searchNumericRange((NumericRangeQuery) query);
-            } else {
-                hits = booleanSearch((BooleanQuery) query);
-            }
-            if(hits == null) return null;
-            hitsList.add(hits);
-        }// sort recall result by their length
-        if(hitsList.size() == 0) return null;
-        Collections.sort(hitsList, Comparator.comparingInt(a -> a.length));;
-        List<ScoreDoc> result = new ArrayList<>();
-        for (int i = 0; i < hitsList.get(0).length; i++) {
-            result.add(hitsList.get(0)[i]);
-        }
-        ArrayList<ScoreDoc> needDelete = new ArrayList<>();
-        // binary search shorter list in longer list to find intersection
-        for (int i = 1; i < hitsList.size(); i++) { // start intersection
-            if(result.size() == 0) return null; // if result list size becomes 0 during intersection, immediately retrun
-            ScoreDoc[] hits = hitsList.get(i);
-            for (int j = 0; j < result.size(); j++) { // binary search shorter list in the longer list
-                ScoreDoc target = result.get(j);
-                ScoreDoc match = binarySearch(hits, target);
-                if(match != null){ // if match happens, add score
-                    target.setScore(target.getScore() + match.score);
-                }else{ //if mismatch, delete mismatched item after cur iteration
-                    needDelete.add(target);
+    private Scorer booleanScorer(BooleanQuery query, boolean scoring) {
+        List<Scorer> requiredAll = new ArrayList<>();       // MUST + FILTER：都要参加交集
+        List<Scorer> requiredScoring = new ArrayList<>();   // 其中 MUST 才算分
+        List<Scorer> optional = new ArrayList<>();          // SHOULD
+        List<Scorer> excluded = new ArrayList<>();          // MUST_NOT
+
+        for (BooleanQuery.Clause clause : query.clauses()) {
+            Scorer sub = eval(clause.query(), scoring);
+            switch (clause.occur()) {
+                case MUST -> {
+                    requiredAll.add(sub);
+                    requiredScoring.add(sub);
                 }
+                case FILTER -> requiredAll.add(sub);
+                case SHOULD -> optional.add(sub);
+                case MUST_NOT -> excluded.add(sub);
             }
-            result.removeAll(needDelete);
-            needDelete.clear();
         }
-        if(result.size() > 0) return result.toArray(new ScoreDoc[0]);
-        return null;
+
+        ConjunctionScorer conjunction = requiredAll.isEmpty()
+                ? null : new ConjunctionScorer(requiredAll, requiredScoring);
+        DisjunctionScorer disjunction = optional.isEmpty()
+                ? null : new DisjunctionScorer(optional);
+
+        // 只有 SHOULD 子句时，至少得命中一个 —— 否则整个查询等价于 MatchAll
+        int minShould = query.minShouldMatch() > 0 ? query.minShouldMatch()
+                : (conjunction == null && disjunction != null ? 1 : 0);
+
+        return new BooleanScorer(conjunction, disjunction, excluded, minShould);
     }
 
-    public ScoreDoc[] orSearch(BooleanQuery booleanQuery){
-        List<Query> queries = booleanQuery.getQueries();
-        List<ScoreDoc[]> hitsList = new ArrayList<>();
-        HashSet<ScoreDoc> retSet = new HashSet<>();
-        for (int i = 0; i < queries.size(); i++) { // recall each term
-            Query query = queries.get(i);
-            ScoreDoc[] hits;
-            if(query instanceof TermQuery){
-                hits = searchTerm((TermQuery) query);
-            }else if(query instanceof NumericRangeQuery){
-                hits = searchNumericRange((NumericRangeQuery) query);
-            } else {
-                hits = booleanSearch((BooleanQuery) query);
-            }
-            if(hits != null) hitsList.add(hits);
-        }
-        if(hitsList.size() == 0) return null;
+    // ------------------------------------------------------------------ 叶子：数值 / 全部
 
-        for (int i = 0; i < hitsList.size(); i++) {
-            for (int j = 0; j < hitsList.get(i).length; j++) {
-                retSet.add(hitsList.get(i)[j]);
-            }
+    /**
+     * 数值区间 → docID 升序数组。
+     *
+     * <p>{@code BkdReader.intersect} 是**回调式**的（push），拿不到拉取式游标。
+     * 它的输出只是 docID、数量有限，物化成数组再用 {@link ArrayDocIdIterator}
+     * 包起来，就保持了"叶子都是迭代器"的统一形状。
+     * 真正需要省内存的是词项 posting，那个走 {@link TermScorer} 顺序读、不物化。
+     */
+    private ArrayDocIdIterator rangeIterator(RangeQuery query) {
+        HashMap<String, BkdReader> bkdReaders = directoryReader.getBkdReaders();
+        BkdReader bkdReader = bkdReaders.get(query.field());
+        if (bkdReader == null) {
+            List<String> known = new ArrayList<>(bkdReaders.keySet());
+            known.sort(String::compareTo);
+            throw new IllegalArgumentException(
+                    "索引里没有数值字段「" + query.field() + "」。可用的是：" + known);
         }
 
-        return new ArrayList<>(retSet).toArray(new ScoreDoc[0]);
-    }
+        // 开闭区间在 sortable long 上实现：该编码单调，±1 等价于"下一个可表示的 double"
+        long minValue = NumberUtil.double2SortableLong(query.lower());
+        if (!query.includeLower()) {
+            minValue++;
+        }
+        long maxValue = NumberUtil.double2SortableLong(query.upper());
+        if (!query.includeUpper()) {
+            maxValue--;
+        }
+        if (minValue > maxValue) {
+            return new ArrayDocIdIterator(new int[0]);
+        }
 
-    public ScoreDoc[] topN(ScoreDoc[] scoreDocs, int n){
-        if(scoreDocs == null || scoreDocs.length == 0) return new ScoreDoc[0];
-        Arrays.sort(scoreDocs, new Comparator<ScoreDoc>() {
-            @Override
-            public int compare(ScoreDoc o1, ScoreDoc o2) {
-                if(o1.getScore() - o2.getScore() < 0){
-                    return 1;
-                } else if (o1.getScore() - o2.getScore() > 0) {
-                    return -1;
-                }
-                return 0;
+        List<Integer> ids = new ArrayList<>();
+        bkdReader.intersect(minValue, maxValue, docId -> {
+            if (directoryReader.isLive(docId)) {
+                ids.add(docId);
             }
+            return true;
         });
-        return Arrays.copyOfRange(scoreDocs, 0, Math.min(n, scoreDocs.length));
+        int[] arr = new int[ids.size()];
+        for (int i = 0; i < arr.length; i++) {
+            arr[i] = ids.get(i);
+        }
+        // ⚠️ 必须排序：BKD 的 intersect 是**树序遍历**，回调出来的 docID **不保证升序**
+        //    （实测 2026 条里有 200 处逆序）。ArrayDocIdIterator 的契约是严格升序，
+        //    单独查范围时看不出问题（顺序迭代不需要顺序），一旦进交集就会让二分查找给出错答案。
+        return new ArrayDocIdIterator(sortedDistinct(arr));
     }
 
-    public Field createField(String fieldName, byte[] fieldValue){
+    /** 排序 + 去重，满足 {@link ArrayDocIdIterator} 的**严格**升序契约。 */
+    private static int[] sortedDistinct(int[] raw) {
+        if (raw.length == 0) {
+            return raw;
+        }
+        java.util.Arrays.sort(raw);
+        int n = 1;
+        for (int i = 1; i < raw.length; i++) {
+            if (raw[i] != raw[n - 1]) {
+                raw[n++] = raw[i];
+            }
+        }
+        return n == raw.length ? raw : java.util.Arrays.copyOf(raw, n);
+    }
+
+    private ArrayDocIdIterator matchAllIterator() {
+        int total = directoryReader.getTotalDoc();
+        List<Integer> ids = new ArrayList<>();
+        for (int docId = 0; docId < total; docId++) {
+            if (directoryReader.isLive(docId)) {
+                ids.add(docId);
+            }
+        }
+        int[] arr = new int[ids.size()];
+        for (int i = 0; i < arr.length; i++) {
+            arr[i] = ids.get(i);
+        }
+        return new ArrayDocIdIterator(arr);
+    }
+
+    // ------------------------------------------------------------------ 取原文
+
+    public Field createField(String fieldName, byte[] fieldValue) {
         HashMap<String, Pair<byte[], Float>> fdmMap = this.directoryReader.getFDMMap();
         byte fieldType = fdmMap.get(fieldName).getLeft()[0];
-        if((fieldType & 0b00001000) != 0){ // String field
-            String value = new String(fieldValue,StandardCharsets.UTF_8);
+        if ((fieldType & 0b00001000) != 0) { // String field
+            String value = new String(fieldValue, StandardCharsets.UTF_8);
             return new StringField(fieldName, value);
-        } else if ((fieldType & 0b00000100)!= 0) { // double field
+        } else if ((fieldType & 0b00000100) != 0) { // double field
             long longVal = DataInput.readLong(fieldValue);
             double value = Double.longBitsToDouble(longVal);
             return new NumberField(fieldName, value);
@@ -271,23 +244,25 @@ public class Searcher {
     }
 
     // return: left offset + right offset
-    public byte[][] searchFDTOffset(int docID, TreeMap<Integer, byte[]> fdxMap){
+    public byte[][] searchFDTOffset(int docID, TreeMap<Integer, byte[]> fdxMap) {
         int leftKey = fdxMap.floorKey(docID);
         byte[] left = fdxMap.get(leftKey);
         Map.Entry<Integer, byte[]> rightEntry = fdxMap.higherEntry(leftKey);
-        if(rightEntry != null){
+        if (rightEntry != null) {
             return new byte[][]{left, rightEntry.getValue()};
         }
         return new byte[][]{left, null};
     }
 
-    public Document doc (ScoreDoc scoreDoc){
-        if(scoreDoc == null) return null;
-        int docID = scoreDoc.docID;
+    public Document doc(ScoreDoc scoreDoc) {
+        if (scoreDoc == null) {
+            return null;
+        }
+        int docID = scoreDoc.docId();
         if (!directoryReader.isLive(docID)) {
             return null;
         }
-        Document document = new Document(scoreDoc.getScore());
+        Document document = new Document(scoreDoc.score());
         TreeMap<Integer, byte[]> fdxMap = this.directoryReader.getFDXMap();
         MemorySegment fdtBuffer = this.directoryReader.getFDTBuffer();
         // calculate fdt buffer offset
@@ -296,9 +271,9 @@ public class Searcher {
         // 偏移全程 long：.fdt 可超过 2 GiB
         long offsetLeft = DataInput.readVlong(vlongOffsets[0]);
         long offsetRight;
-        if(vlongOffsets[1] != null){
+        if (vlongOffsets[1] != null) {
             offsetRight = DataInput.readVlong(vlongOffsets[1]);
-        }else {
+        } else {
             offsetRight = fdtBuffer.byteSize();
         }
         // 单个压缩块最大约 blocSize(16 KiB)，int 足够
@@ -311,8 +286,8 @@ public class Searcher {
         // decompress buffer to unCompressedBloc
         decompressor.decompress(fdtBloc, unCompressedBloc);
         ByteBuffer buffer = ByteBuffer.wrap(unCompressedBloc);
-        //read unCompressd block until the document is found
-        while (buffer.position() < buffer.limit()){
+        // read unCompressd block until the document is found
+        while (buffer.position() < buffer.limit()) {
             int curDocID = DataInput.readVint(buffer);
             int fieldCount = DataInput.readVint(buffer);
             for (int i = 0; i < fieldCount; i++) {
@@ -322,12 +297,14 @@ public class Searcher {
                 int valueLength = DataInput.readVint(buffer);
                 byte[] fieldValue = new byte[valueLength];
                 buffer.get(fieldValue);
-                if(docID == curDocID) {
-                    Field field = createField(new String(fieldName,StandardCharsets.UTF_8), fieldValue);
+                if (docID == curDocID) {
+                    Field field = createField(new String(fieldName, StandardCharsets.UTF_8), fieldValue);
                     document.add(field);
                 }
             }
-            if(docID == curDocID) return document;
+            if (docID == curDocID) {
+                return document;
+            }
         }
         return null;
     }
@@ -340,35 +317,19 @@ public class Searcher {
      * **完成顺序**分配的，不是提交顺序。混用不会抛异常，只会**静默返回另一个商品**，
      * 所以对外只暴露这个按业务主键取文的方法，调用方没有机会把两者写混。
      *
-     * <p>典型用途：向量召回给出商品 ID 后，回到倒排这一侧取商品原文。
-     *
      * @param uniqueId 商品唯一 ID（{@code PrimaryKeyField}）
      * @return 文档；该 ID 不存在、或对应文档已被软删除时返回 {@code null}
      */
-    public Document docByUniqueId(long uniqueId){
+    public Document docByUniqueId(long uniqueId) {
         Integer docId = directoryReader.getPkMap().get(uniqueId);
         if (docId == null) {
             return null;
         }
         // 复用 doc()：它内部会做 isLive 检查，已删除的文档同样返回 null
-        return doc(new ScoreDoc(0f, docId));
+        return doc(ScoreDoc.noScore(docId));
     }
 
-    public void close(){
+    public void close() {
         directoryReader.close();
-    }
-
-    public ScoreDoc[] search(Query query, int topN){
-        ScoreDoc[] result = null;
-        if(query instanceof TermQuery){
-            result = searchTerm((TermQuery) query);
-        } else if (query instanceof BooleanQuery) {
-            result = booleanSearch((BooleanQuery) query);
-        } else if (query instanceof StringQuery) {
-            result = searchString((StringQuery) query);
-        } else if(query instanceof NumericRangeQuery){
-            return searchNumericRange((NumericRangeQuery) query, topN);
-        }
-        return topN(result, topN);
     }
 }

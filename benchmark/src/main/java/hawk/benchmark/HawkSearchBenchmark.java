@@ -2,12 +2,15 @@ package hawk.benchmark;
 
 import document.Document;
 import hawk.indexer.writer.config.IndexConfig;
-import hawk.recall.query.NumericRangeQuery;
+import hawk.recall.query.BooleanQuery;
 import hawk.recall.query.Query;
-import hawk.recall.query.StringQuery;
+import hawk.recall.query.RangeQuery;
 import hawk.recall.query.TermQuery;
+import hawk.recall.request.StringQuery;
 import hawk.recall.search.ScoreDoc;
 import hawk.recall.search.Searcher;
+import hawk.recall.search.TopDocs;
+import hawk.segment.core.anlyzer.Analyzer;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -41,17 +44,24 @@ public class HawkSearchBenchmark {
 
     private Searcher searcher;
 
+    /** 建索引时用的分词器，searchString 基准要拿它现场分词。 */
+    private Analyzer analyzer;
+
     private Query[] termQueries;
 
-    private Query[] stringQueries;
+    /** 文本查询是"请求层"的对象，**不是** Query；检索前要先分词。 */
+    private StringQuery[] stringQueries;
 
     private Query[] rangeQueries;
 
     private final AtomicInteger queryCursor = new AtomicInteger();
 
+    private final AtomicInteger stringCursor = new AtomicInteger();
+
     @Setup(Level.Trial)
     public void buildIndexAndQueries() throws Exception {
         IndexConfig indexConfig = BenchmarkSupport.newIndexConfig();
+        this.analyzer = indexConfig.getAnalyzer();
         Path indexDir = BenchmarkSupport.indexDir().resolve("search");
         List<Document> documents = CorpusLoader.loadDocuments(INDEX_DOC_COUNT);
         BenchmarkSupport.buildIndex(indexDir, documents, indexConfig);
@@ -60,14 +70,14 @@ public class HawkSearchBenchmark {
         List<String> titles = CorpusLoader.sampleTitles(QUERY_COUNT);
         double[][] randomRanges = BenchmarkRangeQueries.buildRandomRanges(QUERY_COUNT);
         termQueries = new Query[QUERY_COUNT];
-        stringQueries = new Query[QUERY_COUNT];
+        stringQueries = new StringQuery[QUERY_COUNT];
         rangeQueries = new Query[QUERY_COUNT];
         for (int i = 0; i < QUERY_COUNT; i++) {
             String title = titles.get(i);
             String firstTerm = title.substring(0, Math.min(2, title.length()));
-            termQueries[i] = new TermQuery("title", firstTerm);
+            termQueries[i] = TermQuery.of("title", firstTerm);
             stringQueries[i] = new StringQuery("title", firstTerm);
-            rangeQueries[i] = new NumericRangeQuery("price", randomRanges[i][0], randomRanges[i][1]);
+            rangeQueries[i] = RangeQuery.closed("price", randomRanges[i][0], randomRanges[i][1]);
         }
     }
 
@@ -84,29 +94,41 @@ public class HawkSearchBenchmark {
 
     @Benchmark
     public void searchTerm(Blackhole blackhole) {
-        ScoreDoc[] hits = searcher.search(nextQuery(termQueries), TOP_N);
-        blackhole.consume(hits);
+        TopDocs hits = searcher.search(nextQuery(termQueries), TOP_N);
+        blackhole.consume(hits.scoreDocs());
     }
 
+    /**
+     * 文本查询：StringQuery 不再直接可检索，分词 + 组 BooleanQuery 由调用方做，
+     * 所以这个基准测的仍然是「分词 + 组合 + 检索」的完整代价。
+     */
     @Benchmark
     public void searchString(Blackhole blackhole) {
-        ScoreDoc[] hits = searcher.search(nextQuery(stringQueries), TOP_N);
-        blackhole.consume(hits);
+        StringQuery stringQuery =
+                stringQueries[Math.floorMod(stringCursor.getAndIncrement(), stringQueries.length)];
+        BooleanQuery.Builder builder = BooleanQuery.builder();
+        for (TermQuery termQuery : stringQuery.getTermQueryList(analyzer)) {
+            builder.must(termQuery);
+        }
+        BooleanQuery query = builder.build();
+        TopDocs hits = searcher.search(query, TOP_N);
+        blackhole.consume(hits.scoreDocs());
     }
 
     @Benchmark
     public void searchNumericRange(Blackhole blackhole) {
-        ScoreDoc[] hits = searcher.search(nextQuery(rangeQueries), TOP_N);
-        blackhole.consume(hits);
+        TopDocs hits = searcher.search(nextQuery(rangeQueries), TOP_N);
+        blackhole.consume(hits.scoreDocs());
     }
 
     @Benchmark
     public void searchTermAndFetchDoc(Blackhole blackhole) {
-        ScoreDoc[] hits = searcher.search(nextQuery(termQueries), TOP_N);
-        if (hits.length > 0) {
-            Document document = searcher.doc(hits[0]);
+        TopDocs hits = searcher.search(nextQuery(termQueries), TOP_N);
+        List<ScoreDoc> scoreDocs = hits.scoreDocs();
+        if (!scoreDocs.isEmpty()) {
+            Document document = searcher.doc(scoreDocs.get(0));
             blackhole.consume(document);
         }
-        blackhole.consume(hits);
+        blackhole.consume(scoreDocs);
     }
 }

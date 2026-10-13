@@ -4,7 +4,6 @@ import directory.MMapDirectory;
 import document.Document;
 import hawk.indexer.writer.IndexWriter;
 import hawk.indexer.writer.config.IndexConfig;
-import hawk.recall.config.SearchConfig;
 import hawk.recall.reader.DirectoryReader;
 import hawk.recall.search.Searcher;
 import hawk.segment.core.anlyzer.Analyzer;
@@ -82,6 +81,7 @@ public final class BenchmarkSupport {
     public static Searcher openSearcher(Path indexDir, IndexConfig indexConfig) {
         MMapDirectory directory = MMapDirectory.open(indexDir);
         DirectoryReader directoryReader = DirectoryReader.open(directory);
-        return new Searcher(directoryReader, new SearchConfig(indexConfig.getAnalyzer()), indexConfig);
+        // Searcher 不再需要 analyzer —— 分词是请求层的事
+        return new Searcher(directoryReader, indexConfig);
     }
 }
