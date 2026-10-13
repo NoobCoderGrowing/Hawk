@@ -1,6 +1,7 @@
 package hawk.recall.request;
 
 import hawk.recall.query.BooleanQuery;
+import hawk.recall.query.LongRangeQuery;
 import hawk.recall.query.MatchNoneQuery;
 import hawk.recall.query.Occur;
 import hawk.recall.query.Query;
@@ -45,6 +46,7 @@ public final class RequestCompiler {
         return switch (condition) {
             case Condition.Text t -> compileText(t);
             case Condition.Range r -> compileRange(r);
+            case Condition.LongRange r -> compileLongRange(r);
             case Condition.Group g -> compileGroup(g);
         };
     }
@@ -80,13 +82,28 @@ public final class RequestCompiler {
         return compiled == 1 ? built.clauses().get(0).query() : built;
     }
 
-    /** 数值条件 → {@link RangeQuery}。它天然是筛选，编译到 FILTER 由外层决定。 */
+    /**
+     * double 区间 → {@link RangeQuery}。
+     *
+     * <p>校验查的是 **double 字段**而不是"任意数值字段" —— 两种数值字段的落盘编码不同，
+     * 拿 double 的区间去查 long 字段比较的是两套编码的 long，结果会是垃圾。
+     */
     private Query compileRange(Condition.Range range) {
-        if (!schema.hasNumericField(range.field())) {
+        if (!schema.hasDoubleField(range.field())) {
             throw new IllegalArgumentException(
-                    "没有可作范围检索的数值字段「" + range.field() + "」。" + schema.describe());
+                    "没有可作 double 范围检索的字段「" + range.field() + "」。" + schema.describe());
         }
         return new RangeQuery(range.field(), range.lower(), range.upper(),
+                range.includeLower(), range.includeUpper());
+    }
+
+    /** long 区间 → {@link LongRangeQuery}。校验查的是 **long 字段**，理由同上。 */
+    private Query compileLongRange(Condition.LongRange range) {
+        if (!schema.hasLongField(range.field())) {
+            throw new IllegalArgumentException(
+                    "没有可作 long 范围检索的字段「" + range.field() + "」。" + schema.describe());
+        }
+        return new LongRangeQuery(range.field(), range.lower(), range.upper(),
                 range.includeLower(), range.includeUpper());
     }
 
@@ -105,6 +122,7 @@ public final class RequestCompiler {
             case BooleanQuery b -> b.hasScoringClause();
             case TermQuery ignored -> true;
             case RangeQuery ignored -> false;
+            case LongRangeQuery ignored -> false;
             case hawk.recall.query.MatchAllQuery ignored -> false;
             case MatchNoneQuery ignored -> false;
         };

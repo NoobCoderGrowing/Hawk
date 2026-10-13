@@ -92,9 +92,12 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     private void loadBkd() {
         int formatVersion = directory.getSegmentInfo().getFormatVersion();
-        if (formatVersion < BkdFormatVersion.BKD) {
-            throw new IllegalStateException("index formatVersion " + formatVersion
-                    + " does not support BKD; rebuild the index");
+        // 必须 >= CURRENT（不是 >= BKD）：v1 用的是**跨零不单调**的旧 double 编码，
+        // 解出来是错的。与其静默给错结果，不如直接要求重建。
+        if (formatVersion < BkdFormatVersion.CURRENT) {
+            throw new IllegalStateException("索引的 BKD 格式版本是 " + formatVersion
+                    + "，当前需要 " + BkdFormatVersion.CURRENT
+                    + "（v1 的数值编码跨零不单调，已修复）。请重建索引。");
         }
         String dirPath = directory.getPath().toAbsolutePath().toString();
         String bkdPath = dirPath + "/1.bkd";

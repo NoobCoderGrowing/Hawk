@@ -31,24 +31,53 @@ public class NumberUtil {
         }
         return ret;
     }
+    /**
+     * double 的位模式 → **保序**的 long。区间查询靠它：BKD 里存的是这个 long，
+     * 比较 min/max 就等价于比较 double。
+     *
+     * <h2>为什么是「翻掉除符号位以外的位」</h2>
+     * IEEE 754 的位模式里，正数部分本身已经升序（0 → +∞ 对应 0 → 0x7FF0…）；
+     * 负数部分则是**反的**（-0.0 的位模式最小，-∞ 最大），所以负数要整体翻转。
+     *
+     * <p>翻的必须是**除符号位以外**的位 —— 这样负数翻完仍是负数，自然会排在所有正数前面。
+     *
+     * <p><b>旧实现翻的是全部 64 位（{@code b = ~b}），把负数也翻成了正数</b>，
+     * 于是所有负数都排到正数后面，跨零的区间查询全错（实测 {@code atMost(field, 100)}
+     * 恒返回空）。见 {@link util.bkd.BkdFormatVersion}：这个修复**改了落盘编码**，
+     * 旧索引必须重建。
+     */
     public static long double2SortableLong(double input){
-        long b = Double.doubleToLongBits(input);
-        if(b>=0){ // if positive, set signed bit to 1
-            b |= 0x8000000000000000L;
-        }else{ // if negative, negate all
-            b = ~b;
-        }
-        return b;
+        long bits = Double.doubleToLongBits(input);
+        // bits >> 63 对正数是 0、对负数是全 1；& MAX_VALUE 后只剩低位部分，
+        // 于是「正数不变、负数翻低位而保留符号位」
+        return bits ^ ((bits >> 63) & 0x7fffffffffffffffL);
     }
 
+    /** {@link #double2SortableLong} 的逆变换（同一个公式，它自己就是自己的逆）。 */
     public static double sortableLong2Double(long input){
-        if(input >= 0){ // if positive, set signed bit to 1
-            input = ~input;
-        }else{ // if negative, negate all
-            input &= 0x7fffffffffffffffL;
-        }
+        long bits = input ^ ((input >> 63) & 0x7fffffffffffffffL);
+        return Double.longBitsToDouble(bits);
+    }
 
-        return Double.longBitsToDouble(input);
+    /**
+     * long → **保序**的 long。**恒等映射** —— 对 long 来说有符号序就是我们要的序。
+     *
+     * <p>⚠️ 常见写法是 {@code v ^ Long.MIN_VALUE}，但那只在**无符号**比较下单调：
+     * 它把 {@code Long.MIN_VALUE} 映到 0、把 0 映到 {@code Long.MIN_VALUE}，
+     * 于是 -5 排到了 0 的后面。而 BKD 的建树（{@code FieldBkdWriter.sortPoints}）
+     * 与剪枝（{@code BkdReader.intersectNode}）都按**有符号**比较，
+     * 用那个写法会让 {@code atMost(ts, 0)} 算出 min > max、恒返回空。
+     *
+     * <p>恒等映射则天然满足"按有符号序单调"，且**没有任何精度损失** ——
+     * 这正是 {@code LongField} 与 {@code NumberField}（double，只有 52 位尾数）的区别。
+     */
+    public static long long2SortableLong(long input){
+        return input;
+    }
+
+    /** {@link #long2SortableLong} 的逆变换 —— 恒等映射的逆还是它自己。 */
+    public static long sortableLong2Long(long input){
+        return input;
     }
 
     public static byte[] int2Bytes(int i){

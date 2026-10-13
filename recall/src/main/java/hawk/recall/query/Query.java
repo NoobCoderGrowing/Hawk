@@ -21,5 +21,5 @@ package hawk.recall.query;
  * 将来新增一种查询类型，所有 switch 处会**编译报错**而不是静默走 default。
  */
 public sealed interface Query
-        permits TermQuery, RangeQuery, BooleanQuery, MatchNoneQuery, MatchAllQuery {
+        permits TermQuery, RangeQuery, LongRangeQuery, BooleanQuery, MatchNoneQuery, MatchAllQuery {
 }

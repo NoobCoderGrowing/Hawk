@@ -80,8 +80,53 @@ public sealed interface Condition {
             }
         }
 
+        /** {@code [lower, upper]} 双闭。 */
         public static Range closed(String field, double lower, double upper) {
             return new Range(field, lower, upper, true, true);
+        }
+
+        /** {@code (-∞, upper]} —— 单侧无界。 */
+        public static Range atMost(String field, double upper) {
+            return new Range(field, Double.NEGATIVE_INFINITY, upper, false, true);
+        }
+
+        /** {@code [lower, +∞)} —— 单侧无界。 */
+        public static Range atLeast(String field, double lower) {
+            return new Range(field, lower, Double.POSITIVE_INFINITY, true, false);
+        }
+    }
+
+    /**
+     * 长整数区间 —— 与 {@link Range} 并列，查的是 {@code LongField} 索引的字段。
+     *
+     * <p>为什么要有它：{@code Range}（double）只有 52 位尾数，**超过 2^53 的整数存不准**。
+     * 纳秒时间戳、雪花 ID、大额精确整数必须走这一条，它没有任何精度损失。
+     *
+     * <p>两者**不能混用** —— 落盘编码不同，编译器会按字段类型拦下来。
+     */
+    record LongRange(String field, long lower, long upper,
+                     boolean includeLower, boolean includeUpper) implements Condition {
+
+        public LongRange {
+            Objects.requireNonNull(field, "field");
+            if (lower > upper) {
+                throw new IllegalArgumentException("下界大于上界：" + lower + " > " + upper);
+            }
+        }
+
+        /** {@code [lower, upper]} 双闭。 */
+        public static LongRange closed(String field, long lower, long upper) {
+            return new LongRange(field, lower, upper, true, true);
+        }
+
+        /** {@code (-∞, upper]} —— 单侧无界。 */
+        public static LongRange atMost(String field, long upper) {
+            return new LongRange(field, Long.MIN_VALUE, upper, true, true);
+        }
+
+        /** {@code [lower, +∞)} —— 单侧无界。 */
+        public static LongRange atLeast(String field, long lower) {
+            return new LongRange(field, lower, Long.MAX_VALUE, true, true);
         }
     }
 

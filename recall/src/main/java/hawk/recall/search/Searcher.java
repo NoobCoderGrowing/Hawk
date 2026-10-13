@@ -4,10 +4,12 @@ import common.IndexFormatConfig;
 import common.Pair;
 import document.Document;
 import field.Field;
+import field.LongField;
 import field.NumberField;
 import field.PrimaryKeyField;
 import field.StringField;
 import hawk.recall.query.BooleanQuery;
+import hawk.recall.query.LongRangeQuery;
 import hawk.recall.query.MatchAllQuery;
 import hawk.recall.query.MatchNoneQuery;
 import hawk.recall.query.Occur;
@@ -101,6 +103,7 @@ public class Searcher {
         return switch (query) {
             case TermQuery t -> termScorer(t, scoring);
             case RangeQuery r -> new ConstantScorer(rangeIterator(r), 0f);
+            case LongRangeQuery r -> new ConstantScorer(longRangeIterator(r), 0f);
             case BooleanQuery b -> booleanScorer(b, scoring);
             case MatchAllQuery ignored -> new ConstantScorer(matchAllIterator(), 0f);
             case MatchNoneQuery ignored -> ConstantScorer.empty();
@@ -155,14 +158,7 @@ public class Searcher {
      * 真正需要省内存的是词项 posting，那个走 {@link TermScorer} 顺序读、不物化。
      */
     private ArrayDocIdIterator rangeIterator(RangeQuery query) {
-        HashMap<String, BkdReader> bkdReaders = directoryReader.getBkdReaders();
-        BkdReader bkdReader = bkdReaders.get(query.field());
-        if (bkdReader == null) {
-            List<String> known = new ArrayList<>(bkdReaders.keySet());
-            known.sort(String::compareTo);
-            throw new IllegalArgumentException(
-                    "索引里没有数值字段「" + query.field() + "」。可用的是：" + known);
-        }
+        BkdReader bkdReader = requireNumericField(query.field(), DOUBLE_BIT, "double");
 
         // 开闭区间在 sortable long 上实现：该编码单调，±1 等价于"下一个可表示的 double"
         long minValue = NumberUtil.double2SortableLong(query.lower());
@@ -194,6 +190,36 @@ public class Searcher {
         return new ArrayDocIdIterator(sortedDistinct(arr));
     }
 
+    /** fdm 里 "NumberField"（double）的类型位。 */
+    private static final byte DOUBLE_BIT = 0b00000100;
+
+    /**
+     * 取数值字段的 BKD，并**校验它的类型**。
+     *
+     * <p>只查"有没有 BKD"是不够的：double 字段和 long 字段**都有 BKD**，
+     * 但落盘编码不同（一个走 {@code double2SortableLong}，一个走 {@code long2SortableLong}）。
+     * 拿一种的区间去比另一种存的值，结果毫无意义却不会报错。
+     * 所以这里按 fdm 的类型位判断，把类型错配挡在执行层 ——
+     * 这一层是给**绕过请求层、直接构造 Query** 的调用方兜底的。
+     */
+    private BkdReader requireNumericField(String field, byte typeBit, String kind) {
+        HashMap<String, Pair<byte[], Float>> fdmMap = directoryReader.getFDMMap();
+        Pair<byte[], Float> fdm = fdmMap.get(field);
+        if (fdm == null || (fdm.getLeft()[0] & typeBit) == 0) {
+            List<String> known = new ArrayList<>(directoryReader.getBkdReaders().keySet());
+            known.sort(String::compareTo);
+            throw new IllegalArgumentException(
+                    "索引里没有可作 " + kind + " 范围检索的字段「" + field + "」。"
+                            + "有 BKD 的字段是：" + known
+                            + "（注意 double 与 long 是两种字段类型，不能混用）");
+        }
+        BkdReader bkdReader = directoryReader.getBkdReaders().get(field);
+        if (bkdReader == null) {
+            throw new IllegalArgumentException("字段「" + field + "」标了 " + kind + " 类型但没有 BKD 数据");
+        }
+        return bkdReader;
+    }
+
     /** 排序 + 去重，满足 {@link ArrayDocIdIterator} 的**严格**升序契约。 */
     private static int[] sortedDistinct(int[] raw) {
         if (raw.length == 0) {
@@ -207,6 +233,43 @@ public class Searcher {
             }
         }
         return n == raw.length ? raw : java.util.Arrays.copyOf(raw, n);
+    }
+
+    /**
+     * long 区间 → docID 升序数组。与 double 那条的唯一差别是**编码函数不同**
+     * （{@code long2SortableLong} 只翻符号位，无精度损失），并且开区间是精确的 ±1。
+     */
+    private ArrayDocIdIterator longRangeIterator(LongRangeQuery query) {
+        BkdReader bkdReader = requireNumericField(query.field(), LongField.TYPE_BIT, "long");
+
+        // long 的编码是稠密的，开区间 ±1 精确；注意边界溢出（MIN/MAX 的开区间等于空集）
+        long minValue = NumberUtil.long2SortableLong(query.lower());
+        if (!query.includeLower()) {
+            if (minValue == Long.MAX_VALUE) return new ArrayDocIdIterator(new int[0]);
+            minValue++;
+        }
+        long maxValue = NumberUtil.long2SortableLong(query.upper());
+        if (!query.includeUpper()) {
+            if (maxValue == Long.MIN_VALUE) return new ArrayDocIdIterator(new int[0]);
+            maxValue--;
+        }
+        if (minValue > maxValue) {
+            return new ArrayDocIdIterator(new int[0]);
+        }
+
+        List<Integer> ids = new ArrayList<>();
+        bkdReader.intersect(minValue, maxValue, docId -> {
+            if (directoryReader.isLive(docId)) {
+                ids.add(docId);
+            }
+            return true;
+        });
+        int[] arr = new int[ids.size()];
+        for (int i = 0; i < arr.length; i++) {
+            arr[i] = ids.get(i);
+        }
+        // 同 rangeIterator：BKD 回调是树序，必须排序去重
+        return new ArrayDocIdIterator(sortedDistinct(arr));
     }
 
     private ArrayDocIdIterator matchAllIterator() {
@@ -239,6 +302,9 @@ public class Searcher {
         } else if ((fieldType & 0b00010000) != 0) { // primary key field
             long value = DataInput.readLong(fieldValue);
             return new PrimaryKeyField(value);
+        } else if ((fieldType & 0b00100000) != 0) { // long field
+            long value = DataInput.readLong(fieldValue);
+            return new LongField(fieldName, value, Field.Tokenized.NO, Field.Stored.YES);
         }
         return null;
     }

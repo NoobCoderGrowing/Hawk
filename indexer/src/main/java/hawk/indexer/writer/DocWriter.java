@@ -4,6 +4,7 @@ import common.Pair;
 import directory.Directory;
 import document.Document;
 import field.NumberField;
+import field.LongField;
 import field.Field;
 import field.PrimaryKeyField;
 import field.StringField;
@@ -509,6 +510,8 @@ public class DocWriter implements Runnable {
             termType |= 0b00001000;
         } else if (field instanceof PrimaryKeyField) {
             termType |= 0b00010000;
+        } else if (field instanceof LongField) {
+            termType |= 0b00100000;
         }
         return termType;
     }
@@ -520,6 +523,8 @@ public class DocWriter implements Runnable {
             return ((StringField) field).getValue().length();
         } else if (field instanceof NumberField) {
             return 1;
+        } else if (field instanceof LongField) {
+            return 8;
         }
         return 0;
     }
@@ -585,6 +590,11 @@ public class DocWriter implements Runnable {
             long sortableLong = NumberUtil.double2SortableLong(value);
             filedLength = 1;
             docBkd.put(new ByteReference(filedName), sortableLong);
+        } else if (field instanceof LongField) {
+            // long 走另一套保序编码（只翻符号位），**没有 double 的 2^53 精度上限**
+            long value = ((LongField) field).getValue();
+            filedLength = 1;
+            docBkd.put(new ByteReference(filedName), NumberUtil.long2SortableLong(value));
         }
         assembleFieldTypeMap(fieldTypeMap, filedName, new byte[]{termType}, filedLength);
     }
