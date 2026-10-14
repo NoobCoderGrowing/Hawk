@@ -14,7 +14,7 @@ import java.nio.file.Path;
  *
  * <h2>这个文件从哪来</h2>
  * 不是本模块写的，是**索引器**写的：它在 commit 之后把轮次写进索引目录，
- * 然后 {@code IndexPusher} 整目录打成 zip 推过来，{@code IndexStore.install} 整目录原子切换 ——
+ * 然后被整目录打成 zip，由本模块的 {@code IndexPullJob} 拉下来，{@code IndexStore.install} 整目录原子切换 ——
  * 所以这个文件跟着索引一路到了这里，本模块**不需要任何额外代码**去接收它。
  *
  * <h2>本模块只读不写</h2>

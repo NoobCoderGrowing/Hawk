@@ -296,6 +296,28 @@ public class NodeRegistry implements DisposableBean {
         return client;
     }
 
+    /**
+     * 列出注册中心里某个路径下的键值对 —— {@link ConvergenceChecker} 靠它读
+     * {@code cloud/index-ready/...}（那棵树不在本类轮询的四个 role 里）。
+     *
+     * <p><b>路径不带前导斜杠</b>，形如 {@code cloud/index-ready/vector-indexer/shard-0}。
+     * <b>别忘了 {@code cloud/} 前缀</b> —— 少了它注册中心会静默返回空
+     * （{@code ls} 回包 {@code success:false}，客户端变成一个空列表），
+     * 表现是"检查在跑、却什么都不做、也不报错"。实机上撞到过。
+     *
+     * <p>返回的 KV 要**看 {@code isOffline()}** —— 过滤是调用方的事。
+     *
+     * @return 键值对；未连接、路径不存在、或请求失败时返回**空列表**（不是 null）
+     */
+    List<KV> listNodes(String path) {
+        JRegistryClient c = this.client;
+        if (c == null || !c.isConnected()) {
+            return List.of();
+        }
+        List<KV> kvs = c.listAll(path);
+        return kvs == null ? List.of() : kvs;
+    }
+
     @Override
     public void destroy() {
         if (client != null) {

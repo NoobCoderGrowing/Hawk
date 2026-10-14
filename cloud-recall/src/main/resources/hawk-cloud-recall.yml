@@ -10,6 +10,24 @@ hawk:
       # 相对路径以**启动时的工作目录**为基准。 完整路径为{index-dir}/{role}/{shard-num}/{yyyy-MM-dd-HH-mm-ss}（时间戳由索引器传来，见 IndexStamp）
       index-dir: ${HAWK_INDEX_DIR:cloud/recall}
 
+      # ---- 拉取索引（见 IndexPullJob / INDEX_PULL_MODEL_DESIGN.md）----
+      # 本节点定时扫注册中心，看哪个索引器有**比自己更新**的轮次，有就拉下来装好。
+      # 拉取失败只记一条日志、**不设重试上限** —— 定时扫描本身就是无限的幂等重试。
+      # 这和协调器那边"重下发必须设上限"是相反的，因为代价不同：这边重试的是一次传输
+      # （廉价、幂等），那边重试的是重算一遍索引（向量 10 万篇 16 分钟）。
+      #
+      # 这个间隔还要和"索引器保留几份"配着看：索引器只留最新 2 份，
+      # 所以必须保证 2 × 构建间隔 > 本间隔，否则某一轮还没被拉走就被删了。
+      pull-interval-ms: ${HAWK_RECALL_PULL_INTERVAL_MS:60000}
+
+      pull:
+        # 一次下载的等待上限（毫秒）。这是**真的在传数据**（200 MB 级），
+        # 别和"等一个受理回执"那类秒级超时混。
+        timeout-ms: ${HAWK_RECALL_PULL_TIMEOUT_MS:600000}
+        # 拉下来的临时包放哪；留空则放在本分片的索引目录下 ——
+        # 文件名带 `.staging-` 前缀，于是会被 IndexStore.cleanStaleStaging 统一收走。
+        tmp-dir: ${HAWK_RECALL_PULL_TMP_DIR:}
+
       # 注册中心（JRegistry）地址。留空则跳过登记，只记一条 WARN。两种写法都认：
       #   · 单节点     127.0.0.1:6001
       #   · 集群节点表 {1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}

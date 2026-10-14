@@ -15,8 +15,8 @@ import java.util.List;
 /**
  * HTTP 层的 JSON 换成 fastjson，不用 Jackson。
  *
- * <p>协调器的对外端点是 {@code POST /index/build} 与 {@code POST /indexComplete}，
- * 以及内部看的记录；它们全部走 fastjson，不会有人不小心落回 Jackson。
+ * <p>协调器唯一的对外端点是 {@code POST /index/build}；它全部走 fastjson，
+ * 不会有人不小心落回 Jackson。
  *
  * <p>注意 fastjson 的几处坑（都在本项目的其它地方踩过）：
  * <ul>

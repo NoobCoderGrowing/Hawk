@@ -18,7 +18,7 @@ import java.nio.file.Path;
  * （向量索引 10 万篇 ≈ 16 分钟）。落盘之后，「重启」和「数据真的变了」才区分得开。
  *
  * <h2>为什么要随索引一起打包</h2>
- * {@code IndexPusher.packZip} 是 {@code Files.walk(indexDir)} 把所有普通文件打进去，
+ * {@code IndexPackager.pack} 是 {@code Files.walk(indexDir)} 把所有普通文件打进去，
  * 所以这个文件**不需要任何额外代码**就会跟着 zip 到召回端；召回端的 {@code IndexStore.install}
  * 是整目录 {@code ATOMIC_MOVE}，所以它也**不需要任何额外代码**就跟着过去了。
  *

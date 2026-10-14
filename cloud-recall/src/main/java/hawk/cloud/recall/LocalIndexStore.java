@@ -7,12 +7,12 @@ import java.nio.file.Path;
 
 /**
  * 本节点的索引存放处 —— 一个 recall 节点只配**一个 role、一个分片**，所以只有**一个**
- * {@link IndexStore}。这个类把它做成 Spring bean，让**收索引的**（{@code IndexReceiveController}）
+ * {@link IndexStore}。这个类把它做成 Spring bean，让**拉索引的**（{@code IndexPullJob}）
  * 和**报状态的**（{@code HealthController}）拿到的是同一个实例、同一个目录。
  *
  * <h2>为什么要有这个类</h2>
- * 原先 {@code IndexStore} 是在 {@code IndexReceiveController} 里**懒建**的，原因写在它的注释里：
- * 「role/shardNum 是字段注入、构造时还没有」。那是字段注入的绕法。现在改成构造注入之后，
+ * 原先 {@code IndexStore} 是在接收端里**懒建**的，原因写在它的注释里：
+ * 「role/shardNum 是字段注入、构造时还没有」—— 那是字段注入的绕法。改成构造注入之后，
  * 目录在**启动时**就能算出来，于是 /health 也能读到它 —— 而 /health 报的
  * {@code round} 正是协调器判"这一轮建成了没有"的依据，本来就必须和收索引的是同一个目录。
  *

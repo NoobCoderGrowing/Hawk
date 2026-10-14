@@ -26,23 +26,19 @@ import java.util.concurrent.Executors;
  * **全部塌缩成同一个分支**，不需要分别为它们写代码：
  * <ul>
  *   <li>索引器建到一半死了 / 编码抛异常 / 建完就被重启；</li>
- *   <li>{@code /indexComplete} 通知丢了；</li>
+ *   <li>索引器建完就重启了，登记跟着旧会话变成离线；</li>
  *   <li>当初就 409 没派出去；</li>
  *   <li><b>整个分片一个副本都没推成功</b> —— 这一条通知路径根本不会触发（{@code pushToRecall}
  *       在 {@code allFailed()} 时不通知），只有状态查询才发现得了。</li>
  * </ul>
  *
- * <h2>和 IndexCompletionTracker 分工，互不重叠</h2>
- * <table border="1">
- *   <tr><th></th><th>管什么</th><th>判据</th><th>手段</th></tr>
- *   <tr><td>{@link IndexCompletionTracker}</td><td>同一分片里<b>个别副本</b>落后</td>
- *       <td>索引器回报的 {@code failed} 列表</td><td>催 {@code /repush}（<b>不重建</b>）</td></tr>
- *   <tr><td>本类</td><td>整个分片<b>一个都没有</b></td>
- *       <td>主动查召回副本的 round</td><td>重下发构建（<b>重建</b>）</td></tr>
- * </table>
- * 这个分工是"至少一个副本"这个判据**送出来的**：3 个副本推成 2 个时判据已经满足，
- * 本类**不会**动手，补齐是 {@code /repush} 的事。反过来，如果判据写成"所有副本都必须是"，
- * 两者立刻重叠 —— 每次部分推送失败都会同时触发重推和**全量重建**。
+ * <h2>它管到哪一步为止</h2>
+ * 本类只保证「**每个分片都有一份索引被建出来**」。索引建完之后**怎么到召回端**不归它管 ——
+ * 那是召回端自己的定时拉取任务（{@code IndexPullJob}）的事，失败也由它自己下一轮重试。
+ *
+ * <p>这条分界是拉取模型带来的简化：以前协调器还要记"哪个副本没推成功"、催补推、
+ * 记 attempts —— 那一整块**都不存在了**，因为"送达"由召回端自己的定时拉取负责，
+ * 失败它自己下一轮重试。
  *
  * <h2>四条纪律（缺一条这个机制就会伤到自己）</h2>
  * <ol>
@@ -51,8 +47,8 @@ import java.util.concurrent.Executors;
  *   <li><b>次数有上限，到顶放弃并告警</b>，并写"放弃标记"把派发闸门打开（否则永久坏的分片
  *       会让这个 role 再也建不了索引）。</li>
  *   <li><b>检查和重下发都在专用线程池上跑</b>，{@code @Scheduled} 只负责提交 ——
- *       {@code NodeRegistry.poll} 与 {@link IndexCompletionTracker#retryRound} 共用那个
- *       <b>单线程</b> {@code scheduling-1} 池，在这里同步发 N 个 HTTP 会把注册中心轮询一起卡住。</li>
+ *       {@code NodeRegistry.poll} 与别的定时任务共用那个 <b>单线程</b> {@code scheduling-1} 池，
+ *       而一轮检查要读 N 个分片的注册中心，把注册中心轮询一起卡住就不好玩了。</li>
  *   <li><b>重下发前重读一次轮次</b>，和自己这次检查依据的不一样就跳过 —— 见 {@link #reDispatch}。</li>
  * </ol>
  */
@@ -82,7 +78,7 @@ public class RoundTracker {
     @Value("${hawk.cloud.coordinator.shard-count:3}")
     private int defaultShardCount;
 
-    /** role → 已催到第几轮。**只在轮次变化时归零**（同 IndexCompletionTracker 的不变量）。 */
+    /** role → 已催到第几轮。**只在轮次变化时归零** —— 否则"每轮失败→归零"会循环，永远到不了上限。 */
     private final Map<String, Attempts> attempts = new ConcurrentHashMap<>();
 
     private record Attempts(long round, int count) {
@@ -207,16 +203,15 @@ public class RoundTracker {
         log.warn("{} 第 {} 轮有 {} 个分片没收敛（已催 {}/{}）：{}",
                 indexerRole, expected, bad.size(), a.count() + 1, maxAttempts, describe(bad));
 
-        // ★ 只有 STALE / UNREACHABLE 才值得重下发（§7.5 ②）。
-        //   AHEAD（有副本比我们还新）和 NO_REPLICA（注册中心里根本没有这一片的召回副本）
+        // ★ 只有 STALE 才值得重下发。
+        //   AHEAD（有副本登记的轮次比我们还新）和 NO_REPLICA（这一片根本没有在线索引器副本）
         //   **重下发也修不好**：前者会把更新的索引覆盖回旧的，后者一个字节都发不出去。
         //   但它们**仍然计次** —— 计次的目的是"有界努力之后把闸门打开"，不是为了重下发。
-        boolean worthRedispatch = bad.stream().anyMatch(r ->
-                r.verdict() == ConvergenceChecker.Verdict.STALE
-                        || r.verdict() == ConvergenceChecker.Verdict.UNREACHABLE);
+        boolean worthRedispatch = bad.stream()
+                .anyMatch(r -> r.verdict() == ConvergenceChecker.Verdict.STALE);
 
         if (!worthRedispatch) {
-            log.error("{} 第 {} 轮没收敛，但这一轮**重下发也修不好**（分片都没有在线召回副本，"
+            log.error("{} 第 {} 轮没收敛，但这一轮**重下发也修不好**（分片都没有在线索引器副本，"
                             + "或有副本比我们还新），只告警不重下发；累计 {}/{}",
                     indexerRole, expected, a.count() + 1, maxAttempts);
             return;

@@ -49,7 +49,7 @@ public class IndexBuildDispatcher {
     public static final String ROLE_VECTOR = "vector-indexer";
 
     /**
-     * 建连超时。局域网、索引器在同网段，比 {@code IndexPusher} 那个 5 秒更紧 ——
+     * 建连超时。局域网、索引器在同网段，比索引器下载端点允许的等待更紧 ——
      * 这里的对端只做一次提交，不该等太久。
      */
     private static final int CONNECT_TIMEOUT_MS = 2_000;
@@ -75,7 +75,7 @@ public class IndexBuildDispatcher {
      * 单次派发的等待上限。索引器只做「校验 + startAsync」，**立刻**回 202，所以 5 秒已经很宽。
      *
      * <p><b>别和推送索引那条链路混了</b>：推索引是真的在传 200 MB，给的是 10 分钟；
-     * 这里和"协调器 → /repush"是一类 —— 都只等一个受理回执。
+     * 索引器只做「校验 + startAsync」，立刻回 202 —— 这里等的是一个受理回执，不是一次传输。
      */
     @Value("${hawk.cloud.coordinator.build.timeout-ms:5000}")
     private long requestTimeoutMs;
@@ -389,7 +389,7 @@ public class IndexBuildDispatcher {
     private record PostResult(Kind kind, String detail) {
     }
 
-    /** role → 索引器端点。显式映射，别用字符串拼（同 {@code IndexCompletionTracker#indexerRoleOf} 的理由）。 */
+    /** role → 索引器端点。显式映射，别用字符串拼（同 {@code ConvergenceChecker#recallRoleOf} 的理由）。 */
     private static String endpointOf(String indexerRole) {
         return switch (indexerRole) {
             case ROLE_TEXT -> "/textIndex";

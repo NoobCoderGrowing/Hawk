@@ -50,9 +50,9 @@ import org.springframework.stereotype.Service;
  *
  * <h2>几个必须知道的前提</h2>
  * <ul>
- *   <li><b>实际输出目录 = {@code index-dir}/{shard-num}/{当日日期}</b>，如
- *       {@code cloud/text-index/shard-0/2026-10-13}。按分片、按日期分开写，
- *       不会碰到 web 演示用的 {@code index-data/goods}。</li>
+ *   <li><b>实际输出目录 = {@code index-dir}/{role}/{shard-num}/{版本名}</b>，如
+ *       {@code cloud/index/text-indexer/shard-0/v0000000021-2026-10-15-01-43-01}。
+ *       版本名以**轮次**打头，所以字典序 == 轮次序（见 {@link IndexStamp}）。</li>
  *   <li>用 {@code loadExistingPkMap=true} 是"挂到已有索引"那条路，**不清空目录**。
  *       {@code PkMapStore.load} 在文件不存在时返回空 map，所以空目录上也安全。</li>
  *   <li>重复调用会往同一份索引里**再写一遍**，没有幂等保护 —— 同一份语料连调两次就是两份。
@@ -68,11 +68,11 @@ public class IndexService {
 
     private final DataSource dataSource;
 
-    /** 建完把索引推给召回分片（方案 §3）。 */
-    private final IndexPusher indexPusher;
-
-    /** 索引建完后通知协调器（尽力而为，失败只记日志）。 */
-    private final CoordinatorNotifier coordinatorNotifier;
+    /**
+     * 建完之后登记「我这儿有第 R 轮」—— 召回端定时扫注册中心，看到就来拉。
+     * 见 {@code INDEX_PULL_MODEL_DESIGN.md}。
+     */
+    private final IndexReadyRegistry readyRegistry;
 
     /** 每批多少条。构造时从配置读入 —— 既用于算 offset，也传给数据源，保证两边一致。 */
     private final int batchSize;
@@ -84,7 +84,7 @@ public class IndexService {
     @Value("${hawk.cloud.indexer.role}")
     private String role;
 
-    /** 索引**根**目录。实际输出目录 = 它 / 角色 / 分片名 / 当日日期，见 {@link #indexDirOf}。 */
+    /** 索引**根**目录。实际输出目录 = 它 / 角色 / 分片名 / 版本名，见 {@link #indexDirOf}。 */
     @Value("${hawk.cloud.indexer.index-dir:cloud/index}")
     private String indexDirRoot;
 
@@ -104,22 +104,6 @@ public class IndexService {
      * 这个节点从此对 {@code /textIndex} 恒回 409，而日志里一个异常都看不到。
      */
     private final Semaphore fullPermit = new Semaphore(1);
-
-    /**
-     * 推送阶段的"许可"。同样**不能是 {@code ReentrantLock}** —— 理由与 {@link #fullPermit}
-     * 一模一样：补推是"请求线程拿到、后台线程释放"。
-     *
-     * <p>作用见方案 §4.3：凡是"读已有 stamp 目录"或"删 stamp 目录"的操作都在它里面，
-     * 所以**清理与（重）推送天然互斥**。
-     */
-    private final Semaphore pushPermit = new Semaphore(1);
-
-    /** 补推的后台线程。排队在单线程上，天然串行。 */
-    private final ExecutorService repushExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "text-repush");
-        t.setDaemon(true);
-        return t;
-    });
 
     /**
      * 索引线程数，传给 {@link IndexConfig} —— 它决定 {@link IndexWriter} 内部那个线程池的大小。
@@ -151,16 +135,14 @@ public class IndexService {
      * 两边各建一份会拿到两个实例（MySQL 那种还会各开一套连接）。
      */
     public IndexService(
-            CoordinatorNotifier coordinatorNotifier,
             DataSource dataSource,
-            IndexPusher indexPusher,
+            IndexReadyRegistry readyRegistry,
             @Value("${hawk.cloud.indexer.data-source.batch-size:1000}") int batchSize,
             @Value("${hawk.cloud.indexer.shard-num}") String shardNum) {
         this.batchSize = batchSize;
         this.shardNum = shardNum;
-        this.coordinatorNotifier = coordinatorNotifier;
         this.dataSource = dataSource;
-        this.indexPusher = indexPusher;
+        this.readyRegistry = readyRegistry;
     }
 
     /**
@@ -195,7 +177,7 @@ public class IndexService {
      * 尝试开始一次**异步**建索引。
      *
      * @param round 协调器给的索引轮次；**直接调 {@code /textIndex} 旁路调用时为 {@code null}**。
-     *              非 null 时会写进索引目录（见 {@link IndexRound}），并且**若本节点已有这一轮就直接重推**
+     *              非 null 时会写进索引目录（见 {@link IndexRound}），并且**若本节点已有这一轮就直接重登记**
      * @return {@code false} = 本节点正在建倒排索引（互斥锁没抢到），调用方应当立刻回
      *         {@code text-indexing}；{@code true} = 已受理，活已经在后台跑
      */
@@ -243,14 +225,16 @@ public class IndexService {
      */
     private void index(int shardCount, List<Field> fieldList, Long round) throws Exception {
         // ★ 短路：本节点已经有这一轮了，就别重算 —— 直接把那份重推一遍。
-        // 这条把「推送失败、构建成功」这个**最常见的失败形态**从"重算 16 分钟"压到"重传一次"：
-        // 网络抖动、召回节点当时不在线，都不需要重算，索引目录好好躺在盘上。
-        // 放在最前面：连主键字段都不用解析，因为它跟"重推哪一份"无关。
+        // 这条把「没有送达、但建好了」这个**最常见的失败形态**从"重算 16 分钟"压到"重登记一下"：
+        // 索引目录好好躺在盘上，召回端下一轮自己就来拉了，什么都不用重算。
+        // 放在最前面：连主键字段都不用解析，因为它跟"哪一份"无关。
         if (round != null) {
             Path existing = findStampDirOfRound(round);
             if (existing != null) {
-                log.info("round {} 本节点已有（{}），不重算，直接重推", round, existing.getFileName());
-                pushToRecall(existing.getFileName().toString(), existing);
+                log.info("round {} 本节点已有（{}），不重算", round, existing.getFileName());
+                // 重登记一次 —— 万一登记丢了（注册中心抖动 / 心跳还没轮到），这里补上。
+                // 登记是幂等的，重复发没有代价。
+                readyRegistry.advertise(round, existing.getFileName().toString());
                 return;
             }
         }
@@ -265,10 +249,14 @@ public class IndexService {
             return;
         }
 
-        // 时间戳**生成一次**：本地目录名、推送参数、通知里的 stamp 都用它（方案 §5.1）
+        // 时间戳**生成一次**，再和轮次组成版本目录名。
+        // 目录名 = v{零填充轮次}-{stamp}：**排序由轮次决定，不由本机时钟决定** ——
+        // 同一个分片的索引可能来自不同的索引器副本（时钟会偏），靠 stamp 排序会取错当前版本。
+        // 旁路调用（没带 round）用轮次 0，它排在所有真实轮次之前。
         String stamp = IndexStamp.now();
+        String version = IndexStamp.versionName(round == null ? 0L : round, stamp);
         int batchCount = dataSource.getTotalBatchCount();
-        Path indexDirPath = indexDirOf(indexDirRoot, role, shardNum, stamp);
+        Path indexDirPath = indexDirOf(indexDirRoot, role, shardNum, version);
         Files.createDirectories(indexDirPath);
 
         // 第三个参数 true = 把已有的 pk.map 读进来，也就是"挂到已有索引上"，不清空目录。
@@ -355,15 +343,25 @@ public class IndexService {
         // 所以只有这一个位置是对的。
         if (round != null) {
             IndexRound.write(indexDirPath, round);
+            // 紧接着就登记 —— 登记的那一刻起召回端就可能来拉，而拉的是磁盘上已完整的东西。
+            readyRegistry.advertise(round, version);
         }
 
         log.info("索引结束：扫过 {} 条，写入 {} 条，非本分片 {} 条，无主键 {} 条 -> {}",
                 scanned, accepted, otherShard, noPrimaryKey, indexDirPath.toAbsolutePath());
 
-        // 走到这里说明 commit 已经成功 —— 通知协调器"这个 role 的这个分片建好了、路径在哪"。
-        // 位置放在 finally 之后：commit 抛异常时不会执行到这里，也就不会发出成功的通知。
-        // 通知本身尽力而为，失败只记日志（见 CoordinatorNotifier）。
-        pushToRecall(stamp, indexDirPath);
+        // 索引已经建好并登记完了，剩下的交给召回端自己来拉。这里只做本地保留策略。
+        //
+        // 顺序是「登记 → prune」，而且不会出现"登记的那一份被 prune 掉"：
+        // prune 保留**最新 2 份**，而刚建好这一份就是最新的，必然留下。
+        // （登记指向旧轮次时也不会越界 —— 旧的那份同样在这 2 份之内。）
+        // 万一哪天真被删了，IndexReadyRegistry 每 60 秒会按**磁盘上的实际情况**重登记一次兜底。
+        pruneOldStamps(indexDirPath.getParent());
+    }
+
+    /** 给 {@link IndexDownloadController} 用：本节点「第 {@code round} 轮」的索引目录；没有返回 null。 */
+    public Path indexDirOfRound(long round) {
+        return findStampDirOfRound(round);
     }
 
     /**
@@ -392,75 +390,7 @@ public class IndexService {
         }
     }
 
-    /**
-     * 推给本分片的召回节点，然后按结果决定是否通知协调器（方案 §4.3 / §6.2）。
-     *
-     * <p><b>取 Lock2 用阻塞 {@code lock()}，不是 tryLock</b> —— 走到这里索引已经 commit 了，
-     * 不能因为"有人在重推"就半途而废（索引建好了却推不出去）。等几秒是唯一正确的选择。
-     * 这个不对称是刻意的，别顺手统一掉。
-     */
-    private void pushToRecall(String stamp, Path indexDirPath) {
-        acquirePermit();
-        try {
-            IndexPusher.PushResult r = indexPusher.push(
-                    "text-recall", shardNum, stamp, "text", indexDirPath, null);
-            if (r.allFailed()) {
-                // 一个副本都没成功 —— 不通知。协调器会认为这个分片缺失，这是对的
-                log.error("{} stamp={} 一个副本都没推成功，不通知协调器", shardNum, stamp);
-            } else {
-                coordinatorNotifier.indexComplete(role, "text-recall", shardNum, stamp,
-                        r.pushed(), r.failed());
-            }
-            pruneOldStamps(indexDirPath.getParent());
-        } finally {
-            pushPermit.release();
-        }
-    }
-
-    /** 索引端也留最新 2 份（方案 §5.6）—— 留 2 份意味着上一次的还能重推。 */
-
-    /**
-     * 补推（方案 §7.2）：**不建索引**，只拿 Lock2 重推一个已经存在的 stamp。
-     *
-     * <p>与 {@link #pushToRecall} 的区别：那个在 Lock1 里跑（构建流程的一部分），
-     * 这个只拿 Lock2 —— 所以它能在**构建的编码阶段**旁边跑，不必等一个几分钟的构建。
-     */
-    public IndexPusher.RepushOutcome repush(String stamp, java.util.List<String> only) {
-        // 抢不到许可：本节点正在推送/清理 —— 协调器下一轮再来
-        if (!pushPermit.tryAcquire()) {
-            return IndexPusher.RepushOutcome.busy();
-        }
-        Path dir = IndexService.indexDirOf(indexDirRoot, role, shardNum, stamp);
-        if (!Files.isDirectory(dir)) {
-            pushPermit.release();                           // 许可是抢来的，先还回去
-            return IndexPusher.RepushOutcome.gone();        // 被保留策略清掉了
-        }
-        // **立刻返回，推在后台** —— 同步会把协调器唯一的调度线程占住，
-        // 而注册中心轮询也跑在同一个池里（方案 §7.2 / §4.3）
-        repushExecutor.submit(() -> {
-            try {
-                IndexPusher.PushResult r = indexPusher.push("text-recall", shardNum, stamp, "text", dir, only);
-                if (!r.allFailed()) {
-                    // 推完走**同一条回报通路** —— 不为补推再造一个回报接口
-                    coordinatorNotifier.indexComplete(role, "text-recall", shardNum, stamp, r.pushed(), r.failed());
-                }
-            } catch (Throwable t) {
-                log.error("补推失败（stamp={}）", stamp, t);
-            } finally {
-                pushPermit.release();                       // 后台线程释放 —— 所以必须是 Semaphore
-            }
-        });
-        return IndexPusher.RepushOutcome.ok();
-    }
-
-    /** 阻塞抢推送许可；被中断就中断线程并放行（照推是安全的，只是少了互斥）。 */
-    private void acquirePermit() {
-        try {
-            pushPermit.acquire();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
+    /** 索引端也留最新 2 份（方案 §5.6）—— 留 2 份意味着上一次的还能被拉走。 */
 
     static void pruneOldStamps(Path shardDir) {
         try (java.util.stream.Stream<Path> s = Files.list(shardDir)) {
@@ -482,17 +412,17 @@ public class IndexService {
     }
 
     /**
-     * 索引目录 = {@code 根目录 / 角色 / 分片名 / 当日日期}，如
-     * {@code cloud/index/text-indexer/shard-0/2026-10-13}。
+     * 索引目录 = {@code 根目录 / 角色 / 分片名 / 版本名}，如
+     * {@code cloud/index/text-indexer/shard-0/v0000000021-2026-10-15-01-43-01}。
      *
      * <p>角色在最外层（紧跟根目录）：同一个节点上四类索引器各写各的目录树，互不干涉；
-     * 再往下按分片、按日期分 —— 本节点只写自己那份，也不会把不同天的索引混在一起。
-     * 时间戳格式见 {@link IndexStamp} —— 固定宽度，字典序即时间序。
+     * 再往下按分片、按版本分 —— 本节点只写自己那份，也不会把不同的版本混在一起。
+     * 版本名的格式（{@code v{零填充轮次}-{stamp}}）见 {@link IndexStamp} —— 固定宽度，字典序即轮次序。
      *
      * <p>静态以便单测（日期从参数进来，不在这里调 {@code now()}）。
      */
-    static Path indexDirOf(String root, String role, String shardNum, String stamp) {
-        return Path.of(root, role, shardNum, stamp);
+    static Path indexDirOf(String root, String role, String shardNum, String version) {
+        return Path.of(root, role, shardNum, version);
     }
 
     /**

@@ -26,9 +26,9 @@ import java.nio.charset.StandardCharsets;
  * <b>① 不能用一个全局计数器。</b>文本构建推到 7、向量构建再推到 8，此时 {@code text-recall}
  * 的各分片报的还是 7 → 文本侧被判"未收敛" → 白重建一轮。两个 role 是两条独立的工作负载。
  *
- * <p><b>② 不能挂在 {@code cloud/coordinator/} 底下。</b> {@code listAll} 是**递归**的，而
- * {@code CoordinatorNotifier.findCoordinator()} 取的是 {@code kvs.get(0)} **且不做过滤** ——
- * 今天没炸只因为父节点恰好排在子节点前面。用兄弟路径，别赌排序。
+ * <p><b>② 不能挂在 {@code cloud/coordinator/} 底下。</b> 协调器的节点登记就挂在那棵树下面，
+ * 而 {@code listAll} 是**递归**的 —— 子键会混进 {@code cloud/coordinator} 的列举结果里。
+ * 用兄弟路径，别赌排序。
  *
  * <h2>自增靠 CAS，不靠读-改-写</h2>
  * 注册中心<b>没有原子自增</b>，{@code get → +1 → set} 是两个协调器会撞的读-改-写。

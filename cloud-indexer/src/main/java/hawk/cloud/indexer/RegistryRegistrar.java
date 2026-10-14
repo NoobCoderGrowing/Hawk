@@ -85,6 +85,20 @@ public class RegistryRegistrar implements DisposableBean {
     /** 连上注册中心后才赋值；未登记时为 null，{@link #destroy()} 据此跳过注销。 */
     private JRegistryClient client;
 
+    /**
+     * 给 {@link IndexReadyRegistry} 用的长连接。
+     *
+     * <p><b>每次现取，不要缓存</b> —— 掉线重连时 {@link #ensureConnected()} 会把 {@code client}
+     * 换成另一个实例。复用同一个实例是刻意的：{@code JRegistryClient} 内部有心跳与重连状态机，
+     * 再新建一个会各维护一套连接、互相干扰。
+     *
+     * @return 当前连接；**从未连上**时为 {@code null}（未配 registry-address 或一直连不上）——
+     *         调用方要自己判空，别直接调它的方法
+     */
+    JRegistryClient clientOrNull() {
+        return client;
+    }
+
     /** 本次登记的 key，注销时原样删除。 */
     private String key;
 
