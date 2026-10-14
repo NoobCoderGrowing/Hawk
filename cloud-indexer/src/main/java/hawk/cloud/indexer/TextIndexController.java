@@ -35,8 +35,11 @@ import java.util.Map;
  * 见仓库根目录的 {@code textIndex.md}。
  *
  * <h2>目前是骨架：只接参数，不做索引</h2>
- * 这个端点不读数据源、不建索引、不落盘 —— 只校验参数、把收到的内容打进日志并回显。
- * 真正的索引动作尚未实现。
+ * 端点只做**校验 + 提交**：真正的建索引在 {@link IndexService#startAsync} 的后台线程里跑，
+ * 建完由它通知协调器。所以这里**立刻返回**，不在请求线程里扫语料。
+ *
+ * <p>本节点同时只建一份，抢不到锁立刻回 {@code text-indexing}。**这把锁与
+ * {@code /vectorIndex} 那把是两把独立的锁** —— 两条工作负载互不相干。
  *
  * <h2>fieldList 的 JSON 形态</h2>
  * <pre>
@@ -103,11 +106,61 @@ public class TextIndexController {
             return badRequest("fieldList 不能为空");
         }
 
+        List<Field> fieldList;
+        try {
+            fieldList = parseFieldList(rawList);
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
+        }
+
+        List<String> names = fieldList.stream().map(Field::getName).toList();
+        log.info("收到 textIndex 请求：shardCount={}，fieldList={}（各字段的 isTokenized/isStored 见下）",
+                shardCount, names);
+        for (Field field : fieldList) {
+            log.info("  field {}: tokenized={} stored={}",
+                    field.getName(), field.isTokenized(), field.isStored());
+        }
+
+        // 本节点同时只建一份倒排索引。抢不到锁立刻回，不排队、不阻塞 ——
+        // 排队会让"什么时候轮到我"不可预测，调用方（协调器）宁可知道这个节点忙着。
+        if (!indexService.startAsync(shardCount, fieldList)) {
+            log.info("收到 textIndex 请求，但本节点正在建倒排索引，直接回 text-indexing");
+            return ResponseEntity.status(409).body(Map.of(
+                    "status", "text-indexing",
+                    "role", role,
+                    "shardNum", shardNum,
+                    "message", "本节点正在建倒排索引，稍后再试或换一个副本"));
+        }
+
+        log.info("已受理 textIndex 请求：shardCount={}（后台开建）", shardCount);
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", "accepted");
+        body.put("role", role);
+        body.put("shardNum", shardNum);
+        body.put("note", "已在后台开始建倒排索引，完成后通知协调器");
+        return ResponseEntity.accepted().body(body);
+    }
+
+    private static ResponseEntity<Map<String, String>> badRequest(String message) {
+        return ResponseEntity.badRequest().body(Map.of("message", message));
+    }
+
+    /**
+     * 解析并校验请求体里的 {@code fieldList}。
+     *
+     * <p>抽成静态方法是因为 {@code /vectorIndex} 要用**同一套**校验 —— 白名单、枚举取值、
+     * 必填项三样必须一致，抄第二遍迟早会漂移。{@code /vectorIndex} 在此之上还要额外校验
+     * {@code vectorFields}（见 {@code VectorIndexController}）。
+     *
+     * @throws IllegalArgumentException 消息可直接回给客户端（HTTP 400）
+     */
+    static List<Field> parseFieldList(JSONArray rawList) {
         List<Field> fieldList = new ArrayList<>(rawList.size());
         for (int i = 0; i < rawList.size(); i++) {
             JSONObject item = rawList.getJSONObject(i);
             if (item == null) {
-                return badRequest("fieldList[" + i + "] 不是对象");
+                throw new IllegalArgumentException("fieldList[" + i + "] 不是对象");
             }
             String type = item.getString("type");
 
@@ -119,7 +172,7 @@ public class TextIndexController {
                 badEnum = invalidEnum(item, "isStored");
             }
             if (badEnum != null) {
-                return badRequest("fieldList[" + i + "] " + badEnum);
+                throw new IllegalArgumentException("fieldList[" + i + "] " + badEnum);
             }
 
             Field field;
@@ -129,42 +182,14 @@ public class TextIndexController {
                 field = fieldType == null ? null : item.toJavaObject(fieldType.fieldClass());
             } catch (RuntimeException e) {
                 // 枚举值写错之类 —— 是客户端问题，给 400 而不是 500
-                return badRequest("fieldList[" + i + "] 解析失败：" + e.getMessage());
+                throw new IllegalArgumentException("fieldList[" + i + "] 解析失败：" + e.getMessage());
             }
             if (field == null) {
-                return badRequest("fieldList[" + i + "] 的 type 不在白名单内：" + type);
+                throw new IllegalArgumentException("fieldList[" + i + "] 的 type 不在白名单内：" + type);
             }
             fieldList.add(field);
         }
-
-        List<String> names = fieldList.stream().map(Field::getName).toList();
-        log.info("收到 textIndex 请求：shardCount={}，fieldList={}（各字段的 isTokenized/isStored 见下）",
-                shardCount, names);
-        for (Field field : fieldList) {
-            log.info("  field {}: tokenized={} stored={}",
-                    field.getName(), field.isTokenized(), field.isStored());
-        }
-
-        // 交给服务按批拉文档。注意这一刻起这个端点不再是瞬时返回 —— 它会真去扫一遍语料文件。
-    
-        try {
-            indexService.index(shardCount, fieldList);
-        } catch (Exception e) {
-            log.error("按批拉取文档失败", e);
-            return ResponseEntity.internalServerError()
-                    .body(Map.of("message", "按批拉取文档失败：" + e.getMessage()));
-        }
-
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status", "accepted");
-        body.put("role", role);
-        body.put("shardNum", shardNum);
-        body.put("note", "已开始索引");
-        return ResponseEntity.ok(body);
-    }
-
-    private static ResponseEntity<Map<String, String>> badRequest(String message) {
-        return ResponseEntity.badRequest().body(Map.of("message", message));
+        return fieldList;
     }
 
     /**

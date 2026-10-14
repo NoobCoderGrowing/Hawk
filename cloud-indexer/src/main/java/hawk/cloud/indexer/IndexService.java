@@ -21,6 +21,10 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import jakarta.annotation.PreDestroy;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -79,6 +83,16 @@ public class IndexService {
     private String indexDirRoot;
 
     /**
+     * "本节点正在建倒排索引"这个状态本身。
+     *
+     * <p><b>与 {@link VectorIndexService} 那把锁是两把独立的锁</b>，不共用 ——
+     * 倒排和向量是两条独立的工作负载（一个吃分词器、一个吃 ONNX 编码），
+     * 谁也挡不住谁才对。共用一个 {@code AtomicBoolean} 会让"正在建向量索引"把
+     * {@code /textIndex} 也一并拒掉，那是错的。
+     */
+    private final AtomicBoolean running = new AtomicBoolean(false);
+
+    /**
      * 索引线程数，传给 {@link IndexConfig} —— 它决定 {@link IndexWriter} 内部那个线程池的大小。
      *
      * <p>不显式给的话 {@code IndexConfig(analyzer)} 会用 {@code Constants.PROCESSOR_NUM}（CPU 核数），
@@ -102,29 +116,20 @@ public class IndexService {
     }
 
     /**
-     * 按配置构造：{@code data-source.type} 决定用哪个数据源实现，其余子键是它的入参。
+     * 数据源由 {@link DataSourceConfig} 按 {@code data-source.*} 配好后注入。
      *
-     * <p>不是注入一个 {@code DataSource} bean 而是自己按配置挑 —— 源的类型本来就是这份配置的
-     * 一部分，放在这里"配了什么就用什么"看得见；代价是加新实现要改 {@link #buildDataSource}。
+     * <p>之所以收成一个 bean 而不是各自构造：{@code VectorIndexService} 也要用同一个源，
+     * 两边各建一份会拿到两个实例（MySQL 那种还会各开一套连接）。
      */
     public IndexService(
             CoordinatorNotifier coordinatorNotifier,
-            @Value("${hawk.cloud.indexer.data-source.type:csv}") String dataSourceType,
+            DataSource dataSource,
             @Value("${hawk.cloud.indexer.data-source.batch-size:1000}") int batchSize,
-            @Value("${hawk.cloud.indexer.data-source.file-path:goods.csv}") String filePath,
-            @Value("${hawk.cloud.indexer.data-source.skip-header:true}") boolean skipHeader,
-            @Value("${hawk.cloud.indexer.data-source.url:}") String mysqlUrl,
-            @Value("${hawk.cloud.indexer.data-source.username:}") String mysqlUsername,
-            @Value("${hawk.cloud.indexer.data-source.password:}") String mysqlPassword,
-            @Value("${hawk.cloud.indexer.data-source.table:}") String mysqlTable,
-            @Value("${hawk.cloud.indexer.data-source.shard-column:id}") String shardColumn,
             @Value("${hawk.cloud.indexer.shard-num}") String shardNum) {
         this.batchSize = batchSize;
         this.shardNum = shardNum;
         this.coordinatorNotifier = coordinatorNotifier;
-        this.dataSource = buildDataSource(new DataSourceSettings(
-                dataSourceType, shardIndexOf(shardNum), filePath, batchSize, skipHeader,
-                mysqlUrl, mysqlUsername, mysqlPassword, mysqlTable, shardColumn));
+        this.dataSource = dataSource;
     }
 
     /**
@@ -147,12 +152,61 @@ public class IndexService {
     }
 
     /**
+     * 后台建索引的线程。**单线程**：{@link #running} 已经保证同时只有一份在跑。
+     */
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "text-indexer");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /**
+     * 尝试开始一次**异步**建索引。
+     *
+     * @return {@code false} = 本节点正在建倒排索引（互斥锁没抢到），调用方应当立刻回
+     *         {@code text-indexing}；{@code true} = 已受理，活已经在后台跑
+     */
+    public boolean startAsync(int shardCount, List<Field> fieldList) {
+        if (!running.compareAndSet(false, true)) {
+            return false;
+        }
+        try {
+            executor.submit(() -> {
+                try {
+                    index(shardCount, fieldList);
+                } catch (Throwable t) {
+                    // 后台异常没人接，必须在这里落地 —— 否则这个任务失败得悄无声息
+                    log.error("倒排索引失败（shard-num={}）", shardNum, t);
+                } finally {
+                    running.set(false);   // 成功、失败都要放锁，否则这个节点再也不会接活
+                }
+            });
+            return true;
+        } catch (RuntimeException e) {
+            running.set(false);           // 提交本身失败（线程池已关）—— 锁必须还回去
+            throw e;
+        }
+    }
+
+    /** 本节点是不是正在建倒排索引。 */
+    public boolean isRunning() {
+        return running.get();
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        executor.shutdown();
+    }
+
+    /**
      * 按批拉原始文档，挑出属于本分片的，装成文档并写进索引。
+     *
+     * <p><b>只能从 {@link #startAsync} 进来</b> —— 互斥锁在那一层，绕过去就等于绕过了互斥。
      *
      * @param shardCount 总分片数
      * @param fieldList  要索引/存储的字段定义，决定每个字段是否分词、是否存储
      */
-    public void index(int shardCount, List<Field> fieldList) throws Exception {
+    private void index(int shardCount, List<Field> fieldList) throws Exception {
         int myShardIndex = shardIndexOf(shardNum);
 
         String primaryKeyField = primaryKeyFieldName(fieldList);

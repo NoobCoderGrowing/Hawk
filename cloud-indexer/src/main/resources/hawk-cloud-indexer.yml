@@ -33,6 +33,18 @@ hawk:
       # 心跳式重登记间隔（毫秒）。节点只在启动时登记一次，而这条 key 可能被协调器的健康检查
       # 误删（失败计数跨了节点重启那种情形），定期重发能把存活窗口压到一个心跳周期内。
       register-interval-ms: ${HAWK_REGISTER_INTERVAL_MS:60000}
+      # 向量索引（只有 role=vector-indexer 的节点用得到）。请求体里可以带 modelDir / device
+      # 覆盖这里的默认值。倒排那侧不需要这些。
+      vector:
+        # ONNX 模型目录：model.json + encoder.onnx + tokenizer.json
+        model-dir: ${HAWK_MODEL_DIR:model/bge-small-zh-v1.5}
+        # auto = 有 GPU 用 GPU、没有回退 CPU。注意回退只打一行 WARN，速度差 10~50 倍 ——
+        # 想确认真在用 GPU，看启动日志里那句 "ONNX 会话已建立：… 设备 CUDA device 0"
+        device: ${HAWK_DEVICE:auto}
+        # HNSW 参数，与建索引时写入 meta.json 的保持一致
+        m: ${HAWK_VECTOR_M:16}
+        ef-construction: ${HAWK_VECTOR_EF_CONSTRUCTION:100}
+
       # 数据源。type 决定用哪个实现：
       #   csv   → 读 file-path 指向的制表符分隔文件（skip-header 决定是否跳表头）
       #   mysql → 连 url 上的库，读 table 表，按 shard-column 取模筛出本分片的行

@@ -5,12 +5,15 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 从本地文件读文档的数据源（制表符分隔，如 {@code goods.csv}）。
  *
- * <p>目前只实现了 {@link #getTotalBatchCount}；{@link #getBatchDocument} 还是空壳。
+ * <p>字段名取自**第一行**（制表符分隔的列名）。{@code skipHeader} 决定第一行算不算数据：
+ * {@code true} 时它是纯表头，数据从第二行起；{@code false} 时它既是数据的来源、也是数据本身。
+ * 这与 {@link #getTotalBatchCount} 的"数多少行"用的是同一个口径，所以分页不会错位。
  *
  * <h2>batchSize 从哪来</h2>
  * 它是本类的**字段**，所以 {@link #getTotalBatchCount} 只收 {@code skipHeader}，
@@ -73,8 +76,57 @@ public class FileDataSource implements DataSource {
         return lines;
     }
 
+    /**
+     * 取本批文档：第 {@code [offset, offset+batchSize)} 行。
+     *
+     * <p><b>不做分片过滤</b> —— 这里返回的是窗口内的**全部**行，由 {@code IndexService}
+     * 用 {@code belongsToShard} 筛。理由有两条：一是 {@link #getTotalBatchCount} 数的是
+     * 全部行数，offset 若按"本分片的第几条"来算，两边口径就对不上；二是分片规则应当只有
+     * 一处（Java 那边），数据源只管读。
+     *
+     * <p>所有值都是**字符串**（CSV 没有类型），装进 {@link OriDocument} 时类型名统一记
+     * {@code "String"}。{@code IndexService.toField} 本来就把"能解析成数字的字符串"当数字收，
+     * 所以 price 这类列照样能建 BKD。
+     *
+     * <p>契约：本批取完（或文件到头）返回**空列表**，永不返回 {@code null}。
+     */
     @Override
     public List<OriDocument> getBatchDocument(long offset, int batchSize, int shardCount) throws Exception {
-        return null;
+        List<OriDocument> batch = new ArrayList<>(Math.max(batchSize, 0));
+        try (BufferedReader reader = Files.newBufferedReader(Path.of(filePath), StandardCharsets.UTF_8)) {
+            String first = reader.readLine();
+            if (first == null) {
+                return batch;                       // 空文件
+            }
+            String[] names = first.split("\t", -1);   // 第一行是列名（skipHeader=false 时它也是数据）
+            if (!skipHeader) {
+                batch.add(toOriDocument(names, names));
+            }
+            long index = 0;
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (index >= offset && batch.size() < batchSize) {
+                    String[] cells = line.split("\t", -1);
+                    if (cells.length >= 2) {        // 少于两列的行不是文档（与 demo.BuildIndex 一致）
+                        batch.add(toOriDocument(names, cells));
+                    }
+                }
+                index++;
+                if (index >= offset + batchSize) {
+                    break;                          // 本批够了，不再往下读
+                }
+            }
+        }
+        return batch;
+    }
+
+    /** 一行的各列按位置对上列名。列数不一致时，多出来的列按 {@code colN} 命名。 */
+    private static OriDocument toOriDocument(String[] names, String[] cells) {
+        OriDocument doc = new OriDocument();
+        for (int i = 0; i < cells.length; i++) {
+            String name = i < names.length ? names[i] : ("col" + i);
+            doc.add(name, cells[i], "String");
+        }
+        return doc;
     }
 }
