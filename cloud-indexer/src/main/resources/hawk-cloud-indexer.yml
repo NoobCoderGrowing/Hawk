@@ -6,7 +6,7 @@ hawk:
   cloud:
     indexer:
       # 索引**根**目录。实际输出目录会再拼上角色、分片名与当日日期：
-      #   {index-dir}/{role}/{shard-num}/{yyyy-MM-dd}
+      #   {index-dir}/{role}/{shard-num}/{yyyy-MM-dd-HH-mm-ss}（见 IndexStamp）
       #   例如 cloud/index/text-indexer/shard-0/2026-10-13
       # 相对路径以**启动时的工作目录**为基准。
       index-dir: ${HAWK_INDEX_DIR:cloud/index}

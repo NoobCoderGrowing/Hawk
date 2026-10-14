@@ -59,7 +59,8 @@ public class CoordinatorNotifier implements DisposableBean {
      *
      * <p><b>不抛异常</b> —— 通知失败只记日志，见类注释。
      */
-    public void indexComplete(String role, String shardNum, String indexDir) {
+    public void indexComplete(String indexerRole, String recallRole, String shardNum, String stamp,
+                              List<String> pushed, List<String> failed) {
         if (registryAddress == null || registryAddress.isBlank()) {
             log.warn("hawk.cloud.indexer.registry-address 未配置，无从查协调器地址，跳过通知");
             return;
@@ -67,14 +68,22 @@ public class CoordinatorNotifier implements DisposableBean {
 
         String coordinator = findCoordinator();
         if (coordinator == null) {
-            log.warn("注册中心 {} 下没有协调器地址，跳过通知（{} {} -> {}）",
-                    COORDINATOR_PATH, role, shardNum, indexDir);
+            log.warn("注册中心 {} 下没有协调器地址，跳过通知（{} {} stamp={}）",
+                    COORDINATOR_PATH, recallRole, shardNum, stamp);
             return;
         }
 
         try {
-            String body = JSON.toJSONString(Map.of(
-                    "role", role, "shardNum", shardNum, "indexDir", indexDir));
+            // payload 见方案 §12.5：两个 role（谁该重推 / 推给了谁）+ stamp + 副本结果。
+            // **不再有 indexDir** —— 那是索引器本机路径，协调器与召回端都用不上
+            Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("indexerRole", indexerRole);
+            payload.put("recallRole", recallRole);
+            payload.put("shardNum", shardNum);
+            payload.put("stamp", stamp);
+            payload.put("pushed", pushed);
+            payload.put("failed", failed);
+            String body = JSON.toJSONString(payload);
             HttpRequest request = HttpRequest.newBuilder(
                             URI.create("http://" + coordinator + "/indexComplete"))
                     .timeout(Duration.ofMillis(TASK_TIMEOUT_MS))
@@ -83,7 +92,8 @@ public class CoordinatorNotifier implements DisposableBean {
                     .build();
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
-                log.info("已通知协调器 {}：{} {} -> {}", coordinator, role, shardNum, indexDir);
+                log.info("已通知协调器 {}：{} {} stamp={} 成功 {} 失败 {}",
+                        coordinator, recallRole, shardNum, stamp, pushed, failed);
             } else {
                 log.warn("协调器 {} 返回 {}：{}", coordinator, response.statusCode(), response.body());
             }

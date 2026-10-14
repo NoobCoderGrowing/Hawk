@@ -1,5 +1,6 @@
 package hawk.cloud.recall;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -34,6 +35,17 @@ public class HealthController {
 
     private final RegistryRegistrar registrar;
 
+    /**
+     * 索引根目录 —— 只为了报它所在分区的剩余空间。
+     *
+     * <p>索引器推送前会 GET 这个端点看 {@code freeBytes}：**不够就一个字节都不传**、
+     * 直接记失败（方案 §12.9a）。这样磁盘满不用等传完 200 MB 才发现。
+     * 查不到这个端点的索引器会**照推**（fail-open）—— 所以这里挂了只影响"提前发现"，
+     * 不影响数据通路。
+     */
+    @Value("${hawk.cloud.recall.index-dir:cloud/recall}")
+    private String indexDir;
+
     public HealthController(RegistryRegistrar registrar) {
         this.registrar = registrar;
     }
@@ -52,6 +64,21 @@ public class HealthController {
         body.put("key", registrar.nodeKey());
         body.put("address", registrar.address());
         body.put("registry", registry);
+        body.put("freeBytes", freeBytes());
         return body;
+    }
+
+    /** 索引目录所在分区的可用字节数；查不到返回 null（索引器那边会当成"照推"）。 */
+    private Long freeBytes() {
+        try {
+            // 目录可能还不存在（从没收到过推送），退到最近的已存在祖先
+            java.nio.file.Path p = java.nio.file.Path.of(indexDir).toAbsolutePath();
+            while (p != null && !java.nio.file.Files.exists(p)) {
+                p = p.getParent();
+            }
+            return p == null ? null : java.nio.file.Files.getFileStore(p).getUsableSpace();
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

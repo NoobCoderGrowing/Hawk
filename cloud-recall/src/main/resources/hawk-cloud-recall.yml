@@ -7,8 +7,8 @@ hawk:
   cloud:
     recall:
       # 倒排索引目录（含 segment.info / 1.fdt / 1.frq …）。
-      # 相对路径以**启动时的工作目录**为基准。
-      index-dir: ${HAWK_INDEX_DIR:index-data/goods}
+      # 相对路径以**启动时的工作目录**为基准。 完整路径为{index-dir}/{role}/{shard-num}/{yyyy-MM-dd-HH-mm-ss}（时间戳由索引器传来，见 IndexStamp）
+      index-dir: ${HAWK_INDEX_DIR:cloud/recall}
 
       # 注册中心（JRegistry）地址。留空则跳过登记，只记一条 WARN。两种写法都认：
       #   · 单节点     127.0.0.1:6001

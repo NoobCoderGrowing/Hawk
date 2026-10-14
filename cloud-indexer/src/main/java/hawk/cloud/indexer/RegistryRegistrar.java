@@ -1,6 +1,7 @@
 package hawk.cloud.indexer;
 
 import io.github.noobcodergrowing.jregistryclient.JRegistryClient;
+import io.github.noobcodergrowing.jregistrycore.KV;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -190,6 +191,36 @@ public class RegistryRegistrar implements DisposableBean {
      * <p>保留这段是为了那少数能赢下竞争的情况，成本为零。死节点的清理应当依赖注册中心侧的
      * 租约/心跳，不要依赖这里的 delete。
      */
+    /**
+     * 列出注册中心里某个路径下的节点 —— 推送索引时靠它找召回分片（方案 §2.2）。
+     *
+     * <p><b>路径不要带前导斜杠</b>（与 cloud-coordinator 的 NodeRegistry 一致），
+     * 形如 {@code cloud/vector-recall/shard-0}。
+     *
+     * <p><b>复用本类已有的 {@link JRegistryClient}，不要新建第二个</b> ——
+     * 它内部有心跳与重连状态机，两个实例各维护一套连接会互相干扰。
+     *
+     * <p>返回的 KV 要**看 {@code isOffline()}** —— 注册中心跟踪每个 key 的上下线状态，
+     * 推到已下线的副本上只会白等超时。**过滤是调用方的事**（这里不做，因为
+     * "有哪些副本"和"哪些能推"是两个问题）。
+     *
+     * @return 该路径下的节点；未连上注册中心、路径不存在、或请求失败时返回**空列表**（不是 null）
+     */
+    public List<KV> listNodes(String path) {
+        JRegistryClient c = this.client;
+        if (c == null || !c.isConnected()) {
+            log.warn("注册中心未连接，列不出 {} 下的节点", path);
+            return List.of();
+        }
+        List<KV> kvs = c.listAll(path);
+        if (kvs == null) {
+            // listAll 把"路径不存在"和"请求失败"都表示成 null —— 这两种分不开，只能记一句合并的
+            log.warn("{} 下没有节点（路径不存在，或注册中心请求失败）", path);
+            return List.of();
+        }
+        return kvs;
+    }
+
     @Override
     public void destroy() {
         if (client == null) {

@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.Semaphore;
 
 /**
  * 建**向量索引分片** —— 与 {@link IndexService} 同构，只是写的是向量索引而不是倒排。
@@ -45,6 +45,7 @@ public class VectorIndexService {
 
     private final DataSource dataSource;
     private final CoordinatorNotifier coordinatorNotifier;
+    private final IndexPusher indexPusher;
 
     /** 每批多少条。与 {@link IndexService} 读同一个键 —— 算 offset 和传给数据源要用同一个值。 */
     private final int batchSize;
@@ -74,10 +75,33 @@ public class VectorIndexService {
     private int efConstruction;
 
     /**
-     * "本节点正在建向量索引"这个状态本身。用 CAS 抢 —— **不用锁对象排队**，
+     * "本节点正在建向量索引"这个状态本身。{@code tryAcquire} 抢 —— **不排队**，
      * 抢不到就该让调用方立刻知道，而不是让它挂在那里等。
+     *
+     * <p><b>必须是 {@link Semaphore}，不能是 {@code ReentrantLock}。</b> 许可是**请求线程**
+     * 抢的（{@link #startAsync} 的调用者），却由**后台线程**释放（{@link #executor} 里的
+     * finally）—— {@code ReentrantLock} 线程私有，后台线程 unlock 会抛
+     * {@code IllegalMonitorStateException}，而它发生在 {@code FutureTask} 里、没人 get，
+     * 于是**被静默吞掉**：许可永远不还，节点从此对 {@code /vectorIndex} 恒回 409 且无任何异常日志。
+     *
+     * <p>与 {@link IndexService#startAsync} 那个许可互相独立，两条工作负载互不阻塞。
      */
-    private final AtomicBoolean running = new AtomicBoolean(false);
+    private final Semaphore fullPermit = new Semaphore(1);
+    /**
+     * 推送阶段的"许可"。**用 Semaphore 而不是 ReentrantLock** —— 锁是**线程私有**的，
+     * 而补推要"请求线程拿到、后台线程释放"，ReentrantLock 会抛 IllegalMonitorStateException。
+     *
+     * <p>作用见方案 §4.3：凡是"读已有 stamp 目录"或"删 stamp 目录"的操作都在它里面，
+     * 所以**清理与（重）推送天然互斥**。
+     */
+    private final java.util.concurrent.Semaphore pushPermit = new java.util.concurrent.Semaphore(1);
+
+    /** 补推的后台线程。排队在单线程上，天然串行。 */
+    private final ExecutorService repushExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "text-repush");
+        t.setDaemon(true);
+        return t;
+    });
 
     /**
      * 后台建索引的线程。**单线程**：{@link #running} 已经保证了同时只有一份在跑，
@@ -92,10 +116,12 @@ public class VectorIndexService {
     public VectorIndexService(
             DataSource dataSource,
             CoordinatorNotifier coordinatorNotifier,
+            IndexPusher indexPusher,
             @Value("${hawk.cloud.indexer.data-source.batch-size:1000}") int batchSize,
             @Value("${hawk.cloud.indexer.shard-num}") String shardNum) {
         this.dataSource = dataSource;
         this.coordinatorNotifier = coordinatorNotifier;
+        this.indexPusher = indexPusher;
         this.batchSize = batchSize;
         this.shardNum = shardNum;
     }
@@ -110,7 +136,7 @@ public class VectorIndexService {
      */
     public boolean startAsync(int shardCount, List<Field> fieldList, List<String> vectorFields,
                               String modelDir, String device) {
-        if (!running.compareAndSet(false, true)) {
+        if (!fullPermit.tryAcquire()) {
             return false;
         }
         try {
@@ -121,20 +147,20 @@ public class VectorIndexService {
                     // 后台异常没人接，必须在这里落地 —— 否则这个任务失败得悄无声息
                     log.error("向量索引失败（shard-num={}，vectorFields={}）", shardNum, vectorFields, t);
                 } finally {
-                    running.set(false);   // 成功、失败都要放锁，否则这个节点再也不会接活
+                    fullPermit.release();    // 成功、失败都要还，否则这个节点再也不会接活
                 }
             });
             return true;
         } catch (RuntimeException e) {
-            // 提交本身失败（线程池已关）—— 锁必须还回去
-            running.set(false);
+            // 提交本身失败（线程池已关）—— 许可必须还回去
+            fullPermit.release();
             throw e;
         }
     }
 
     /** 本节点是不是正在建向量索引。给 {@code /health} 之类用。 */
     public boolean isRunning() {
-        return running.get();
+        return fullPermit.availablePermits() == 0;
     }
 
     @PreDestroy
@@ -155,7 +181,9 @@ public class VectorIndexService {
             return;
         }
 
-        Path indexDirPath = IndexService.indexDirOf(indexDirRoot, role, shardNum, LocalDate.now());
+        // 时间戳生成一次：目录名、推送参数、通知里的 stamp 都用它（方案 §5.1）
+        String stamp = IndexStamp.now();
+        Path indexDirPath = IndexService.indexDirOf(indexDirRoot, role, shardNum, stamp);
         Files.createDirectories(indexDirPath);
 
         VectorIndexConfig config = new VectorIndexConfig(vectorFields)
@@ -196,6 +224,11 @@ public class VectorIndexService {
                 log.info("第 {}/{} 批：offset={}，累计收下 {}",
                         i + 1, batchCount, offset, writer.accepted());
             }
+            // 空分片：不建、不推、不通知（方案 §13.3）
+            if (writer.accepted() == 0) {
+                log.info("分片 {} 一条文档都没收下（空分片），不建索引、不推送、不通知", shardNum);
+                return;
+            }
             writer.commit();
             log.info("向量索引完成：收下 {}，主键缺失 {}，字段全空 {}，用时 {}s -> {}",
                     writer.accepted(), writer.droppedNoKey(), writer.droppedNoField(),
@@ -204,6 +237,72 @@ public class VectorIndexService {
 
         // 放在最后、且在两段 try 之外：只有 commit 成功才会走到这里，不会发出"建好了"的假通知。
         // 通知本身尽力而为，失败只记日志（见 CoordinatorNotifier）。
-        coordinatorNotifier.indexComplete(role, shardNum, indexDirPath.toAbsolutePath().toString());
+        pushToRecall(stamp, indexDirPath);
+    }
+
+    /**
+     * 推给本分片的召回节点，再按结果决定是否通知协调器。
+     *
+     * <p><b>取 Lock2 用阻塞 {@code lock()}</b> —— 已经 commit 了，不能因为"有人在重推"
+     * 就半途而废。这个不对称是刻意的（方案 §4.3）。
+     */
+    /**
+     * 补推（方案 §7.2）：**不建索引**，只拿 Lock2 重推一个已经存在的 stamp。
+     *
+     * <p>与 {@link #pushToRecall} 的区别：那个在 Lock1 里跑（构建流程的一部分），
+     * 这个只拿 Lock2 —— 所以它能在**构建的编码阶段**旁边跑，不必等一个几分钟的构建。
+     */
+    public IndexPusher.RepushOutcome repush(String stamp, java.util.List<String> only) {
+        // 抢不到许可：本节点正在推送/清理 —— 协调器下一轮再来
+        if (!pushPermit.tryAcquire()) {
+            return IndexPusher.RepushOutcome.busy();
+        }
+        Path dir = IndexService.indexDirOf(indexDirRoot, role, shardNum, stamp);
+        if (!Files.isDirectory(dir)) {
+            pushPermit.release();                           // 许可是抢来的，先还回去
+            return IndexPusher.RepushOutcome.gone();        // 被保留策略清掉了
+        }
+        // **立刻返回，推在后台** —— 同步会把协调器唯一的调度线程占住，
+        // 而注册中心轮询也跑在同一个池里（方案 §7.2 / §4.3）
+        repushExecutor.submit(() -> {
+            try {
+                IndexPusher.PushResult r = indexPusher.push("vector-recall", shardNum, stamp, "vector", dir, only);
+                if (!r.allFailed()) {
+                    // 推完走**同一条回报通路** —— 不为补推再造一个回报接口
+                    coordinatorNotifier.indexComplete(role, "vector-recall", shardNum, stamp, r.pushed(), r.failed());
+                }
+            } catch (Throwable t) {
+                log.error("补推失败（stamp={}）", stamp, t);
+            } finally {
+                pushPermit.release();                       // 后台线程释放 —— 所以必须是 Semaphore
+            }
+        });
+        return IndexPusher.RepushOutcome.ok();
+    }
+
+    /** 阻塞抢推送许可；被中断就中断线程并放行（照推是安全的，只是少了互斥）。 */
+    private void acquirePermit() {
+        try {
+            pushPermit.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private void pushToRecall(String stamp, Path indexDirPath) {
+        acquirePermit();
+        try {
+            IndexPusher.PushResult r = indexPusher.push(
+                    "vector-recall", shardNum, stamp, "vector", indexDirPath, null);
+            if (r.allFailed()) {
+                log.error("{} stamp={} 一个副本都没推成功，不通知协调器", shardNum, stamp);
+            } else {
+                coordinatorNotifier.indexComplete(role, "vector-recall", shardNum, stamp,
+                        r.pushed(), r.failed());
+            }
+            IndexService.pruneOldStamps(indexDirPath.getParent());
+        } finally {
+            pushPermit.release();
+        }
     }
 }
