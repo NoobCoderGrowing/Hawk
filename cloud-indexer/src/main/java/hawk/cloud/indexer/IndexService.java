@@ -194,10 +194,12 @@ public class IndexService {
     /**
      * 尝试开始一次**异步**建索引。
      *
+     * @param round 协调器给的索引轮次；**直接调 {@code /textIndex} 旁路调用时为 {@code null}**。
+     *              非 null 时会写进索引目录（见 {@link IndexRound}），并且**若本节点已有这一轮就直接重推**
      * @return {@code false} = 本节点正在建倒排索引（互斥锁没抢到），调用方应当立刻回
      *         {@code text-indexing}；{@code true} = 已受理，活已经在后台跑
      */
-    public boolean startAsync(int shardCount, List<Field> fieldList) {
+    public boolean startAsync(int shardCount, List<Field> fieldList, Long round) {
         // tryAcquire 不排队：抢不到立刻回 409，让协调器自己决定怎么办
         if (!fullPermit.tryAcquire()) {
             return false;
@@ -205,7 +207,7 @@ public class IndexService {
         try {
             executor.submit(() -> {
                 try {
-                    index(shardCount, fieldList);
+                    index(shardCount, fieldList, round);
                 } catch (Throwable t) {
                     // 后台异常没人接，必须在这里落地 —— 否则这个任务失败得悄无声息
                     log.error("倒排索引失败（shard-num={}）", shardNum, t);
@@ -237,8 +239,22 @@ public class IndexService {
      *
      * @param shardCount 总分片数
      * @param fieldList  要索引/存储的字段定义，决定每个字段是否分词、是否存储
+     * @param round      索引轮次；可为 {@code null}（旁路调用）
      */
-    private void index(int shardCount, List<Field> fieldList) throws Exception {
+    private void index(int shardCount, List<Field> fieldList, Long round) throws Exception {
+        // ★ 短路：本节点已经有这一轮了，就别重算 —— 直接把那份重推一遍。
+        // 这条把「推送失败、构建成功」这个**最常见的失败形态**从"重算 16 分钟"压到"重传一次"：
+        // 网络抖动、召回节点当时不在线，都不需要重算，索引目录好好躺在盘上。
+        // 放在最前面：连主键字段都不用解析，因为它跟"重推哪一份"无关。
+        if (round != null) {
+            Path existing = findStampDirOfRound(round);
+            if (existing != null) {
+                log.info("round {} 本节点已有（{}），不重算，直接重推", round, existing.getFileName());
+                pushToRecall(existing.getFileName().toString(), existing);
+                return;
+            }
+        }
+
         int myShardIndex = shardIndexOf(shardNum);
 
         String primaryKeyField = primaryKeyFieldName(fieldList);
@@ -332,6 +348,15 @@ public class IndexService {
             writer.getThreadPoolExecutor().shutdown();
         }
 
+        // 轮次写进索引目录。位置在 commit 之后、push 之前：
+        //   · commit 之前写 → commit 抛异常时目录里留了个孤零零的 round 文件，而索引是半成品，
+        //     下一轮看到它还会走短路、把半成品推出去；
+        //   · push 之后写 → 打包的时候文件还不在，推过去的那份没有轮次，tracker 永远判未收敛。
+        // 所以只有这一个位置是对的。
+        if (round != null) {
+            IndexRound.write(indexDirPath, round);
+        }
+
         log.info("索引结束：扫过 {} 条，写入 {} 条，非本分片 {} 条，无主键 {} 条 -> {}",
                 scanned, accepted, otherShard, noPrimaryKey, indexDirPath.toAbsolutePath());
 
@@ -339,6 +364,32 @@ public class IndexService {
         // 位置放在 finally 之后：commit 抛异常时不会执行到这里，也就不会发出成功的通知。
         // 通知本身尽力而为，失败只记日志（见 CoordinatorNotifier）。
         pushToRecall(stamp, indexDirPath);
+    }
+
+    /**
+     * 在本分片的索引目录下找「轮次等于 {@code round}」的那一份。
+     *
+     * <p>为什么可以直接扫目录：{@link #pruneOldStamps} 只留最新 2 份，所以这里最多看 2 个目录，
+     * 每次读一个几十字节的 {@code round} 文件。取**最新**的那个（同名时字典序最大），
+     * 与召回端 {@code newest()} 的判定口径一致。
+     *
+     * @return 找到的目录；没有 → {@code null}
+     */
+    private Path findStampDirOfRound(long round) {
+        Path shardDir = Path.of(indexDirRoot, role, shardNum);
+        if (!Files.isDirectory(shardDir)) {
+            return null;
+        }
+        try (var dirs = Files.list(shardDir)) {
+            return dirs.filter(Files::isDirectory)
+                    .filter(p -> !p.getFileName().toString().startsWith("."))
+                    .filter(p -> Long.valueOf(round).equals(IndexRound.read(p)))
+                    .max(Comparator.comparing(p -> p.getFileName().toString()))
+                    .orElse(null);
+        } catch (IOException e) {
+            log.warn("扫 {} 找 round {} 失败：{}", shardDir, round, e.toString());
+            return null;
+        }
     }
 
     /**

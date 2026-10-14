@@ -34,6 +34,7 @@ import java.util.Map;
 public class HealthController {
 
     private final RegistryRegistrar registrar;
+    private final LocalIndexStore local;
 
     /**
      * 索引根目录 —— 只为了报它所在分区的剩余空间。
@@ -46,8 +47,9 @@ public class HealthController {
     @Value("${hawk.cloud.recall.index-dir:cloud/recall}")
     private String indexDir;
 
-    public HealthController(RegistryRegistrar registrar) {
+    public HealthController(RegistryRegistrar registrar, LocalIndexStore local) {
         this.registrar = registrar;
+        this.local = local;
     }
 
     @GetMapping("/health")
@@ -65,6 +67,10 @@ public class HealthController {
         body.put("address", registrar.address());
         body.put("registry", registry);
         body.put("freeBytes", freeBytes());
+        // 本节点**当前服务的那一份**索引是第几轮建的。协调器的 round tracker 判据读的就是它：
+        // 「至少有一个召回副本报的 round == 当前轮次」= 这一轮建成了。
+        // null = 还没有任何版本，或者当前版本是旁路调用（没经协调器）建的、没有 round 文件。
+        body.put("round", local.store().newestRound());
         return body;
     }
 

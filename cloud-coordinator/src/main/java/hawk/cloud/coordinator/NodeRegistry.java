@@ -280,6 +280,22 @@ public class NodeRegistry implements DisposableBean {
         return vectorRecalls;
     }
 
+    /**
+     * 本节点与注册中心的那条长连接，给 {@link RoundStore} 读写索引轮次用。
+     *
+     * <p><b>每次都要现取，不要缓存这个引用。</b> {@link #ensureConnected()} 在掉线重连时会把
+     * {@code client} 换成**另一个实例**，缓存下来的那个会一直指向已经 shutdown 的旧连接。
+     *
+     * <p>复用同一个实例是刻意的：{@code JRegistryClient} 内部有心跳与重连状态机，
+     * 再新建一个会各维护一套连接、互相干扰（{@code cloud-indexer} 的 {@code RegistryRegistrar}
+     * 里对同一件事有更长的说明）。
+     *
+     * @return 当前连接；从未连上（未配 registry-address 或一直连不上）时为 {@code null}
+     */
+    JRegistryClient client() {
+        return client;
+    }
+
     @Override
     public void destroy() {
         if (client != null) {

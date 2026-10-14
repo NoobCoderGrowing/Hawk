@@ -3,7 +3,6 @@ package hawk.cloud.recall;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -17,7 +16,6 @@ import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -54,7 +52,11 @@ public class IndexReceiveController {
     /** 超过这个年龄的 {@code .staging-*} 当成残骸清掉（解压失败 / 传输中断留下的）。 */
     private static final long STALE_STAGING_MS = 60 * 60 * 1000L;
 
-    private final Path root;
+    /**
+     * 本节点的索引目录。**与 {@code /health} 读的是同一个实例** —— /health 报的 round
+     * 正是从收索引的那个目录里读出来的，两边必须是同一个地方。
+     */
+    private final LocalIndexStore local;
 
     /**
      * 每个端点一把锁（与索引器侧对称）。一台 recall 只配一个 role，
@@ -63,18 +65,8 @@ public class IndexReceiveController {
     private final ReentrantLock textLock = new ReentrantLock();
     private final ReentrantLock vectorLock = new ReentrantLock();
 
-    /** role/shardNum 是字段注入、构造时还没有，所以 IndexStore **懒建**。 */
-    private final Map<String, IndexStore> stores = new ConcurrentHashMap<>();
-
-    @Value("${hawk.cloud.recall.role}")
-    private String role;
-
-    @Value("${hawk.cloud.recall.shard-num}")
-    private String shardNum;
-
-    public IndexReceiveController(
-            @Value("${hawk.cloud.recall.index-dir:cloud/recall}") String indexDirRoot) {
-        this.root = Path.of(indexDirRoot);
+    public IndexReceiveController(LocalIndexStore local) {
+        this.local = local;
     }
 
     @PostMapping("/index/text")
@@ -96,11 +88,11 @@ public class IndexReceiveController {
         String expectedSha = request.getHeader(SHA256_HEADER);
 
         // ---- 三个参数都校验，**都在写任何文件之前**（方案 §5.2）----
-        if (!this.role.equals(reqRole)) {
-            return badRequest("role 不匹配：本节点是 " + this.role + "，请求是 " + reqRole);
+        if (!local.role().equals(reqRole)) {
+            return badRequest("role 不匹配：本节点是 " + local.role() + "，请求是 " + reqRole);
         }
-        if (!this.shardNum.equals(reqShard)) {
-            return badRequest("shard 不匹配：本节点是 " + this.shardNum + "，请求是 " + reqShard);
+        if (!local.shardNum().equals(reqShard)) {
+            return badRequest("shard 不匹配：本节点是 " + local.shardNum() + "，请求是 " + reqShard);
         }
         // stamp 会被**当成目录名**拼进路径，所以这是安全边界（防路径穿越），不是格式偏好
         if (!IndexStamp.isValid(stamp)) {
@@ -172,8 +164,7 @@ public class IndexReceiveController {
     }
 
     private IndexStore store() {
-        return stores.computeIfAbsent(role + "/" + shardNum,
-                k -> new IndexStore(root.resolve(role).resolve(shardNum)));
+        return local.store();
     }
 
     private static ResponseEntity<Map<String, String>> badRequest(String message) {

@@ -39,11 +39,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- 注册中心客户端：与 recall 的 JFST 同源，版本不在父 pom 统一管理，就地声明 -->
+        <!-- 注册中心客户端：与 recall 的 JFST 同源，版本不在父 pom 统一管理，就地声明。
+             三处（coordinator / indexer / recall）版本要一起改 —— 三个模块共用一套注册中心协议。 -->
         <dependency>
             <groupId>io.github.noobcodergrowing</groupId>
             <artifactId>JRegistryClient</artifactId>
-            <version>1.0.5</version>
+            <version>1.0.6</version>
         </dependency>
 
         <!-- HTTP 层的 JSON 换成 fastjson（见 FastJsonWebConfig）。此前只是 JRegistryClient

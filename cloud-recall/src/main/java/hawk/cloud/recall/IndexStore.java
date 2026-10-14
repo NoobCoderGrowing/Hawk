@@ -150,6 +150,20 @@ public class IndexStore {
         return dirs.isEmpty() ? null : dirs.get(0);
     }
 
+    /**
+     * **当前版本**的索引轮次 —— 也就是本节点现在服务的是第几轮建的索引。
+     *
+     * <p>协调器的 round tracker 读的就是它（经 {@code /health}）："至少有一个召回副本报的轮次
+     * 等于当前轮次" = 这一轮建成了。所以这里必须报 {@link #newest()} 那一份的，
+     * **不能报"见过的最大轮次"** —— 后者会在新旧交替时撒谎，让 tracker 以为收敛了。
+     *
+     * @return 轮次；还没有任何版本、或当前版本没有 {@code round} 文件（旁路调用建的）→ {@code null}
+     */
+    public Long newestRound() {
+        Path newest = newest();
+        return newest == null ? null : IndexRound.read(newest);
+    }
+
     /** 按名字**降序**的版本目录（不含点开头的）。 */
     public List<Path> listVersions() {
         if (!Files.isDirectory(shardDir)) {

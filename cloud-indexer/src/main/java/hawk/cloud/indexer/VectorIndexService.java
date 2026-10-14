@@ -135,14 +135,14 @@ public class VectorIndexService {
      *         {@code true} = 已受理，活已经在后台跑
      */
     public boolean startAsync(int shardCount, List<Field> fieldList, List<String> vectorFields,
-                              String modelDir, String device) {
+                              String modelDir, String device, Long round) {
         if (!fullPermit.tryAcquire()) {
             return false;
         }
         try {
             executor.submit(() -> {
                 try {
-                    doIndex(shardCount, fieldList, vectorFields, modelDir, device);
+                    doIndex(shardCount, fieldList, vectorFields, modelDir, device, round);
                 } catch (Throwable t) {
                     // 后台异常没人接，必须在这里落地 —— 否则这个任务失败得悄无声息
                     log.error("向量索引失败（shard-num={}，vectorFields={}）", shardNum, vectorFields, t);
@@ -171,7 +171,19 @@ public class VectorIndexService {
     // ------------------------------------------------------------------ 干活
 
     private void doIndex(int shardCount, List<Field> fieldList, List<String> vectorFields,
-                         String modelDir, String device) throws Exception {
+                         String modelDir, String device, Long round) throws Exception {
+        // ★ 短路：本节点已经有这一轮了，就别重算 —— 直接把那份重推一遍。
+        // 向量这边收益最大：编码 10 万篇要 16 分钟，而"推送失败、构建成功"根本不需要重算。
+        // 放在最前面：连主键字段都不用解析。
+        if (round != null) {
+            Path existing = findStampDirOfRound(round);
+            if (existing != null) {
+                log.info("round {} 本节点已有（{}），不重算，直接重推", round, existing.getFileName());
+                pushToRecall(existing.getFileName().toString(), existing);
+                return;
+            }
+        }
+
         int myShardIndex = IndexService.shardIndexOf(shardNum);
 
         String primaryKeyField = IndexService.primaryKeyFieldName(fieldList);
@@ -230,6 +242,11 @@ public class VectorIndexService {
                 return;
             }
             writer.commit();
+            // 轮次写进索引目录。位置在 commit 之后、push 之前 —— 早于 commit 会把半成品标上轮次
+            // （下一轮看到它就走短路、把半成品推出去），晚于 push 则打包时文件还不在。
+            if (round != null) {
+                IndexRound.write(indexDirPath, round);
+            }
             log.info("向量索引完成：收下 {}，主键缺失 {}，字段全空 {}，用时 {}s -> {}",
                     writer.accepted(), writer.droppedNoKey(), writer.droppedNoField(),
                     (System.currentTimeMillis() - t0) / 1000, indexDirPath.toAbsolutePath());
@@ -278,6 +295,32 @@ public class VectorIndexService {
             }
         });
         return IndexPusher.RepushOutcome.ok();
+    }
+
+    /**
+     * 在本分片的索引目录下找「轮次等于 {@code round}」的那一份。
+     *
+     * <p>为什么可以直接扫目录：{@link IndexService#pruneOldStamps} 只留最新 2 份，所以这里最多看
+     * 2 个目录，每次读一个几十字节的 {@code round} 文件。取**最新**的那个，与召回端
+     * {@code newest()} 的判定口径一致。
+     *
+     * @return 找到的目录；没有 → {@code null}
+     */
+    private Path findStampDirOfRound(long round) {
+        Path shardDir = Path.of(indexDirRoot, role, shardNum);
+        if (!Files.isDirectory(shardDir)) {
+            return null;
+        }
+        try (var dirs = Files.list(shardDir)) {
+            return dirs.filter(Files::isDirectory)
+                    .filter(p -> !p.getFileName().toString().startsWith("."))
+                    .filter(p -> Long.valueOf(round).equals(IndexRound.read(p)))
+                    .max(java.util.Comparator.comparing(p -> p.getFileName().toString()))
+                    .orElse(null);
+        } catch (java.io.IOException e) {
+            log.warn("扫 {} 找 round {} 失败：{}", shardDir, round, e.toString());
+            return null;
+        }
     }
 
     /** 阻塞抢推送许可；被中断就中断线程并放行（照推是安全的，只是少了互斥）。 */

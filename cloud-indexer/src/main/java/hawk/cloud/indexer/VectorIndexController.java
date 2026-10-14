@@ -123,8 +123,13 @@ public class VectorIndexController {
         String modelDir = request.getString("modelDir");
         String device = request.getString("device");
 
+        // 索引轮次：协调器发的请求带它，**直接调本端点时为 null**（旁路调用）。
+        // 它只是跟着索引落盘、供协调器判"这一轮有没有人建成"，本端点不校验它。
+        Long round = request.getLong("round");
+
         // ---- 到这里参数都没问题，尝试抢占"正在建索引"这个状态 ----
-        boolean started = vectorIndexService.startAsync(shardCount, fieldList, vectorFields, modelDir, device);
+        boolean started = vectorIndexService.startAsync(
+                shardCount, fieldList, vectorFields, modelDir, device, round);
         if (!started) {
             // 抢不到锁：本节点已经在建。立刻回，不排队、不阻塞
             log.info("收到 vectorIndex 请求，但本节点正在建向量索引，直接回 vector-indexing");

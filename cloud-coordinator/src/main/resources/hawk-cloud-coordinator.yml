@@ -6,7 +6,19 @@ server:
 hawk:
   cloud:
     coordinator:
+      # 总分片数。两个用途：
+      #   · POST /index/build 的 shardCount 缺省值（请求体里给了就用请求体的）
+      #   · round tracker 决定要检查 shard-0 … shard-（N-1）
       shard-count: ${HAWK_SHARD_COUNT:3}
+
+      # ---- 发起索引构建（POST /index/build，见 IndexBuildController / IndexBuildDispatcher）----
+      build:
+        # 协调器 → 索引器单次派发的等待上限。索引器只做「校验 + startAsync」，**立刻**回 202，
+        # 所以 5 秒已经很宽（建连超时在代码里固定 2 秒）。
+        #
+        # ⚠️ 别和 hawk.cloud.indexer.push.timeout-ms 混了 —— 那个是真的在传 200 MB，给的是 10 分钟。
+        #    这里和「协调器 → /repush」是一类：都只等一个受理回执。
+        timeout-ms: ${HAWK_BUILD_TIMEOUT_MS:5000}
       # 注册中心地址，写法与 cloud-indexer / cloud-recall 一致：
       #   · 单节点     127.0.0.1:6001
       #   · 集群节点表 {1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}
@@ -29,6 +41,18 @@ hawk:
 
       # 轮询间隔（毫秒），默认 60 秒。管的是「成员与地址」——从注册中心拉谁在册。
       poll-interval-ms: ${HAWK_COORDINATOR_POLL_MS:60000}
+
+      # ---- round tracker（见 RoundTracker）----
+      # 「每一轮索引有没有真的建成」靠它收敛：定时查召回副本报的 round，没有就重下发。
+      #
+      # ⚠️ 这个间隔**必须远大于一次构建的耗时**，它不是"检查频率"那么随意：
+      #    构建是分钟级（向量 10 万篇 ≈ 16 分钟），间隔小于构建耗时就会在构建**刚开始**时
+      #    判"这一轮没人建" → 重下发 → 两个副本同时建同一片。默认 30 分钟。
+      round-check-interval-ms: ${HAWK_ROUND_CHECK_INTERVAL_MS:1800000}
+
+      # 重下发次数上限。到顶就写"放弃标记"放行下一轮，并打 ERROR。
+      # 没有上限的话，一个永久坏的分片会被每 30 分钟重建一轮，**永远建下去**。
+      round-max-attempts: ${HAWK_ROUND_MAX_ATTEMPTS:3}
 
 
 logging:

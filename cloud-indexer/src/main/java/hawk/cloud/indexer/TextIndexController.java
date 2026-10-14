@@ -121,9 +121,14 @@ public class TextIndexController {
                     field.getName(), field.isTokenized(), field.isStored());
         }
 
+        // 索引轮次：协调器发的请求带它，**直接调本端点时为 null**（旁路调用）。
+        // 它只是跟着索引落盘、供协调器判"这一轮有没有人建成"，本端点不校验它 ——
+        // 校验轮次是协调器的事（它才知道当前是第几轮）。
+        Long round = request.getLong("round");
+
         // 本节点同时只建一份倒排索引。抢不到锁立刻回，不排队、不阻塞 ——
         // 排队会让"什么时候轮到我"不可预测，调用方（协调器）宁可知道这个节点忙着。
-        if (!indexService.startAsync(shardCount, fieldList)) {
+        if (!indexService.startAsync(shardCount, fieldList, round)) {
             log.info("收到 textIndex 请求，但本节点正在建倒排索引，直接回 text-indexing");
             return ResponseEntity.status(409).body(Map.of(
                     "status", "text-indexing",
