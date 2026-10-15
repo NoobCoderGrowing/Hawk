@@ -35,8 +35,8 @@ import java.util.Set;
  */
 public record Schema(Set<String> textFields, Set<String> doubleFields, Set<String> longFields) {
 
-    /** fdm 里 "Tokenized.YES" 的类型位 —— 只有置了它才真的建了倒排。 */
-    private static final byte TOKENIZED_BIT = 0b00000010;
+    /** fdm 里 "Indexed.YES" 的类型位 —— 只有置了它才真的建了倒排。 */
+    private static final byte INDEXED_BIT = 0b00000010;
 
     public Schema {
         textFields = Set.copyOf(textFields);
@@ -54,12 +54,12 @@ public record Schema(Set<String> textFields, Set<String> doubleFields, Set<Strin
         for (String field : reader.getFDMMap().keySet()) {
             // fdm 的 value 是 Pair<byte[], Float>：Left[0] 是类型位图，Right 是平均字段长度
             byte type = reader.getFDMMap().get(field).getLeft()[0];
-            boolean tokenized = (type & TOKENIZED_BIT) != 0;
+            boolean indexed = (type & INDEXED_BIT) != 0;
             switch (FieldType.byBit(type)) {
                 // 文本必须**建了倒排**才算可检索：只存原文的字符串字段（如 goods 里的
                 // descript）查它只会静默返回空
                 case STRING -> {
-                    if (tokenized) {
+                    if (indexed) {
                         text.add(field);
                     }
                 }

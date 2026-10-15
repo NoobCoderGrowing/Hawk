@@ -20,7 +20,7 @@ import java.util.List;
  *   <li>就算支持，靠 {@code @type} 全类名做多态是典型的**反序列化 gadget 面**。</li>
  * </ol>
  * 所以按 {@code type} 显式分发，白名单就是下面那个 switch。索引器的
- * {@code TextIndexController.parseFieldList} 为同样的理由也是手写的。
+ * {@code IndexApi#parseFieldList} 为同样的理由也是手写的。
  *
  * <h2>只做 JSON → Condition，反向不做</h2>
  * 协调器**原样转发**请求体、不认识查询语法，所以没有任何地方需要把 {@code Condition} 渲染回 JSON。

@@ -7,15 +7,15 @@ package field;
  * 这里**没有也不该有 JSON 注解**。项目里 JSON 用 fastjson，而 fastjson 对接口类型只会回一个
  * JDK 代理（不是具体子类），它的 autotype（{@code @type} 全类名）又是典型的反序列化 gadget 面。
  * 所以多态不用框架做，由调用方按 {@code type} 显式 switch，白名单就在那段 switch 里
- * （目前是 {@code cloud-indexer} 的 {@code TextIndexController}）。<b>加新的 Field 实现时要同步改那边。</b>
+ * （目前是 {@code cloud-indexer} 的 {@code IndexApi#parseFieldList}）。<b>加新的 Field 实现时要同步改那边。</b>
  *
  * <p>曾经这里挂着一套 Jackson 注解（{@code @JsonTypeInfo} / {@code @JsonSubTypes}），
  * 由 {@code Id.CLASS} 起家、后来改成 {@code Id.NAME} 白名单。HTTP 层换成 fastjson 后它们全部失效，
  * 故已删除 —— 留着会让后来人以为多态是框架在管。
  *
  * <h2>字段类型用具体枚举</h2>
- * {@code isTokenized} / {@code isStored} 直接是 {@link Tokenized} / {@link Stored}，
- * <b>不要写成 {@code Enum<Tokenized>}</b>：那样会被类型擦除成 {@code java.lang.Enum}，
+ * {@code isIndexed} / {@code isStored} 直接是 {@link Indexed} / {@link Stored}，
+ * <b>不要写成 {@code Enum<Indexed>}</b>：那样会被类型擦除成 {@code java.lang.Enum}，
  * 任何 JSON 框架都拿不到具体类型、反序列化必然失败。
  *
  * <h2>三个实现都有无参构造器</h2>
@@ -32,15 +32,15 @@ public interface Field {
         }
     }
 
-    enum Tokenized {
+    enum Indexed {
         YES("Yes"),
 
         NO("No");
-        Tokenized(String label) {
+        Indexed(String label) {
         }
     }
 
-    Tokenized isTokenized();
+    Indexed isIndexed();
 
     Stored isStored();
 

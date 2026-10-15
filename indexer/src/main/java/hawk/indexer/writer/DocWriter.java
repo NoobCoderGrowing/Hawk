@@ -472,8 +472,8 @@ public class DocWriter implements Runnable {
      *
      * <p>按字段属性分两条路径（互斥）：
      * <ul>
-     *   <li>{@code Tokenized.YES}：经 {@link #processIndexedField} 写入 FDM 与 IVT。</li>
-     *   <li>{@code Stored.YES} 且 {@code Tokenized.NO}：仅写入 FDM 元数据（供 doc() 反序列化）。</li>
+     *   <li>{@code Indexed.YES}：经 {@link #processIndexedField} 写入 FDM 与 IVT。</li>
+     *   <li>{@code Stored.YES} 且 {@code Indexed.NO}：仅写入 FDM 元数据（供 doc() 反序列化）。</li>
      * </ul>
      *
      * @param doc         待索引的文档
@@ -486,7 +486,7 @@ public class DocWriter implements Runnable {
         HashMap<String, Field> fieldMap = doc.getFieldMap();
         for (Map.Entry<String, Field> entry : fieldMap.entrySet()) {
             Field field = entry.getValue();
-            if (field.isTokenized() == Field.Tokenized.YES) {
+            if (field.isIndexed() == Field.Indexed.YES) {
                 processIndexedField(field, ret, docBkd);
             } else if (field.isStored() == Field.Stored.YES) {
                 byte[] fieldName = field.serializeName();
@@ -544,7 +544,7 @@ public class DocWriter implements Runnable {
      *       以支持范围查询。</li>
      * </ul>
      *
-     * @param field       待处理的单个字段（调用方已保证 {@link Field.Tokenized#YES}）
+     * @param field       待处理的单个字段（调用方已保证 {@link Field.Indexed#YES}）
      * @param pair        {@link #processIndexedFields} 返回的容器，Left 为 FDM，Right 为 IVT
      */
     public void processIndexedField(Field field, Pair pair,

@@ -557,7 +557,7 @@ public class IndexService {
     }
 
     /**
-     * 按 {@code fieldList} 装成索引用的文档：**值取自原始文档，isTokenized / isStored 取自定义**。
+     * 按 {@code fieldList} 装成索引用的文档：**值取自原始文档，isIndexed / isStored 取自定义**。
      *
      * <p>fieldList 没列的字段不进结果 —— 它同时是"要哪些字段"的白名单。
      */
@@ -589,7 +589,7 @@ public class IndexService {
         }
         try {
             // 类型分发交给 FieldType —— 加新字段类型只改那一个枚举
-            return FieldType.of(def).fromRawValue(name, value, def.isTokenized(), def.isStored());
+            return FieldType.of(def).fromRawValue(name, value, def.isIndexed(), def.isStored());
         } catch (NumberFormatException e) {
             // NumberFormatException 是 IllegalArgumentException 的子类，必须放前面
             log.warn("字段 {} 的值“{}”转不成数字，跳过该字段", name, value);

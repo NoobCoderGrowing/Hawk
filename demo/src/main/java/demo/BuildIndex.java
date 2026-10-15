@@ -56,12 +56,12 @@ public class BuildIndex {
 
                 Document doc = new Document();
                 doc.add(new PrimaryKeyField(count));                                          // 业务主键
-                // Tokenized.YES = 建倒排/BKD，可检索；Stored.YES = 存原文，取回文档时能拿到
-                doc.add(new StringField("title", title, Field.Tokenized.YES, Field.Stored.YES));
-                doc.add(new NumberField("price", price, Field.Tokenized.YES, Field.Stored.YES));
-                // 下面两个只存原文、不建索引（Tokenized.NO）—— 两个都传 NO 的字段会被整个丢弃，别踩
-                doc.add(new StringField("descript", title, Field.Tokenized.NO, Field.Stored.YES));
-                doc.add(new NumberField("digt", price, Field.Tokenized.NO, Field.Stored.YES));
+                // Indexed.YES = 建倒排/BKD，可检索；Stored.YES = 存原文，取回文档时能拿到
+                doc.add(new StringField("title", title, Field.Indexed.YES, Field.Stored.YES));
+                doc.add(new NumberField("price", price, Field.Indexed.YES, Field.Stored.YES));
+                // 下面两个只存原文、不建索引（Indexed.NO）—— 两个都传 NO 的字段会被整个丢弃，别踩
+                doc.add(new StringField("descript", title, Field.Indexed.NO, Field.Stored.YES));
+                doc.add(new NumberField("digt", price, Field.Indexed.NO, Field.Stored.YES));
 
                 writer.addDoc(doc);
                 count++;

@@ -3,7 +3,6 @@ package hawk.cloud.indexer.webConfig;
 import com.alibaba.fastjson.support.config.FastJsonConfig;
 import com.alibaba.fastjson.support.spring.FastJsonHttpMessageConverter;
 
-import hawk.cloud.indexer.TextIndexController;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
@@ -24,7 +23,7 @@ import java.util.List;
  *   <li>fastjson 默认**不输出值为 null 的字段**，与原来 {@code spring.jackson.default-property-inclusion: non_null}
  *       的效果一致，所以前端那边不用动。</li>
  *   <li>fastjson **不读 Jackson 注解**，所以 {@code field} 包上的 {@code @JsonSubTypes} 白名单在 HTTP
- *       这一层不再起作用 —— 多态分发改成在 {@link TextIndexController} 里按 {@code type} 显式 switch。</li>
+ *       这一层不再起作用 —— 多态分发改成在 {@code hawk.cloud.indexer.IndexApi} 里按 {@code type} 显式 switch。</li>
  * </ul>
  */
 @Configuration

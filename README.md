@@ -141,6 +141,7 @@ deleted.ids      软删除主键集合
 几条与单机库不同的约定，读代码前先知道：
 
 - **拉取，不是推送。** 索引器只把"最新轮次"登记到注册中心，召回端定时去拉。推送模型（`IndexPusher` / `/repush` / `/indexComplete`）已整套删除。
+- **两个建索引端点（`/textIndex` / `/vectorIndex`）入参与响应逐字同形**，公共信封在 `IndexApi`（cloud-indexer）。协调器因此不需要按 role 分支构造 body 或解析响应；路径仍由它按注册中心的 role 选。契约见 `textIndex.md`。
 - **协调器归并用 RRF（倒数排名融合），不是分数相加**，并按业务主键去重。跨 role（BM25 vs 余弦）与跨分片（BM25 用的是本分片的 `df` / `avgDocLength`）的分数都不可比，只能看排名。
 - 因此**多路时 `totalHits` 只是上界**（`totalExact=false`），单路且各分片都精确时才是精确值。
 - 召回的契约是"**本分片前 N**"；索引未就绪的分片返回 **503**（与"没匹配"区分开）。
@@ -278,7 +279,7 @@ cd benchmark/scripts
 1. **迭代次数极少。** 脚本默认 `-i 1 -wi 1 -f 1`（1 次热身、1 次测量、单 fork），JMH 输出的 `Error` 列为空即为该原因。**索引基准中 1k/5k 两点的差异不可信**，检索基准相对稳定但仍建议提高迭代次数后复测。
 2. **合并策略不对等。** Hawk 索引基准用 `enableMerge=false`，Lucene 侧 `ConcurrentMergeScheduler` 正常工作，两者承担的合并成本不同。
 3. **规模有限。** 索引基准最大 10k 篇、检索基准 50k 篇，未覆盖百万级。单文件 2 GiB 上限已随 FFM 迁移解除，但**文档数 ~2^31 的上限未动**（posting 的 `VInt docID`、`preMaxID`、`pk.map` docID 仍是 `int`），到该量级需升 `formatVersion`。
-4. **字段类型不完全等价。** Lucene 侧 `descript`/`digt` 以 `StoredField` 写入，Hawk 侧为 `Tokenized.NO` 的存储字段；`uniqueID` 在 Lucene 侧同时写入 `LongPoint` 与 `StoredField`（含未被查询使用的点索引）。
+4. **字段类型不完全等价。** Lucene 侧 `descript`/`digt` 以 `StoredField` 写入，Hawk 侧为 `Indexed.NO` 的存储字段；`uniqueID` 在 Lucene 侧同时写入 `LongPoint` 与 `StoredField`（含未被查询使用的点索引）。
 5. **单机单 JVM。** 未涉及跨机部署，与本项目"写入端/召回端可分离"的架构定位不完全对应。
 
 ---

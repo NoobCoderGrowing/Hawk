@@ -89,10 +89,10 @@ public final class CorpusLoader {
 
         Document document = new Document();
         document.add(new PrimaryKeyField(uniqueID));
-        document.add(new StringField("title", title, Field.Tokenized.YES, Field.Stored.YES));
-        document.add(new NumberField("price", price, Field.Tokenized.YES, Field.Stored.YES));
-        document.add(new StringField("descript", title, Field.Tokenized.NO, Field.Stored.YES));
-        document.add(new NumberField("digt", price, Field.Tokenized.NO, Field.Stored.YES));
+        document.add(new StringField("title", title, Field.Indexed.YES, Field.Stored.YES));
+        document.add(new NumberField("price", price, Field.Indexed.YES, Field.Stored.YES));
+        document.add(new StringField("descript", title, Field.Indexed.NO, Field.Stored.YES));
+        document.add(new NumberField("digt", price, Field.Indexed.NO, Field.Stored.YES));
         return document;
     }
 }

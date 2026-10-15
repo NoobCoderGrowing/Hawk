@@ -13,14 +13,14 @@ public class PrimaryKeyField implements Field {
     private String name;
     private long value;
 
-    public Tokenized isTokenized;
+    public Indexed isIndexed;
 
     public Stored isStored;
 
 
-    public PrimaryKeyField(String name, Tokenized isTokenized, Stored isStored) {
+    public PrimaryKeyField(String name, Indexed isIndexed, Stored isStored) {
         this.name = name;
-        this.isTokenized = isTokenized;
+        this.isIndexed = isIndexed;
         this.isStored = isStored;
     }
 
@@ -33,23 +33,23 @@ public class PrimaryKeyField implements Field {
      *
      * <p>{@code value} 用装箱的 {@code Long}：字段定义式的请求体不带 value，基本类型接不住 null。
      */
-    public PrimaryKeyField(String name, Long value, Tokenized isTokenized, Stored isStored) {
+    public PrimaryKeyField(String name, Long value, Indexed isIndexed, Stored isStored) {
         this.name = name;
         this.value = value == null ? 0L : value;
-        this.isTokenized = isTokenized;
+        this.isIndexed = isIndexed;
         this.isStored = isStored;
     }
 
     public PrimaryKeyField(long value) {
         this.name = "uniqueID";
         this.value = value;
-        this.isTokenized = Tokenized.NO;
+        this.isIndexed = Indexed.NO;
         this.isStored = Stored.YES;
     }
 
     @Override
-    public Tokenized isTokenized() {
-        return Tokenized.NO;
+    public Indexed isIndexed() {
+        return Indexed.NO;
     }
 
     @Override

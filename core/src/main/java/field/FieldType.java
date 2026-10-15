@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
  *   DocWriter.storedOnlyFieldLength()  类     → 存储字节长度
  *   DocWriter.processIndexedField()    类     → 怎么建倒排 / 怎么编成 BKD 点
  *   Searcher.createField()             类型位 → 类（从存储字节解回来）
- *   TextIndexController 的白名单        JSON名 → 类（反序列化）
+ *   IndexApi 的白名单                   JSON名 → 类（反序列化）
  *   IndexService.toField()             定义 + 原始值 → 类
  * </pre>
  * 全靠人记得，漏一处就是**静默出错**（字段被悄悄丢掉、或类型位认不出）。
@@ -24,7 +24,7 @@ import java.nio.charset.StandardCharsets;
  * <h2>类型位</h2>
  * fdm 里每个字段一个字节，位含义：
  * <pre>
- *   bit0 Stored.YES     bit1 Tokenized.YES
+ *   bit0 Stored.YES     bit1 Indexed.YES
  *   bit2 NumberField    bit3 StringField    bit4 PrimaryKeyField    bit5 LongField
  * </pre>
  * 低两位与字段类型无关，所以 {@link #byBit} 要先掩掉。
@@ -36,7 +36,7 @@ public enum FieldType {
     PRIMARY_KEY("PrimaryKeyField", 0b00010000),
     LONG("LongField",          0b00100000);
 
-    /** 类型位只占这几位，其余是 stored / tokenized。 */
+    /** 类型位只占这几位，其余是 stored / indexed。 */
     private static final byte TYPE_MASK = 0b00111100;
 
     private final String jsonName;
@@ -49,7 +49,7 @@ public enum FieldType {
 
     // ------------------------------------------------------------------ 标识
 
-    /** fdm 里的类型位（不含 stored / tokenized）。 */
+    /** fdm 里的类型位（不含 stored / indexed）。 */
     public byte bit() {
         return bit;
     }
@@ -95,7 +95,7 @@ public enum FieldType {
 
     // ------------------------------------------------------------------ fdm 类型字节
     //
-    // 一个字节同时说两件事：**怎么读**（bits 2-5：类型）和**是什么**（bit0 stored / bit1 tokenized）。
+    // 一个字节同时说两件事：**怎么读**（bits 2-5：类型）和**是什么**（bit0 stored / bit1 indexed）。
     //
     // 这两个方向原先**各有一份实现、分散在两个模块里**：拼字节在 indexer 的
     // {@code DocWriter.getFieldType}、拆字节在 recall 的 {@code Searcher.createField}。
@@ -105,8 +105,8 @@ public enum FieldType {
     /** 类型字节里的 stored 位。 */
     public static final byte STORED_BIT = 0b00000001;
 
-    /** 类型字节里的 tokenized 位。 */
-    public static final byte TOKENIZED_BIT = 0b00000010;
+    /** 类型字节里的 indexed 位。 */
+    public static final byte INDEXED_BIT = 0b00000010;
 
     /** 拼出 fdm 里的类型字节。 */
     public static byte toTypeByte(Field field) {
@@ -114,8 +114,8 @@ public enum FieldType {
         if (field.isStored() == Field.Stored.YES) {
             b |= STORED_BIT;
         }
-        if (field.isTokenized() == Field.Tokenized.YES) {
-            b |= TOKENIZED_BIT;
+        if (field.isIndexed() == Field.Indexed.YES) {
+            b |= INDEXED_BIT;
         }
         return (byte) (b | of(field).bit());
     }
@@ -125,19 +125,19 @@ public enum FieldType {
         return (typeByte & STORED_BIT) != 0 ? Field.Stored.YES : Field.Stored.NO;
     }
 
-    /** 从类型字节还原 tokenized 位。 */
-    public static Field.Tokenized tokenizedOf(byte typeByte) {
-        return (typeByte & TOKENIZED_BIT) != 0 ? Field.Tokenized.YES : Field.Tokenized.NO;
+    /** 从类型字节还原 indexed 位。 */
+    public static Field.Indexed indexedOf(byte typeByte) {
+        return (typeByte & INDEXED_BIT) != 0 ? Field.Indexed.YES : Field.Indexed.NO;
     }
 
     /**
      * 由（类型字节, 字段名, 已解码的值）还原一个 {@link Field}。
      *
-     * <p>读存储字段的完整一步：类型字节 → 类型 + stored/tokenized → 具体子类。
+     * <p>读存储字段的完整一步：类型字节 → 类型 + stored/indexed → 具体子类。
      * 调用方不用自己掩位，也就没机会掩错。
      */
     public static Field decodeStored(byte typeByte, String name, byte[] value) {
-        return byBit(typeByte).decodeStored(name, value, tokenizedOf(typeByte), storedOf(typeByte));
+        return byBit(typeByte).decodeStored(name, value, indexedOf(typeByte), storedOf(typeByte));
     }
 
     /** 由 HTTP 请求体里的 {@code "type"} 反查；不在白名单里返回 {@code null}。 */
@@ -159,12 +159,12 @@ public enum FieldType {
      * <p>数字或能解析成数字的字符串都接受：CSV 这类数据源可能一切都给字符串。
      * 转不成数字时抛 {@link NumberFormatException}，由调用方决定"跳过该字段"还是整条失败。
      */
-    public Field fromRawValue(String name, Object raw, Field.Tokenized isTokenized, Field.Stored isStored) {
+    public Field fromRawValue(String name, Object raw, Field.Indexed isIndexed, Field.Stored isStored) {
         return switch (this) {
-            case STRING -> new StringField(name, String.valueOf(raw), isTokenized, isStored);
-            case NUMBER -> new NumberField(name, asDouble(raw), isTokenized, isStored);
-            case PRIMARY_KEY -> new PrimaryKeyField(name, asLong(raw), isTokenized, isStored);
-            case LONG -> new LongField(name, asLong(raw), isTokenized, isStored);
+            case STRING -> new StringField(name, String.valueOf(raw), isIndexed, isStored);
+            case NUMBER -> new NumberField(name, asDouble(raw), isIndexed, isStored);
+            case PRIMARY_KEY -> new PrimaryKeyField(name, asLong(raw), isIndexed, isStored);
+            case LONG -> new LongField(name, asLong(raw), isIndexed, isStored);
         };
     }
 
@@ -174,15 +174,15 @@ public enum FieldType {
      * <p>各类型的字节布局不同：字符串是 UTF-8 字节；数字是 8 字节 long 位模式
      * （double 先转 longBits，long 原样）。
      */
-    public Field decodeStored(String name, byte[] value, Field.Tokenized isTokenized, Field.Stored isStored) {
+    public Field decodeStored(String name, byte[] value, Field.Indexed isIndexed, Field.Stored isStored) {
         return switch (this) {
             case STRING -> new StringField(name, new String(value, StandardCharsets.UTF_8),
-                    isTokenized, isStored);
+                    isIndexed, isStored);
             case NUMBER -> new NumberField(name,
-                    Double.longBitsToDouble(DataInput.readLong(value)), isTokenized, isStored);
+                    Double.longBitsToDouble(DataInput.readLong(value)), isIndexed, isStored);
             case PRIMARY_KEY -> new PrimaryKeyField(name, DataInput.readLong(value),
-                    isTokenized, isStored);
-            case LONG -> new LongField(name, DataInput.readLong(value), isTokenized, isStored);
+                    isIndexed, isStored);
+            case LONG -> new LongField(name, DataInput.readLong(value), isIndexed, isStored);
         };
     }
 

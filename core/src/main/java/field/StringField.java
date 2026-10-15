@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets;
 @NoArgsConstructor
 public class StringField implements Field {
 
-    public Tokenized isTokenized;
+    public Indexed isIndexed;
 
     public Stored isStored;
 
@@ -18,9 +18,9 @@ public class StringField implements Field {
 
     private String value;
 
-    public StringField(String name, Tokenized isTokenized, Stored isStored) {
+    public StringField(String name, Indexed isIndexed, Stored isStored) {
         this.name = name;
-        this.isTokenized = isTokenized;
+        this.isIndexed = isIndexed;
         this.isStored = isStored;
     }
 
@@ -29,10 +29,10 @@ public class StringField implements Field {
         this.value = value;
     }
 
-    public StringField(String name, String value, Tokenized isTokenized, Stored isStored) {
+    public StringField(String name, String value, Indexed isIndexed, Stored isStored) {
         this.name = name;
         this.value = value;
-        this.isTokenized = isTokenized;
+        this.isIndexed = isIndexed;
         this.isStored = isStored;
     }
 
@@ -41,8 +41,8 @@ public class StringField implements Field {
     }
 
     @Override
-    public Tokenized isTokenized() {
-        return isTokenized;
+    public Indexed isIndexed() {
+        return isIndexed;
     }
 
     @Override

@@ -28,7 +28,7 @@ import java.util.concurrent.ThreadLocalRandom;
  *
  * <h2>它是路由器，不是校验器</h2>
  * 协调器对字段 schema **零知识** —— `fieldList` / `vectorFields` 白名单的唯一权威是索引器的
- * {@code TextIndexController.parseFieldList}（那个方法跨模块、跨包都够不着），抄一份就是第三份拷贝。
+ * {@code IndexApi#parse}（那个方法跨模块、跨包都够不着），抄一份就是第三份拷贝。
  * 所以这里**不解析、不重建**请求体，原样转发。
  *
  * <h2>逐副本试，但 400 立刻中止整轮</h2>

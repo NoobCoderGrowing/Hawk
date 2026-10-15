@@ -31,7 +31,7 @@ public class LongField implements Field {
     /** 在 fdm 里的类型位。加新字段类型时同步改 {@code DocWriter#getFieldType} 与 {@code Searcher#createField}。 */
     public static final byte TYPE_BIT = 0b00100000;
 
-    private Tokenized isTokenized;
+    private Indexed isIndexed;
 
     private Stored isStored;
 
@@ -40,9 +40,9 @@ public class LongField implements Field {
     private long value;
 
     /** 字段定义式（无值）—— 请求体里描述"有这么个字段"。 */
-    public LongField(String name, Tokenized isTokenized, Stored isStored) {
+    public LongField(String name, Indexed isIndexed, Stored isStored) {
         this.name = name;
-        this.isTokenized = isTokenized;
+        this.isIndexed = isIndexed;
         this.isStored = isStored;
     }
 
@@ -50,20 +50,20 @@ public class LongField implements Field {
     public LongField(String name, long value) {
         this.name = name;
         this.value = value;
-        this.isTokenized = Tokenized.YES;
+        this.isIndexed = Indexed.YES;
         this.isStored = Stored.YES;
     }
 
-    public LongField(String name, Long value, Tokenized isTokenized, Stored isStored) {
+    public LongField(String name, Long value, Indexed isIndexed, Stored isStored) {
         this.name = name;
         this.value = value == null ? 0L : value;
-        this.isTokenized = isTokenized;
+        this.isIndexed = isIndexed;
         this.isStored = isStored;
     }
 
     @Override
-    public Tokenized isTokenized() {
-        return isTokenized;
+    public Indexed isIndexed() {
+        return isIndexed;
     }
 
     @Override
