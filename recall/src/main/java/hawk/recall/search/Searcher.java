@@ -42,8 +42,8 @@ import java.util.TreeMap;
  *
  * <h2>Searcher 不认识"文本"</h2>
  * 这里只处理**已经分好词**的 {@link Query}。分词是"请求层"的事
- * （{@code StringQuery#getTermQueryList(analyzer)} 或 {@code RequestCompiler}），
- * 所以本类**不需要 analyzer** —— 构造器也不收 {@code SearchConfig}。
+ * （{@code StringQuery#getTermQueryList(tokenizer)} 或 {@code RequestCompiler}），
+ * 所以本类**不需要 tokenizer** —— 构造器也不收 {@code SearchConfig}。
  *
  * <h2>执行模型：拉取式迭代器</h2>
  * 检索是"拉"的：{@link DocIdIterator} 按**升序 docID** 逐个吐文档，收集器逐个收。

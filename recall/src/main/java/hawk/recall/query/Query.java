@@ -6,7 +6,7 @@ package hawk.recall.query;
  * <h2>与"检索请求"的分界</h2>
  * 这一层只装**已经能拿去查索引**的东西：{@link TermQuery} 里的 term 是词、不是原文。
  * 用户输入的那段还没分词的文本属于**另一层**（"请求"），要先编译才能变成这里的节点 ——
- * 因为分词需要 analyzer，而 analyzer 是应用级配置，不该塞进 Searcher。
+ * 因为分词需要 tokenizer，而 tokenizer 是应用级配置，不该塞进 Searcher。
  *
  * <h2>为什么是 immutable 的 record</h2>
  * 所有实现都是 {@code record}，字段全 final、**没有 setter**。三个直接好处：

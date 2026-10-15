@@ -8,7 +8,7 @@ import field.PrimaryKeyField;
 import field.StringField;
 import hawk.indexer.writer.IndexWriter;
 import hawk.indexer.writer.config.IndexConfig;
-import hawk.segment.core.anlyzer.NShortestPathAnalyzer;
+import hawk.segment.core.anlyzer.NShortestPathTokenizer;
 
 import java.io.BufferedReader;
 import java.nio.charset.StandardCharsets;
@@ -37,9 +37,9 @@ public class BuildIndex {
         }
         Files.createDirectories(indexDir);
 
-        var analyzer = new NShortestPathAnalyzer(1);
+        var tokenizer = new NShortestPathTokenizer(1);
         // 第三个参数是主键字段名，默认 "uniqueID"，与下面 PrimaryKeyField 的名字一致
-        IndexWriter writer = new IndexWriter(new IndexConfig(analyzer), MMapDirectory.open(indexDir), false);
+        IndexWriter writer = new IndexWriter(new IndexConfig(tokenizer), MMapDirectory.open(indexDir), false);
 
         long count = 0;
         long t0 = System.currentTimeMillis();

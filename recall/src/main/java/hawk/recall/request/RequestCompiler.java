@@ -7,7 +7,7 @@ import hawk.recall.query.Occur;
 import hawk.recall.query.Query;
 import hawk.recall.query.RangeQuery;
 import hawk.recall.query.TermQuery;
-import hawk.segment.core.anlyzer.Analyzer;
+import hawk.segment.core.anlyzer.Tokenizer;
 
 import java.util.List;
 import java.util.Objects;
@@ -15,15 +15,15 @@ import java.util.Objects;
 /**
  * 把 {@link Condition 检索请求} 编译成 {@link Query 查询 AST}。
  *
- * <p>这一层是**全流程唯一同时需要 analyzer 和 schema 的地方**：
+ * <p>这一层是**全流程唯一同时需要 tokenizer 和 schema 的地方**：
  * <ul>
- *   <li><b>analyzer</b> —— 把 {@link Condition.Text} 里的原文切成词项</li>
+ *   <li><b>tokenizer</b> —— 把 {@link Condition.Text} 里的原文切成词项</li>
  *   <li><b>schema</b> —— 校验字段名，把"用户写错了"在编译期拦下来</li>
  * </ul>
  * 编完之后，{@code Searcher} 拿到的就是一棵纯 AST，既不需要分析器、也不需要 schema。
  *
  * <pre>
- *   var compiler = new RequestCompiler(analyzer, Schema.from(reader));
+ *   var compiler = new RequestCompiler(tokenizer, Schema.from(reader));
  *   Query q = compiler.compile(Condition.Group.and(
  *           Condition.Group.or(
  *                   new Condition.Text("老黄冰糖", List.of("title"), Occur.SHOULD, Occur.MUST),
@@ -34,11 +34,11 @@ import java.util.Objects;
  */
 public final class RequestCompiler {
 
-    private final Analyzer analyzer;
+    private final Tokenizer tokenizer;
     private final Schema schema;
 
-    public RequestCompiler(Analyzer analyzer, Schema schema) {
-        this.analyzer = Objects.requireNonNull(analyzer, "analyzer");
+    public RequestCompiler(Tokenizer tokenizer, Schema schema) {
+        this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
         this.schema = Objects.requireNonNull(schema, "schema");
     }
 
@@ -60,7 +60,7 @@ public final class RequestCompiler {
                 throw new IllegalArgumentException(
                         "没有可检索的文本字段「" + field + "」。" + schema.describe());
             }
-            List<TermQuery> terms = new StringQuery(field, text.text()).getTermQueryList(analyzer);
+            List<TermQuery> terms = new StringQuery(field, text.text()).getTermQueryList(tokenizer);
             if (terms.isEmpty()) {
                 // 这段文本在这个字段分不出任何词 —— 该字段无从匹配，跳过它。
                 // （注意：若外层是 MUST，跳过等于"少了一个必须满足的条件"；

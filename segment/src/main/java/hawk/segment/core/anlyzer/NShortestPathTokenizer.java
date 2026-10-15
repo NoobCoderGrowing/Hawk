@@ -13,7 +13,7 @@ import java.util.*;
 
 @Slf4j
 @Data
-public class NShortestPathAnalyzer implements Analyzer {
+public class NShortestPathTokenizer implements Tokenizer {
 
     private StringTools stringTools = new StringTools();
 
@@ -24,11 +24,11 @@ public class NShortestPathAnalyzer implements Analyzer {
 
     private HashSet<String> NPathSet = new HashSet<String>(621950);
 
-    public NShortestPathAnalyzer() {
+    public NShortestPathTokenizer() {
         loadNPathDic();
     }
 
-    public NShortestPathAnalyzer( int n) {
+    public NShortestPathTokenizer( int n) {
         this.n = n;
         loadNPathDic();
     }
@@ -55,7 +55,7 @@ public class NShortestPathAnalyzer implements Analyzer {
 
 
 
-    public HashSet<Term> anlyze(String value, String fieldName){
+    public HashSet<Term> tokenize(String value, String fieldName){
         HashSet<Term> result = new HashSet<>();
         if(value==null || value.length() == 0){ // check for empty str
             return result;
@@ -76,7 +76,7 @@ public class NShortestPathAnalyzer implements Analyzer {
         return result;
     }
 
-    public HashSet<Term> anlyze(String value, String fieldName, int n){
+    public HashSet<Term> tokenize(String value, String fieldName, int n){
         this.n = n;
         HashSet<Term> result = new HashSet<>();
         if(value==null || value.length() == 0){ // check for empty str
@@ -277,8 +277,8 @@ public class NShortestPathAnalyzer implements Analyzer {
     }
 
 //    public static void main(String[] args) throws InterruptedException {
-//        Analyzer analyzer = new NShortestPathAnalyzer(1);
-//        HashSet<Term> terms = analyzer.anlyze("适用于丰田皇冠锐志发动机机脚胶机脚支架脚垫机脚胶垫", "title");
+//        Tokenizer tokenizer = new NShortestPathTokenizer(1);
+//        HashSet<Term> terms = tokenizer.tokenize("适用于丰田皇冠锐志发动机机脚胶机脚支架脚垫机脚胶垫", "title");
 //        System.out.println(terms);
 //    }
 

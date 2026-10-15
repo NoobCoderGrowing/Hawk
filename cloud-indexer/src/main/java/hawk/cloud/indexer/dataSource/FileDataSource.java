@@ -22,7 +22,7 @@ import java.util.List;
  *
  * <h2>skipHeader</h2>
  * {@code true} 就**直接丢掉第一行，不看内容**。注意这与
- * {@code benchmark.CorpusLoader} / {@code demo.BuildIndex} 等处读取循环的"只有确实像表头
+ * {@code demo.BuildIndex} 等处读取循环的"只有确实像表头
  * （{@code uniqueID\t} 开头）才跳"**不一致** —— 对现在带表头的 goods.csv 两者结果相同，
  * 但表头一旦被去掉，这里会少算一行而那边不会，行数差 1 会让分页错位。
  */

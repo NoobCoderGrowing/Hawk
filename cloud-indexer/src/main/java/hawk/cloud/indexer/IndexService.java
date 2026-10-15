@@ -14,7 +14,7 @@ import field.PrimaryKeyField;
 import field.StringField;
 import hawk.indexer.writer.IndexWriter;
 import hawk.indexer.writer.config.IndexConfig;
-import hawk.segment.core.anlyzer.NShortestPathAnalyzer;
+import hawk.segment.core.anlyzer.NShortestPathTokenizer;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -58,7 +58,7 @@ import org.springframework.stereotype.Service;
  *       {@code PkMapStore.load} 在文件不存在时返回空 map，所以空目录上也安全。</li>
  *   <li>重复调用会往同一份索引里**再写一遍**，没有幂等保护 —— 同一份语料连调两次就是两份。
  *       （追加后 docID 如何分配属于 indexer 模块内部的语义，这里没有验证过。）</li>
- *   <li>analyzer 写死 {@code NShortestPathAnalyzer(1)}，与 {@code demo.BuildIndex} 一致；
+ *   <li>tokenizer 写死 {@code NShortestPathTokenizer(1)}，与 {@code demo.BuildIndex} 一致；
  *       它状态里有可变的 HashSet，所以**每次调用新建一个**，不跨请求复用。</li>
  * </ul>
  */
@@ -109,7 +109,7 @@ public class IndexService {
     /**
      * 索引线程数，传给 {@link IndexConfig} —— 它决定 {@link IndexWriter} 内部那个线程池的大小。
      *
-     * <p>不显式给的话 {@code IndexConfig(analyzer)} 会用 {@code Constants.PROCESSOR_NUM}（CPU 核数），
+     * <p>不显式给的话 {@code IndexConfig(tokenizer)} 会用 {@code Constants.PROCESSOR_NUM}（CPU 核数），
      * 在核多的机器上会把并发拉满；所以这里默认给 3 并做成可配。
      */
     @Value("${hawk.cloud.indexer.indexer-threads:3}")
@@ -268,7 +268,7 @@ public class IndexService {
         // 把请求里认定的主键字段名传给 IndexConfig —— 索引器不再假定它叫 "uniqueID"，
         // 数据源（数据库列名等）叫什么都行，只要请求的 fieldList 说清楚即可。
         IndexWriter writer = new IndexWriter(
-                new IndexConfig(new NShortestPathAnalyzer(1), indexerThreads, primaryKeyField),
+                new IndexConfig(new NShortestPathTokenizer(1), indexerThreads, primaryKeyField),
                 MMapDirectory.open(buildDir),          // ← 临时目录，成功才改名
                 true);
         boolean built = false;

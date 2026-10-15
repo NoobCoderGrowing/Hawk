@@ -4,6 +4,6 @@ import hawk.segment.core.Term;
 
 import java.util.HashSet;
 
-public interface Analyzer {
-    public HashSet<Term> anlyze(String value, String fieldName);
+public interface Tokenizer {
+    public HashSet<Term> tokenize(String value, String fieldName);
 }

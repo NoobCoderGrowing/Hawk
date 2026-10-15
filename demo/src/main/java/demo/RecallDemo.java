@@ -17,7 +17,7 @@ import hawk.recall.search.ScoreDoc;
 import hawk.recall.search.ScoreMode;
 import hawk.recall.search.Searcher;
 import hawk.recall.search.TopDocs;
-import hawk.segment.core.anlyzer.NShortestPathAnalyzer;
+import hawk.segment.core.anlyzer.NShortestPathTokenizer;
 
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -34,7 +34,7 @@ import java.util.Map;
  * <h2>两层</h2>
  * <pre>
  *   Condition   用户意图：一段**没分词**的文本 + 字段 + 关系     ← 不可检索
- *        │  RequestCompiler.compile(condition)   需要 analyzer 和 schema，全流程仅此一处
+ *        │  RequestCompiler.compile(condition)   需要 tokenizer 和 schema，全流程仅此一处
  *        ▼
  *   Query       查询 AST：词已分好，可任意嵌套                   ← 可检索
  *        │  Searcher.search(query, limit, scoreMode)
@@ -54,9 +54,9 @@ public class RecallDemo {
 
     public static void main(String[] args) throws Exception {
         DirectoryReader reader = DirectoryReader.open(MMapDirectory.open(Path.of("index-data/goods")));
-        var analyzer = new NShortestPathAnalyzer(1);
-        Searcher searcher = new Searcher(reader, new IndexConfig(analyzer));
-        RequestCompiler compiler = new RequestCompiler(analyzer, Schema.from(reader));
+        var tokenizer = new NShortestPathTokenizer(1);
+        Searcher searcher = new Searcher(reader, new IndexConfig(tokenizer));
+        RequestCompiler compiler = new RequestCompiler(tokenizer, Schema.from(reader));
 
         System.out.println("可检索字段: " + Schema.from(reader).describe() + "\n");
 

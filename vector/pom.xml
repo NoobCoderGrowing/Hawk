@@ -18,7 +18,7 @@
         骨架照抄 indexer：
           indexer.writer.IndexWriter           ↔ vector.writer.VectorIndexWriter
           indexer.writer.config.IndexConfig    ↔ vector.writer.config.VectorIndexConfig
-          segment 的 Analyzer（文本→词项）      ↔ vector.model.TextEncoder（文本→向量）
+          segment 的 Tokenizer（文本→词项）      ↔ vector.model.TextEncoder（文本→向量）
           recall.search.Searcher               ↔ vector.search.VectorSearcher
           recall.search.ScoreDoc               ↔ vector.search.VectorHit
 

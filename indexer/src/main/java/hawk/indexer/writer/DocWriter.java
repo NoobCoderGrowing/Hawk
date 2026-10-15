@@ -537,7 +537,7 @@ public class DocWriter implements Runnable {
      *
      * <p>按字段类型分两条路径：
      * <ul>
-     *   <li>{@link StringField}：经 {@link IndexConfig#getAnalyzer()} 分词，每个 term 作为倒排条目；
+     *   <li>{@link StringField}：经 {@link IndexConfig#getTokenizer()} 分词，每个 term 作为倒排条目；
      *       同一字段内相同 term 出现多次时词频累加。</li>
      *   <li>{@link NumberField}：将 double 转为可排序 long（{@link NumberUtil#double2SortableLong}），
      *       再按 {@code precisionStep} 生成多级前缀 term（{@link NumberUtil#long2PrefixString}），
@@ -558,7 +558,7 @@ public class DocWriter implements Runnable {
         if (type == FieldType.STRING) {
             // 文本：分词 → 倒排
             StringField sf = (StringField) field;
-            for (Term t : config.getAnalyzer().anlyze(sf.getValue(), sf.getName())) {
+            for (Term t : config.getTokenizer().tokenize(sf.getValue(), sf.getName())) {
                 assembleFieldTermMap(fieldTermMap, filedName,
                         t.getValue().getBytes(StandardCharsets.UTF_8), filedLength);
             }

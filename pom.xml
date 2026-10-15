@@ -14,7 +14,6 @@
         <module>recall</module>
         <module>core</module>
         <module>demo</module>
-        <module>benchmark</module>
         <module>vector</module>
         <module>cloud-coordinator</module>
         <module>cloud-indexer</module>
@@ -116,9 +115,8 @@
                     <artifactId>maven-compiler-plugin</artifactId>
                     <configuration>
                         <!-- JDK 23 起 javac 不再隐式运行"仅在 classpath 上"的注解处理器，
-                             会让 Lombok 与 JMH 的 annotation processor 一起静默失效
-                             （表现为找不到 @Data/@Slf4j 成员、benchmarks.jar 缺 BenchmarkList，
-                             且没有任何 processor 相关报错提示）。
+                             会让 Lombok 的 annotation processor 静默失效
+                             （表现为找不到 @Data/@Slf4j 成员，且没有任何 processor 相关报错提示）。
                              -proc:full 恢复 JDK 21 之前的行为：扫描 classpath 上的处理器。 -->
                         <proc>full</proc>
                     </configuration>

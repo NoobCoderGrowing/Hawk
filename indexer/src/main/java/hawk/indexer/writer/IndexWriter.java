@@ -21,7 +21,7 @@ public class IndexWriter {
 
     /** indexWriter configuration
      * Configurable object:
-     *  Analyzer
+     *  Tokenizer
      *  Thread count used to do indexing
      *  **/
     private final IndexConfig config;
