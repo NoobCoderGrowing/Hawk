@@ -2,10 +2,11 @@
 
 Hawk 是一个**垂直搜索引擎**的检索内核实现：写入端（indexer）与召回端（recall）解耦，支持中文分词、倒排索引、BM25 打分、数值范围查询与主键级别的软删除。
 
-召回侧有**两条并列的链路**：倒排索引（§1）与稠密向量召回（§4）。两者目前相互独立，尚未做混合召回。
+召回侧有**两条链路**：倒排索引（§1）与向量索引（§4）。`core` / `segment` / `indexer` / `recall` / `vector` 是**单机库**；`cloud-*` 三件套在其上做分布式分片与多路融合（§1.7）。
 
-> **倒排链路**：`core` / `segment` / `indexer` / `recall` / `demo` / `benchmark`
-> **向量链路**：`vector`（不依赖上述任何一个）
+> **单机链路**：`core` / `segment` / `indexer` / `recall` / `demo` / `benchmark`
+> **向量链路**：`vector`（依赖 `core`；与 `indexer` 定位一致的单机索引 SDK）
+> **分布式链路**：`cloud-coordinator` / `cloud-indexer` / `cloud-recall`
 
 > 索引文件格式的逐字节说明见 [`INDEX_FORMAT.md`](INDEX_FORMAT.md)。
 >
@@ -21,12 +22,15 @@ Maven 多模块工程，`core` 位于依赖链底部：
 
 ```
 hawk (pom)
-├── core        基础层：Directory / 文件格式 / 编解码 / BKD 树 / 字段模型
-├── segment     中文分词：N-最短路径分词、词图、标点与词典资源（纯 Java，不依赖任何框架）
-├── indexer     写入层：IndexWriter / DocWriter / IndexMerger
-├── recall      召回层：DirectoryReader / Searcher / Query / Similarity / IndexAdmin
-├── demo        示例与命令行入口：BuildIndex（建索引）、检索、删除文档
-└── vector      稠密向量召回：ONNX 文本编码 + HNSW 索引（详见 §4）
+├── core              基础层：Directory / 文件格式 / 编解码 / BKD 树 / 字段模型
+├── segment           中文分词：N-最短路径分词、词图、标点与词典资源（纯 Java，不依赖任何框架）
+├── indexer           写入层：IndexWriter / DocWriter / IndexMerger
+├── recall            召回层：DirectoryReader / Searcher / Query / Similarity / IndexAdmin
+├── demo              示例与命令行入口：BuildIndex（建索引）、检索、删除文档
+├── vector            向量索引 SDK：ONNX 文本编码 + HNSW 索引（依赖 core，详见 §4）
+├── cloud-indexer     分布式索引器：把建索引包装成服务，按分片产出并登记到注册中心
+├── cloud-recall      分布式召回：定时拉取分片索引，本地检索（文本 / 向量两个 role）
+└── cloud-coordinator 协调器：派发建索引、跟踪轮次、扇出检索并做多路融合
 ```
 
 依赖关系：
@@ -34,12 +38,13 @@ hawk (pom)
 ```
               recall  indexer        vector
                  │    ╱   │            │
-                 │  ╱     │            │  （不依赖任何其他模块）
-              segment   core          ┘
+                 │  ╱     │            │
+              segment   core ◄──────────┘
 ```
 
 - `indexer` 依赖 `core` + `segment`；`recall` 依赖 `core` + `segment`；**`indexer` 与 `recall` 之间无直接依赖**，二者仅通过磁盘上的索引目录通信——这正是"写入端与召回端解耦"在代码层面的体现：可以分别部署到不同进程/机器。
 - `recall` 额外引入 `io.github.noobcodergrowing:JFST`，用于内存中的 Term FST。
+- **`vector` 依赖 `core`**（复用 `Document` / `Field` 与 `directory.PkMapStore`），与 `indexer` 定位一致：单机、单进程、无分片，只是产出**向量索引**而不是倒排。它不依赖 `segment` / `indexer` / `recall`。
 
 > `benchmark` 模块仅用于性能测评，不属于运行时依赖链，见 [§3](#3-与-lucene-的基准对比)。
 
@@ -123,6 +128,24 @@ deleted.ids      软删除主键集合
 - 词典资源 `segment/src/main/resources/data/npathword.data`（约 5.7 MB）与 `punctuation.data`；
 - 输出 `Term{field, value, pos}` 集合供索引与查询共用。
 
+### 1.7 分布式层（cloud-*）
+
+上面五个模块都是**单机库**。分布式能力由三个 `cloud-*` 模块提供，它们不是新的索引实现，只是把 `indexer` / `recall` / `vector` 包装成服务并拉起协调：
+
+| 模块 | 职责 |
+|------|------|
+| `cloud-indexer` | 建索引服务：`POST /index/build` 按分片产出索引，登记到注册中心（`JRegistry`） |
+| `cloud-recall`   | 召回服务：定时从注册中心发现新轮次，**拉取**分片索引后本地检索；文本 / 向量各是一个 role |
+| `cloud-coordinator` | 协调器：派发建索引、跟踪轮次收敛、把查询扇出到各分片，再**多路融合** |
+
+几条与单机库不同的约定，读代码前先知道：
+
+- **拉取，不是推送。** 索引器只把"最新轮次"登记到注册中心，召回端定时去拉。推送模型（`IndexPusher` / `/repush` / `/indexComplete`）已整套删除。
+- **协调器归并用 RRF（倒数排名融合），不是分数相加**，并按业务主键去重。跨 role（BM25 vs 余弦）与跨分片（BM25 用的是本分片的 `df` / `avgDocLength`）的分数都不可比，只能看排名。
+- 因此**多路时 `totalHits` 只是上界**（`totalExact=false`），单路且各分片都精确时才是精确值。
+- 召回的契约是"**本分片前 N**"；索引未就绪的分片返回 **503**（与"没匹配"区分开）。
+- 设计文档见 `INDEX_BUILD_DISPATCH_DESIGN.md`、`INDEX_PULL_MODEL_DESIGN.md`、`CLOUD_RECALL_SEARCH_DESIGN.md`。
+
 ---
 
 ## 2. 构建与运行
@@ -150,26 +173,23 @@ deleted.ids      软删除主键集合
 mvn clean -DskipTests package
 ```
 
-> **刚 clone 下来？** 仓库里有约 200 MB 的派生产物（模型权重、商品向量、倒排索引）不在 git 里。
-> 一条命令搞定：
+> **刚 clone 下来？** 仓库里有约 190 MB 的模型权重与商品向量不在 git 里，已打包成根目录的 `model.tar.gz`：
 >
 > ```bash
-> JAVA_HOME=/path/to/jdk-25 ./runDemo.sh
+> tar xzf model.tar.gz      # 解出 model/：模型权重（bge-small-zh-v1.5）+ 商品向量
 > ```
 >
-> 详见 [§6 大文件与 clone](#6-大文件与-clone)。
+> 模型目录的内容与导出方式见 §4.6。倒排索引目录 `index-data/` 同样不入 git，由 `demo.BuildIndex` 现场生成。
 
-示例类一览（`demo/src/main/java/demo`）：`demo` 模块中的 `main` 方法直接指向本地索引目录，按需修改路径后运行。
+示例类一览（`demo/src/main/java/demo`）：路径基本写死，工作目录须为**仓库根**。
 
 | 类 | 用途 |
 |----|------|
-| `BuildIndex` | **命令行建索引**：`demo.BuildIndex <corpus.csv> <index-dir>`，`runDemo.sh` 用的就是它 |
-| `WirteIndex` / `WriteIndexFromFile` / `WriteIndexFromFile2` | 写索引 |
-| `WriteNumericIndex` | 数值字段索引 |
-| `SearchByTermQuery` / `SearchByStringQuery` / `SearchStringQuery2` | 词项 / 串检索 |
-| `SearchByNumericRangeQuery` | 数值范围检索 |
-| `DeleteDocDemo` | 软删除 |
+| `BuildIndex` | 建倒排索引：读 `goods.csv` 写出 `index-data/goods`（每次清空重建）。主键用行号计数器，**不读 CSV 第一列** |
+| `RecallDemo` | 检索示例：打开 `index-data/goods`，演示 `Condition`→`Query` 复杂请求（嵌套 AND/OR、FILTER、MUST_NOT） |
 | `FSTBuild` / `MemRandomAccess` | FST 与内存映射试验 |
+
+> 两者是**配对**的：先跑 `BuildIndex` 再跑 `RecallDemo`。建向量索引没有对应的独立示例，走 `VectorIndexWriter` / `VectorSearcher`（§4.4 / §4.5），或直接用 `cloud-indexer` / `cloud-recall`。
 
 ---
 
@@ -263,47 +283,119 @@ cd benchmark/scripts
 
 ---
 
-## 4. 向量召回
+## 4. 向量索引
 
-`vector/` 是一条**独立的稠密向量召回链路**，与倒排索引并列（不是它的补充）。它**不依赖 `core` / `segment` / `indexer` / `recall` 中的任何一个**——将来要做向量 + BM25 混合召回时，才需要引入依赖。
+`vector/` 是一个**单机向量索引 SDK**，与 `indexer` 定位对等：把文档变成**向量索引**而不是倒排。它**依赖 `core`**（复用 `Document` / `Field` / `directory.PkMapStore`），但不依赖 `segment` / `indexer` / `recall`。
 
 ```
-商品向量 (.npy) ──► JVectorIndex (HNSW) ──┐
-                                          ├─► top-K ──► ordinal ──► 商品 ID
-query 文本 ──► TextEncoder (ONNX) ──► float[] ─┘
+Document ──► VectorIndexWriter ──► 每字段一张 HNSW 图 + pk.map + 原文
+                    │
+              TextEncoder (ONNX)   文本 → L2 归一化向量
+
+query 文本 ──► TextEncoder ──► float[] ──► VectorSearcher ──► VectorHit(业务主键, 分数)
 ```
 
-### 4.1 核心设计：query 向量化 ←→ 商品向量库 的解耦
+### 4.1 定位：与 indexer 对等的单机索引 SDK
 
-解耦边界定义在 `VectorIndex` 这一个接口上（`vector/index/VectorIndex.java`）：
+模块骨架照抄 `indexer`，对应关系一目了然：
+
+| 倒排侧 | 向量侧 |
+|---|---|
+| `indexer.writer.IndexWriter` | `hawk.vector.writer.VectorIndexWriter` |
+| `indexer.writer.config.IndexConfig` | `hawk.vector.writer.config.VectorIndexConfig` |
+| `segment` 的 `Analyzer`（文本 → 词项） | `hawk.vector.model.TextEncoder`（文本 → 向量） |
+| `recall.search.Searcher` | `hawk.vector.search.VectorSearcher` |
+| `recall.search.ScoreDoc` | `hawk.vector.search.VectorHit` |
+
+**最关键的改动：检索返回的是业务主键，不是 ordinal。** 旧实现只返回 ordinal（"向量在索引里的行号"），逼每个调用方自己去查 `ids[ordinal]` 那张表；改成多字段之后每张图各有自己的 ordinal 空间，那种映射根本无从写起。既然建索引时就知道主键，就该在 `VectorHit` 里换好：
 
 ```java
-public interface VectorIndex extends Closeable {
-    int size();
-    int dimension();
-    SearchHits search(float[] query, int topK);              // 不带过滤
-    SearchHits search(float[] query, int topK, Bits acceptOrds);  // 带过滤
+public record VectorHit(long uniqueId, float score)   // uniqueId = 建索引时从 PrimaryKeyField 取到的业务主键
+```
+
+> 旧设计里那条"向量侧不依赖 Hawk 任何模块、`.npy` 商品向量库 + ordinal 映射"的路子已**整体作废**：输入模型要和 `indexer` 共用（`Document` / `Field`），主键映射要复用 `directory.PkMapStore`。`util/NpyReader` 还留在模块里，但**当前已无任何调用方**。
+
+### 4.2 一个字段 = 一张独立的 HNSW 图
+
+不能把多个字段的向量塞进同一张图：HNSW 用**余弦距离**做近邻判断，不同字段的向量混在一起会互相做邻居、污染召回。这是结构性的，调参救不了 —— 也是 Qdrant 要 named vectors、Elasticsearch 要多个 `dense_vector` 字段的原因。
+
+字段集由 `VectorIndexConfig` 显式声明，**同时是白名单**：没列的字段不进索引。多字段检索时每个字段各查一遍，再按权重把分数加起来：
+
+- **融合用加权线性，不用 RRF。** RRF 的意义是规避不可比的分数（BM25 与余弦量纲不同）；而这里所有字段出自同一个模型，余弦分数天然同量纲，加权线性既简单又不丢信息。
+- **query 只编码一次**：所有字段共用一个模型，同一个查询向量可以直接喂给每张图。
+- **每张图各存一份 `pk.map`**：缺这个字段的文档不进这张图，各图的 ordinal 空间并不一致，不能共用一张对照表。
+
+实测（10 万 × 512，本机）：单图检索 1.75 ms，两图 3.9 ms —— **融合本身的开销在噪声内**。
+
+### 4.3 索引目录布局
+
+```
+<index-dir>/
+├── meta.json            这个索引"是什么"（模型指纹、维度、字段集、格式版本）
+├── title/               一个字段一个子目录
+│   ├── graph.idx        HNSW 图
+│   └── pk.map           复用 directory.PkMapStore：主键 → 该图内的 ordinal
+├── descript/
+│   ├── graph.idx
+│   └── pk.map
+├── stored.fdt           原文（LZ4 压缩块，顺序拼接）
+├── stored.fdx           块索引
+└── stored.fdm           字段元数据
+```
+
+`meta.json` 存在的理由：索引文件本身只存图，**不存模型指纹、不存字段集**。没有元数据，加载时就无从判断"这个索引和当前模型配不配"—— 配错不报错，只会一路跑出垃圾结果。
+
+### 4.4 建索引：`VectorIndexWriter`
+
+```java
+var config = new VectorIndexConfig(List.of("title", "descript"))   // 字段集 = 白名单
+        .setStoredFields(List.of("title", "descript"))             // 一并存原文（可空）
+        .setWeights(Map.of("title", 0.7f, "descript", 0.3f));      // 融合权重，会被归一化
+
+try (var w = new VectorIndexWriter(config, Path.of("index-data/goods-vec"))) {
+    for (Document d : docs) {
+        w.addDoc(d);        // 取字段文本 → ONNX 编码；攒够 512 条编一批
+    }
+    w.commit();             // 按字段建图 + 落盘
 }
 ```
 
-**参数是 `float[]`，不是文本，也不是任何模型类型。** 索引只回答"离这个向量最近的 top-K 是谁"，完全不关心这个向量是 bge 编的、别的模型编的、还是合成数据。
+`VectorIndexConfig` 的旋钮（方法链式，对标 `IndexConfig`）：
 
-这条边界带来三件事：
-
-- **索引可以被别的东西复用**，也可以**用合成向量独立测试**——不需要加载模型就能验证索引本身；
-- **换模型不动索引代码**，换索引实现（例如换 Lucene 以获得向量 + BM25 同引擎混合召回）调用方不动；
-- **"模型与索引是否匹配"由调用方校验**，不是索引层的职责——索引层也拿不到这个信息（它只知道维度和 `float[]`）。
-
-于是模块天然分成两半，各自独立演进：
-
-| 半边 | 类 | 职责 |
+| 方法 | 默认 | 说明 |
 |---|---|---|
-| **query 向量化** | `model/TextEncoder` + `model/ModelDescriptor` | 文本 → L2 归一化向量；完全由 `model.json` 驱动，对具体模型零假设 |
-| **商品向量库** | `index/JVectorIndex` + `index/NpyReader` | 商品向量 → HNSW 索引 → top-K |
+| `VectorIndexConfig(List<String> fields)` | — | **必填**，同时是白名单 |
+| `.setPrimaryKeyFieldName(String)` | `uniqueID` | 与 `IndexConfig` 同义同默认 |
+| `.setModelDir(Path)` | `model/bge-small-zh-v1.5` | 编码器目录 |
+| `.setM(int)` / `.setEfConstruction(int)` | `16` / `100` | HNSW 建图参数 |
+| `.setStoredFields(List<String>)` | 空 | 要一并存原文的字段；不配则检索**回不了字段值** |
+| `.setWeights(Map<String,Float>)` | 全 `1.0` | 缺省字段按 1.0，最终归一化 |
+| `.setDevice(Kind)` / `.setGpuDevice(int)` / `.setCudaLibDir(Path)` | `AUTO` / `0` / `null` | 见 §4.8 |
 
-**把两者接起来是调用方的职责**——`Demo` 就是这么做的，见 §4.5。
+两条入口：`addDoc(Document)`（主路径，走 ONNX 编码）与 `addVector(field, uniqueId, float[])`（喂**预计算**向量，不加载模型 —— 给"向量已由别处算好"以及无需模型的测试用）。
 
-### 4.2 支持的模型文件格式
+**内存**：编码结果全部留在堆里，直到 `commit()` 才建图（jvector 的 `GraphIndexBuilder` 是批量接口）。峰值约 **字段数 × 文档数 × 维度 × 4 字节** —— 10 万 × 512 × 3 字段约 615 MB。
+
+> 跳过的文档会**计数**而非静默丢弃：没主键整条跳过（`droppedNoKey`），配置的字段一个都没有也整条跳过（`droppedNoField`）；只有部分字段就收下有的那几个，缺的那个字段的图里没有这条文档。
+
+### 4.5 检索：`VectorSearcher`
+
+```java
+try (var s = VectorSearcher.open(Path.of("index-data/goods-vec"))) {
+    for (VectorHit h : s.search("老黄冰糖", 10)) {       // 文本查询，内部编码一次
+        System.out.println(h.uniqueId() + "\t" + h.score());
+    }
+    Document d = s.docByPk(49732L);                     // 按业务主键取原文
+}
+```
+
+- `search(String, int)` 走编码器；批量检索请复用 `search(float[], int[, rerankK])`（**所有字段共用同一个查询向量**）。
+- 每个字段取回的候选数是 `max(topK × 4, 64)` 而不是 `topK`：某个文档在 A 字段排第 11、在 B 字段排第 1，若每张图只取 10 条，它在 A 里的贡献就丢了。
+- `open(indexDir, modelDir, cacheVectors)`：`modelDir` 传 `null` 表示用 `meta.json` 里记的那个（**换机部署时应当显式传**）；`cacheVectors=false` 让图**磁盘驻留** —— 字段一多就该关掉（3 个字段载入堆是 600 MB 量级，磁盘驻留每张图只要约 5 MB）。
+- **打开时校验模型**：`dim` 与 `modelFingerprint` 必须与当前 `TextEncoder` 一致，否则**启动即失败**。换模型必须重建索引。
+- **磁盘格式版本**：`meta.formatVersion` 低于当前值（旧格式，没有存储字段这一层）**直接拒绝、要求重建**，与文本索引对 BKD 的做法一致 —— 宁可要求重建，也不留"半张索引有 fields、半张没有"的半吊子状态。
+
+### 4.6 模型文件格式（`model.json`）
 
 一个模型 = 一个目录，含描述符 + ONNX 图 + tokenizer：
 
@@ -356,184 +448,60 @@ model/bge-small-zh-v1.5/
 
 > 模型目录由 Python 侧 `hawk_vector.export.export_onnx` 产出（不在此仓库）。`model/` 已在 `.gitignore` 中。
 
-### 4.3 商品向量文件格式
+### 4.7 存储字段（原文）
 
-用 NumPy `.npy`——语料向量由 Python 编码产出，直接读可省掉一次格式转换和中间产物：
+**向量索引默认不存原文。** `commit()` 只写 `graph.idx` / `pk.map` / `meta.json` —— 编码完文本就丢。所以默认情况下检索能返回 pk 和分数，**回不了字段值**。
 
-```
-model/zero_shot_bge_small/
-├── corpus_emb.npy       # (100001, 512) float16 —— goods.csv 每条 title 的向量
-└── corpus_emb_ids.npy   # (100001,)     int64   —— 行号 → 商品 ID 的映射
-```
-
-**商品库与倒排链路统一为 hawk 主仓库的 `goods.csv`**：取 `title` 列编码成向量，第一列（`id`，0-based，0…100000）作为商品 ID。
-
-由此得到一个有用的事实：**`ids[i] == i`，即 ordinal 本身就等于商品 ID**（恒等映射）。`Demo` 里仍保留 `ids[ordinal]` 这层查表，因为换成语料 ID 非顺序的数据集时它就不能省。
-
-`.npy` 结构（v1.0 / v2.0 均支持）：
+配了 `setStoredFields([...])` 之后原文会另存一份。格式参考文本索引的 fdt 那一套，但在 `vector` 模块内自己实现（本模块只依赖 `core`，拿不到 `segment` / `recall` 的代码）：
 
 ```
-6 字节    magic "\x93NUMPY"
-2 字节    版本 (major, minor)
-2 或 4     header 长度（小端；v1.0 为 2 字节，v2.0 为 4 字节）
-n 字节    header：Python dict 字面量，如
-          {'descr': '<f2', 'fortran_order': False, 'shape': (100001, 512), }
-...       数据（64 字节对齐后开始）
-```
-
-支持的 dtype：
-
-| 文件 | 可用 dtype | 说明 |
-|---|---|---|
-| `corpus_emb.npy` | `<f2` / `<f4` | **一律读成 fp32 输出**（fp16 自动转换） |
-| `corpus_emb_ids.npy` | `<i8` / `<i4` | 一维，列数必须为 1 |
-
-**如何生成**：由 Python 侧的 **Hawk-Vector** 项目（与本仓库平级）编码产出：
-
-```bash
-cd /opt/java_project/Hawk-Vector
-./scripts/encode.sh configs/zero_shot_bge_small.yaml \
-    --corpus  /opt/java_project/Hawk/goods.csv \
-    --out     /opt/java_project/Hawk/model/zero_shot_bge_small/corpus_emb.npy
-# 用时约 18s（RTX 3060，100,001 篇，~5,900 doc/s）
+stored.fdt   LZ4 压缩块，顺序拼接
+stored.fdx   [VLong 块首 pk][VLong fdt 偏移][长度]，每块一条
+stored.fdm   [Int 名长][字段名][1 字节类型位]，按字段名排序
 ```
 
 几个要点：
 
-- `--corpus` 可以传**任意 `id \t 文本` 的文件**，多出来的列会被忽略——所以 `goods.csv`（`id \t title \t price`）**不需要做格式转换**。
-- `ids` 的起点**不要求是 1**：Hawk-Vector 里 `Corpus` 会推出连续区间的起点（ecom 是 1、goods.csv 是 0），两者都走 O(1) 位置索引；区间有空洞或重复时自动回退到 dict。
-- `configs/` 与本命令**无关**——那个配置是给 ecom 的 dev/test 评测用的，改它会破坏评测的语料对应关系，所以生成商品向量走独立的一次性命令。
-- 长度上限沿用 config 里的 `max_len_doc: 64`。goods.csv 标题 **p99 恰好也是 64 字**，因此只有约 1% 被截断，无需调整。
+- **键用 pk，不是 docID。** 向量索引是每字段独立的 ordinal 空间，pk 才是唯一跨字段稳定的标识。
+- **块大小 16 KiB；超块翻倍扩容。** 单篇文档的存储字段超过一个块时（存几千字的商品详情就会），把块扩容一次、每次翻倍 —— 不丢数据，也不静默截断。（文本索引那边遇到同样情况是**静默丢掉**该文档的存储字段，这里没照抄。）
+- `docByPk(pk)` 的返回有价值的三态：**`null`** = 这个 pk 不在这份索引里；**空 `Document`** = 在，但这份索引没存它的字段 —— 两者得分得清。
+- 响应里带 `storedFields: [...]` 如实报出这份索引存了哪些字段。
 
-### 4.4 ordinal 与业务主键
+### 4.8 模型编码设备（GPU / CPU）
 
-`SearchHits` 返回的是 **ordinal（向量在索引里的行号）**，不是业务主键：
+编码器默认 **`AUTO`：有 GPU 用 GPU，没有回退 CPU**（`OnnxDevice.Kind`）。
 
-```java
-public record SearchHits(int[] ordinals, float[] scores)   // 按分数降序
-```
+- **探测只能靠"真试一次"**：`OrtEnvironment.getAvailableProviders()` 返回的是"制品里编译进了什么"，不是"这台机器能不能跑" —— GPU 版制品在没装 CUDA 的机器上照样把 CUDA 列进去。唯一可靠的做法是拿一份**临时** `SessionOptions` 试 `addCUDA(0)`、接异常（探测失败可能已在原生侧留下半注册状态，所以不拿真 opts 去试）。
+- **`Kind.GPU` 会拒绝而非静默降级**：显式要 GPU 却拿不到时直接抛异常 —— 静默降级是最难查的错。
+- **GPU 版制品不打包 CUDA 运行时**：宿主机需自带 CUDA 12（`libcudart.so.12` 等）。不便在宿主机安装时，可用 `setCudaLibDir` 让 `OnnxDevice` 预加载（免设 `LD_LIBRARY_PATH`）。
+- 判断"是否真在 GPU 上"以 `TextEncoder.device().onGpu()` 为准，而不是看请求了什么。
 
-**建索引时按什么顺序喂入向量，ordinal 就是什么顺序。** `JVectorIndex` 不做任何主键映射——调用方要保持"喂入顺序"与自己的主键表一致。这正是 `corpus_emb_ids.npy` 必须与 `corpus_emb.npy` **配套**的原因：只有 `ids[ordinals[i]]` 才是商品 ID。
+> **编码是整条链路的瓶颈**：CPU 编码实测只有约 **202 doc/s**（10 万条单字段约 8 分钟），GPU（RTX 3060）约 5,900 doc/s。编码会按 `model.json` 的 `encodeBatchSize` **分块**——ONNX Runtime 的中间激活值随 batch 线性增长（约 47 KB/token），不分块会把原生内存顶爆、连 `-Xmx` 都管不住。
 
-#### 拿到商品 ID 之后：取回商品原文
+### 4.9 索引实现与依赖
 
-商品原文存在**倒排那一侧**的索引里，用 `Searcher.docByUniqueId(long)` 取：
-
-```java
-Document doc = searcher.docByUniqueId(productId);          // productId = ids[ordinals[i]]
-String title = ((StringField) doc.getFieldMap().get("title")).getValue();
-```
-
-**参数是商品唯一 ID（`PrimaryKeyField` 的值，即 `pk.map` 的 key），不是全局 docID。** 两者数值上没有任何关系——全局 docID 由索引线程的**完成顺序**决定，不是提交顺序（实测：商品 ID `0` 落在 docID `2` 上、商品 ID `23198` 落在 docID `23191` 上）。
-
-这个区别很危险，因为**混用不会报错**：两者数值区间重合，传错了索引越界检查过不去。
-
-```
-正确用法  docByUniqueId(23198) → PVC直插管g件110变75缩口排水弯头…
-错误用法  doc(new ScoreDoc(0f, 23198)) → 反监控防追踪反窃听私密的轿车防偷拍…
-```
-
-两个完全不同的商品，**但调用不报任何错**。所以 `Searcher` 只暴露按业务主键取文的方法，不鼓励直接拼 `ScoreDoc`。
-
-**返回值**：`null` 表示该 ID 不存在、或对应文档已被**软删除**。注意删除不会从 `pk.map` 抹掉条目（靠 `deleted.ids` 在检索时过滤），所以"ID 存在于 pk.map"不等于"文档可读"。
-
-于是向量链路与倒排链路的完整闭环是：
-
-```
-query 文本 → TextEncoder → 向量 → JVectorIndex → ordinal → ids[ordinal] = 商品ID
-                                                                    ↓ pk.map
-                                              商品原文 ← docByUniqueId ←┘
-```
-
-### 4.5 演示代码
-
-`vector/src/main/java/hawk/vector/demo/Demo.java`，端到端把每一块串起来：
-
-```java
-public class Demo {
-    private static final String VECTOR_DIR = "model/zero_shot_bge_small";
-    private static final String MODEL_DIR = "model/bge-small-zh-v1.5";
-
-    public static void main(String[] args) throws Exception {
-        // 查询词可由命令行覆盖；默认取 goods.csv 里真实存在的商品词
-        String text = args.length > 0 ? args[0] : "老黄冰糖";
-        int topK = args.length > 1 ? Integer.parseInt(args[1]) : 10;
-
-        // 1) 读商品向量，以及 行号 → 商品 ID 的映射（全部 100,001 条）
-        float[][] matrix = NpyReader.readFloatMatrix(Path.of(VECTOR_DIR, "corpus_emb.npy"));
-        long[] ids = NpyReader.readLongArray(Path.of(VECTOR_DIR, "corpus_emb_ids.npy"));
-        System.out.printf("商品向量 %d × %d%n", matrix.length, matrix[0].length);
-
-        // 2) 建索引
-        try (JVectorIndex index = JVectorIndex.build(matrix)) {
-            // 3) 加载模型，把 query 文本编码成向量
-            try (TextEncoder encoder = new TextEncoder(Path.of(MODEL_DIR))) {
-                float[] query = encoder.encodeOne(text, Role.QUERY);
-
-                // 4) 检索
-                SearchHits hits = index.search(query, topK, Bits.ALL);
-
-                // 5) ordinal 映射回商品 ID
-                int[] ordinals = hits.ordinals();
-                for (int i = 0; i < ordinals.length; i++) {
-                    long productId = ids[ordinals[i]];
-                    System.out.printf("  #%d  %.4f  ordinal=%-6d 商品ID=%d%n",
-                            i + 1, hits.scores()[i], ordinals[i], productId);
-                }
-            }
-        }
-    }
-}
-```
-
-注意第 2 步和第 3 步是**两个彼此独立的资源，生命周期互不相干**——索引不需要模型，模型也不需要索引，`Demo` 只是把两者接起来。**这就是 §4.1 那条解耦边界在代码上的体现。**
-
-运行（工作目录须为仓库根，`model/` 在根下）：
-
-```bash
-mvn -q -pl vector -am -DskipTests package
-mvn -q -pl vector dependency:build-classpath -Dmdep.outputFile=/tmp/vcp.txt
-java -Xmx3g -cp "vector/target/classes:$(cat /tmp/vcp.txt)" hawk.vector.demo.Demo
-java -Xmx3g -cp "vector/target/classes:$(cat /tmp/vcp.txt)" hawk.vector.demo.Demo "镀锌弯头" 5
-```
-
-> 堆要给到 3g：100,001 × 512 读成 fp32 后是约 205 MB，加上 jvector 的图结构会更高；
-> `NpyReader` 会在读之前预检堆空间，不够会给出可操作的提示而不是直接 OOM。
-
-实测输出（本机 RTX 3060，商品库为 goods.csv 全部 100,001 条）：
-
-```
-[建索引] 100,001 条 × 512 维  M=16 efC=100  用时 15.9s
-查询「老黄冰糖」top-10：
-  #1  0.9197  ordinal=49732  商品ID=49732      → 老冰糖黄冰糖散装5斤甘蔗老式冰糖碎2500克多晶冰糖特级正宗小粒
-  #2  0.8817  ordinal=43621  商品ID=43621      → 富昌银京黄冰糖400g/袋老冰糖多晶冰糖烘焙原料茶饮甜汤甜品
-  #3  0.8785  ordinal=23888  商品ID=23888      → 太古黄冰糖1kg*2袋 食用糖烹饪红烧肉煲汤煮粥糖水柠檬酵素青梅酱
-  #4  0.8641  ordinal=30954  商品ID=30954      → 广西柳冰黄冰糖泡酒孝酵素多晶冰糖中冰红糖块【整袋30斤包邮】
-  ...
-```
-
-（`→` 后的商品标题是事后用 `goods.csv` 第 `商品ID` 行对出来的，`Demo` 本身只打印 ID。）
-
-### 4.6 索引实现与依赖
-
-`JVectorIndex` 基于 **jvector 4.0.1**（纯 Java、无 JNI，HNSW + 磁盘驻留 + PQ/BQ 量化）。默认参数：`M=16`、`efConstruction=100`、`rerankK=256`、相似度函数为**余弦**。
+`JVectorGraph` 基于 **jvector 4.0.1**（纯 Java、无 JNI，HNSW + 磁盘驻留 + PQ/BQ 量化）。默认参数：`M=16`、`efConstruction=100`、`rerankK=256`（检索时的候选池，`VectorSearcher.setRerankK` 可调）、相似度函数为**余弦**。
 
 关键依赖：
 
 | 依赖 | 用途 |
 |---|---|
-| `com.microsoft.onnxruntime:onnxruntime` | 推理。要 GPU 换成 `onnxruntime_gpu` |
-| `ai.djl.huggingface:tokenizers` | 分词，JNI 封装 Rust `tokenizers`，直接读 `tokenizer.json` |
+| `com.hawk:core` | 输入模型（`Document` / `Field`）与主键映射（`PkMapStore`），与 `indexer` 共用同一套 |
+| `com.microsoft.onnxruntime:onnxruntime` | 推理，默认 **CPU** 版（任何机器都能跑）。`-Pgpu` 换成 `onnxruntime_gpu`（约 670 MB） |
+| `ai.djl.huggingface:tokenizers` | 分词，JNI 封装 Rust `tokenizers`，直接读 `tokenizer.json`（WordPiece / BPE / Unigram） |
 | `io.github.jbellis:jvector` | ANN 索引 |
-| `com.alibaba:fastjson` | 读 `model.json`。项目里 JSON 统一用 fastjson（HTTP 层见各模块的 `FastJsonWebConfig`） |
+| `com.alibaba:fastjson` | 读 `model.json` / `meta.json` |
+| `ch.qos.logback:logback-classic` | 日志（**不引 log4j**，见 `vector/pom.xml` 注释） |
 
-### 4.7 当前状态
+### 4.10 当前状态
 
-- 模块可端到端跑通（§4.5 实测），商品库已与倒排链路**统一为 `goods.csv`**。
-- **尚未与倒排做混合召回**，也没有接入 `recall` 的检索链路——目前是独立链路。两条链路现在共享同一套商品 ID（`goods.csv` 第一列），做归并时主键是对得上的。
-- `VectorIndex` 与 `TextEncoder` 里各留了一个 `main` 方法，是硬编码路径的临时调试脚手架，且 `catch` 块吞掉了异常（只打印 "model loading failed"）；正式用法请参照 `Demo`。
-- `model/` 目录不在版本控制内，需要自行从 Python 侧导出（见 §4.3）。
-- `model/zero_shot_bge_small/` 里还留着 `dev_pred.*` / `test_pred.tsv` —— 那是**旧的 ecom 语料**的评测产物，与现在的 `corpus_emb.npy`（goods.csv）已经不配套，需要时请重新跑评测生成。
+- 模块可端到端跑通（经 `cloud-*` 链路验证），主键与倒排链路共享同一套（`goods.csv` 第一列）。
+- **本模块无单测、无独立 demo**，验证走 `cloud-indexer` / `cloud-recall`。
+- `util/NpyReader` 保留但**无调用方**（旧的 `.npy` 商品向量路线已作废，见 §4.1）。
+- 磁盘格式变更（`meta.formatVersion`）会让旧索引被读侧拒绝 —— **改格式就要重建索引**，不做兼容分支。
+- 只做**一次性批量**建图：要支持增量（边收边建图）才能把峰值内存降到与文档数无关。
+- 存储优化杠杆是**量化**（jvector 的 `FusedPQ` / `NVQ`），当前未启用 —— `save()` 只写全精度向量。实测全精度下约 **2,124 字节/文档/字段**。
+- `model/` 目录不在版本控制内，打包在根目录的 `model.tar.gz`（见 §2）。
 
 ---
 
@@ -541,24 +509,31 @@ java -Xmx3g -cp "vector/target/classes:$(cat /tmp/vcp.txt)" hawk.vector.demo.Dem
 
 ```
 Hawk/
-├── core/           Directory、文件格式、编解码、BKD、字段模型
-├── segment/        中文分词（N-最短路径）与词典资源
-├── indexer/        IndexWriter、DocWriter、IndexMerger
-├── recall/         DirectoryReader、Searcher、Query、Similarity
-├── demo/           使用示例
-├── vector/         稠密向量召回（独立模块，详见 §4）
+├── core/               Directory、文件格式、编解码、BKD、字段模型
+├── segment/            中文分词（N-最短路径）与词典资源
+├── indexer/            IndexWriter、DocWriter、IndexMerger
+├── recall/             DirectoryReader、Searcher、Query、Similarity
+├── demo/               使用示例（BuildIndex、RecallDemo）
+├── vector/             向量索引 SDK（详见 §4）
 │   └── src/main/java/hawk/vector/
-│       ├── model/  ModelDescriptor（model.json）、TextEncoder（ONNX + 分词）
-│       ├── index/  VectorIndex（解耦边界）、JVectorIndex、NpyReader、SearchHits
-│       └── demo/   Demo（端到端示例）
-├── benchmark/      JMH 基准（Hawk vs Lucene）
-│   ├── scripts/    run-hawk-benchmark.sh / run-lucene-benchmark.sh
-│   └── results/    历史基准结果
-├── goods.csv       基准语料（10 万条商品标题）
-├── model/          模型与商品向量（大文件不进 git，见 §6）
-├── runDemo.sh      一条命令把仓库变成可运行状态（见 §6）
-├── index-data/     倒排索引（派生，已 gitignore）
-├── INDEX_FORMAT.md 索引文件格式说明
+│       ├── writer/     VectorIndexWriter、VectorIndexConfig
+│       ├── search/     VectorSearcher、VectorHit
+│       ├── graph/      JVectorGraph（jvector 封装）
+│       ├── meta/       VectorIndexMeta（meta.json）
+│       ├── model/      ModelDescriptor、TextEncoder、OnnxDevice
+│       ├── stored/     StoredFields / Writer / Reader（原文存储）
+│       └── util/       NpyReader（保留但当前无调用方）
+├── cloud-indexer/      分布式索引器（详见 §1.7）
+├── cloud-recall/       分布式召回
+├── cloud-coordinator/  协调器
+├── benchmark/          JMH 基准（Hawk vs Lucene）
+│   ├── scripts/        run-hawk-benchmark.sh / run-lucene-benchmark.sh
+│   └── results/        历史基准结果
+├── goods.csv           基准语料（10 万条商品标题）
+├── model/              模型权重与商品向量（大文件不进 git，见 §2）
+├── model.tar.gz        上面那个目录的打包（不进 git）
+├── index-data/         倒排索引（派生，已 gitignore）
+├── INDEX_FORMAT.md     索引文件格式说明
 └── README.md
 ```
 

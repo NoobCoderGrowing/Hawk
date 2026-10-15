@@ -289,10 +289,8 @@ public class Searcher {
 
     public Field createField(String fieldName, byte[] fieldValue) {
         byte typeByte = this.directoryReader.getFDMMap().get(fieldName).getLeft()[0];
-        // 类型位解出类型，低两位还原 stored / tokenized —— 这些信息本来就在同一个字节里
-        return FieldType.byBit(typeByte).decodeStored(fieldName, fieldValue,
-                (typeByte & 0b00000010) != 0 ? Field.Tokenized.YES : Field.Tokenized.NO,
-                (typeByte & 0b00000001) != 0 ? Field.Stored.YES : Field.Stored.NO);
+        // 拆字节的写法收敛在 FieldType.decodeStored —— 拼/拆是同一个约定，别在两个模块里各写一份
+        return FieldType.decodeStored(typeByte, fieldName, fieldValue);
     }
 
     // return: left offset + right offset

@@ -93,6 +93,53 @@ public enum FieldType {
                 "认不出的字段类型位: " + Integer.toBinaryString(typeByte & 0xFF));
     }
 
+    // ------------------------------------------------------------------ fdm 类型字节
+    //
+    // 一个字节同时说两件事：**怎么读**（bits 2-5：类型）和**是什么**（bit0 stored / bit1 tokenized）。
+    //
+    // 这两个方向原先**各有一份实现、分散在两个模块里**：拼字节在 indexer 的
+    // {@code DocWriter.getFieldType}、拆字节在 recall 的 {@code Searcher.createField}。
+    // 而这个字节是要落盘的跨模块约定 —— 抄成第三份（vector 的存储字段要用）迟早漂移，
+    // 漂移的表现是"字段类型读错了但没人报错"。所以两个方向都收敛到这里。
+
+    /** 类型字节里的 stored 位。 */
+    public static final byte STORED_BIT = 0b00000001;
+
+    /** 类型字节里的 tokenized 位。 */
+    public static final byte TOKENIZED_BIT = 0b00000010;
+
+    /** 拼出 fdm 里的类型字节。 */
+    public static byte toTypeByte(Field field) {
+        byte b = 0;
+        if (field.isStored() == Field.Stored.YES) {
+            b |= STORED_BIT;
+        }
+        if (field.isTokenized() == Field.Tokenized.YES) {
+            b |= TOKENIZED_BIT;
+        }
+        return (byte) (b | of(field).bit());
+    }
+
+    /** 从类型字节还原 stored 位。 */
+    public static Field.Stored storedOf(byte typeByte) {
+        return (typeByte & STORED_BIT) != 0 ? Field.Stored.YES : Field.Stored.NO;
+    }
+
+    /** 从类型字节还原 tokenized 位。 */
+    public static Field.Tokenized tokenizedOf(byte typeByte) {
+        return (typeByte & TOKENIZED_BIT) != 0 ? Field.Tokenized.YES : Field.Tokenized.NO;
+    }
+
+    /**
+     * 由（类型字节, 字段名, 已解码的值）还原一个 {@link Field}。
+     *
+     * <p>读存储字段的完整一步：类型字节 → 类型 + stored/tokenized → 具体子类。
+     * 调用方不用自己掩位，也就没机会掩错。
+     */
+    public static Field decodeStored(byte typeByte, String name, byte[] value) {
+        return byBit(typeByte).decodeStored(name, value, tokenizedOf(typeByte), storedOf(typeByte));
+    }
+
     /** 由 HTTP 请求体里的 {@code "type"} 反查；不在白名单里返回 {@code null}。 */
     public static FieldType byJsonName(String name) {
         for (FieldType t : values()) {
@@ -172,6 +219,27 @@ public enum FieldType {
             case NUMBER -> NumberUtil.double2SortableLong(((NumberField) field).getValue());
             case LONG -> NumberUtil.long2SortableLong(((LongField) field).getValue());
             default -> throw new IllegalStateException(this + " 不是数值字段，不能编成 BKD 点");
+        };
+    }
+
+    // ------------------------------------------------------------------ 出网
+
+    /**
+     * 取字段的**值本身**，类型按 JSON 的语义给：字符串给 {@code String}，数值给 {@code Double}/{@code Long}。
+     *
+     * <p>给"把命中的文档发到网上"用（{@code cloud-recall} 的检索响应）。
+     *
+     * <p><b>放在这里而不是调用方</b>：字段类型的 {@code instanceof} 分发一旦散到外面去，
+     * 就又多一个"加新字段类型时会漏掉"的地方 —— 这个枚举存在的理由就是把那几处收敛到一处。
+     *
+     * @throws IllegalStateException 字段类型与 {@link #of(Field)} 对不上（不该发生）
+     */
+    public Object toJsonValue(Field field) {
+        return switch (this) {
+            case STRING -> ((StringField) field).getValue();
+            case NUMBER -> ((NumberField) field).getValue();
+            case PRIMARY_KEY -> ((PrimaryKeyField) field).getValue();
+            case LONG -> ((LongField) field).getValue();
         };
     }
 

@@ -42,6 +42,16 @@ hawk:
       # 轮询间隔（毫秒），默认 60 秒。管的是「成员与地址」——从注册中心拉谁在册。
       poll-interval-ms: ${HAWK_COORDINATOR_POLL_MS:60000}
 
+      # ---- 对外检索（POST /search，见 SearchController）----
+      search:
+        # 单次分片请求的等待上限。一个分片自己慢，不该拖住其它分片。
+        shard-timeout-ms: ${HAWK_SEARCH_SHARD_TIMEOUT_MS:3000}
+        # 整轮扇出的总预算。到点就用已回来的那部分，没回来的记进 failed
+        #（**不能当成"那一片没结果"** —— 那会静默少掉 1/N 的语料）。
+        total-timeout-ms: ${HAWK_SEARCH_TOTAL_TIMEOUT_MS:5000}
+        default-limit: ${HAWK_SEARCH_DEFAULT_LIMIT:10}
+        max-limit: ${HAWK_SEARCH_MAX_LIMIT:1000}
+
       # ---- round tracker（见 RoundTracker）----
       # 「每一轮索引有没有真的建成」靠它收敛：定时查召回副本报的 round，没有就重下发。
       #

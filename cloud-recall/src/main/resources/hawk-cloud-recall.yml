@@ -28,6 +28,18 @@ hawk:
         # 文件名带 `.staging-` 前缀，于是会被 IndexStore.cleanStaleStaging 统一收走。
         tmp-dir: ${HAWK_RECALL_PULL_TMP_DIR:}
 
+      # ---- 向量检索（只有 role=vector-recall 的节点用得到，见 VectorSearchController）----
+      vector:
+        # 查询文本要现编码成向量，所以本节点必须有一份 ONNX 模型目录。
+        # ⚠️ **必须与索引器建索引时用的那一份一致** —— meta.json 里记了指纹，
+        #    对不上时打开索引会失败、这个版本一直回 503。这是刻意的：
+        #    宁可服务不了，也不要拿一个不同的模型编码查询、然后把一堆不相干结果当"正常"返回。
+        model-dir: ${HAWK_MODEL_DIR:model/bge-small-zh-v1.5}
+
+        # 向量要不要载入堆。默认 false（磁盘驻留）—— 召回节点是常驻的，
+        # 堆该留给并发查询：3 个字段载入堆是 600 MB 量级，磁盘驻留每张图只要约 5 MB。
+        cache-vectors: ${HAWK_RECALL_CACHE_VECTORS:false}
+
       # 注册中心（JRegistry）地址。留空则跳过登记，只记一条 WARN。两种写法都认：
       #   · 单节点     127.0.0.1:6001
       #   · 集群节点表 {1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}

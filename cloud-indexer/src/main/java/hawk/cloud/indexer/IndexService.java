@@ -19,6 +19,7 @@ import hawk.segment.core.anlyzer.NShortestPathAnalyzer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -257,7 +258,10 @@ public class IndexService {
         String version = IndexStamp.versionName(round == null ? 0L : round, stamp);
         int batchCount = dataSource.getTotalBatchCount();
         Path indexDirPath = indexDirOf(indexDirRoot, role, shardNum, version);
-        Files.createDirectories(indexDirPath);
+        // 先写临时目录，成功才改名 —— 否则中途失败会留下一个"最新的半成品"，节点永久 503。见 tempBuildDirOf
+        Path buildDir = tempBuildDirOf(indexDirPath);
+        sweepStaleBuildDirs(indexDirPath.getParent(), 60 * 60 * 1000L);
+        Files.createDirectories(buildDir);
 
         // 第三个参数 true = 把已有的 pk.map 读进来，也就是"挂到已有索引上"，不清空目录。
         // 空目录也安全：PkMapStore.load 在文件不存在时返回空 map。
@@ -265,8 +269,9 @@ public class IndexService {
         // 数据源（数据库列名等）叫什么都行，只要请求的 fieldList 说清楚即可。
         IndexWriter writer = new IndexWriter(
                 new IndexConfig(new NShortestPathAnalyzer(1), indexerThreads, primaryKeyField),
-                MMapDirectory.open(indexDirPath),
+                MMapDirectory.open(buildDir),          // ← 临时目录，成功才改名
                 true);
+        boolean built = false;
 
         log.info("开始索引：shardCount={}，本节点分片下标={}（shard-num={}），batchSize={}，共 {} 批，"
                         + "主键字段={}，索引线程={}，输出目录={}，字段 {}",
@@ -329,21 +334,31 @@ public class IndexService {
                 return;
             }
             writer.commit();
+            built = true;
         } finally {
+            if (!built) {
+                // 没走到改名就退出了（异常，或空分片提前 return）—— 半成品不能留，
+                // 哪怕它点开头对读端不可见，也别占着磁盘
+                deleteRecursively(buildDir);
+            }
             // IndexWriter 没有 close()，但它构造时起了一个 ThreadPoolExecutor（线程数是
             // indexerThreadNum）。不关掉的话每个请求都漏一组线程 —— BuildIndex 是一次性进程所以
             // 从没暴露过这个问题。
             writer.getThreadPoolExecutor().shutdown();
         }
 
-        // 轮次写进索引目录。位置在 commit 之后、push 之前：
-        //   · commit 之前写 → commit 抛异常时目录里留了个孤零零的 round 文件，而索引是半成品，
-        //     下一轮看到它还会走短路、把半成品推出去；
+        // 轮次写进索引目录。位置在 commit 之后、改名之前：
+        //   · commit 之前写 → commit 抛异常时目录里留了个孤零零的 round 文件，而索引是半成品；
         //   · push 之后写 → 打包的时候文件还不在，推过去的那份没有轮次，tracker 永远判未收敛。
-        // 所以只有这一个位置是对的。
         if (round != null) {
-            IndexRound.write(indexDirPath, round);
-            // 紧接着就登记 —— 登记的那一刻起召回端就可能来拉，而拉的是磁盘上已完整的东西。
+            IndexRound.write(buildDir, round);
+        }
+
+        // ★ 到这里这一份才真正完整 —— 原子改名，它从此才是"最新那个目录"
+        Files.move(buildDir, indexDirPath, StandardCopyOption.ATOMIC_MOVE);
+
+        if (round != null) {
+            // 改完名才登记 —— 登记的那一刻起召回端就可能来拉，拉的必须是已经改好名的那份
             readyRegistry.advertise(round, version);
         }
 
@@ -408,6 +423,71 @@ public class IndexService {
             }
         } catch (IOException e) {
             log.warn("清理旧索引目录失败：{}", e.toString());
+        }
+    }
+
+
+    /**
+     * 构建时用的**临时目录**：{@code .{版本名}.tmp}，点开头。
+     *
+     * <h2>为什么不能直接写正式目录</h2>
+     * 正式目录名就是本次的 stamp = **最新的那个**。一旦 {@code commit()} 中途抛异常
+     * （磁盘满、OOM、字段类型冲突…），留下的就是一个**没有 meta.json 的半成品**，
+     * 而它是最新的 —— 召回端 {@code newest()} 选中的正是它，于是**整台节点一直回 503**，
+     * 而且**永远好不了**：更旧的完好版本还在盘上但不会被选中；索引器的
+     * {@link #pruneOldStamps} 只在推送成功后跑、召回端的 {@code prune} 只在 install 成功后跑，
+     * 两边都不会发生。
+     *
+     * <h2>为什么点开头就够了</h2>
+     * {@link #pruneOldStamps}、召回端的 {@code IndexStore.listVersions}/{@code newest}、
+     * 以及 {@code IndexReadyRegistry.announceCurrent} **三处都跳过点开头的目录** ——
+     * 于是半成品对读端**完全不可见**，不需要再改任何过滤逻辑。
+     *
+     * <p>成功之后 {@code ATOMIC_MOVE} 改名成正式目录：同文件系统上一步到位。
+     */
+    static Path tempBuildDirOf(Path finalDir) {
+        return finalDir.resolveSibling("." + finalDir.getFileName() + ".tmp");
+    }
+
+    /** 清掉超过 {@code ageMs} 的构建临时目录 —— 进程被杀在构建中途时会留下它们。 */
+    static void sweepStaleBuildDirs(Path shardDir, long ageMs) {
+        if (!Files.isDirectory(shardDir)) {
+            return;
+        }
+        long cutoff = System.currentTimeMillis() - ageMs;
+        try (var s = Files.list(shardDir)) {
+            for (Path p : s.filter(Files::isDirectory)
+                    .filter(p -> p.getFileName().toString().endsWith(".tmp"))
+                    .toList()) {
+                try {
+                    if (Files.getLastModifiedTime(p).toMillis() < cutoff) {
+                        log.warn("清理残留的构建临时目录 {}", p.getFileName());
+                        deleteRecursively(p);
+                    }
+                } catch (IOException ignored) {
+                    // 读不到修改时间就当它是新的，别误删
+                }
+            }
+        } catch (IOException e) {
+            log.warn("扫 {} 清理临时目录失败：{}", shardDir, e.toString());
+        }
+    }
+
+    /** 尽力递归删除；删不掉的留给下一次 sweep。 */
+    static void deleteRecursively(Path p) {
+        if (!Files.exists(p)) {
+            return;
+        }
+        try (var walk = Files.walk(p)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(x -> {
+                try {
+                    Files.deleteIfExists(x);
+                } catch (IOException ignored) {
+                    // 删不掉就留着
+                }
+            });
+        } catch (IOException e) {
+            log.warn("删除 {} 失败：{}", p, e.toString());
         }
     }
 

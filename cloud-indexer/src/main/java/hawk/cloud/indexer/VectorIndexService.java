@@ -122,14 +122,14 @@ public class VectorIndexService {
      *         {@code true} = 已受理，活已经在后台跑
      */
     public boolean startAsync(int shardCount, List<Field> fieldList, List<String> vectorFields,
-                              String modelDir, String device, Long round) {
+                              List<String> storedFields, String modelDir, String device, Long round) {
         if (!fullPermit.tryAcquire()) {
             return false;
         }
         try {
             executor.submit(() -> {
                 try {
-                    doIndex(shardCount, fieldList, vectorFields, modelDir, device, round);
+                    doIndex(shardCount, fieldList, vectorFields, storedFields, modelDir, device, round);
                 } catch (Throwable t) {
                     // 后台异常没人接，必须在这里落地 —— 否则这个任务失败得悄无声息
                     log.error("向量索引失败（shard-num={}，vectorFields={}）", shardNum, vectorFields, t);
@@ -158,7 +158,8 @@ public class VectorIndexService {
     // ------------------------------------------------------------------ 干活
 
     private void doIndex(int shardCount, List<Field> fieldList, List<String> vectorFields,
-                         String modelDir, String device, Long round) throws Exception {
+                         List<String> storedFields, String modelDir, String device, Long round)
+            throws Exception {
         // ★ 短路：本节点已经有这一轮了，就别重算 —— 直接把那份重推一遍。
         // 向量这边收益最大：编码 10 万篇要 16 分钟，而"推送失败、构建成功"根本不需要重算。
         // 放在最前面：连主键字段都不用解析。
@@ -186,9 +187,14 @@ public class VectorIndexService {
         String stamp = IndexStamp.now();
         String version = IndexStamp.versionName(round == null ? 0L : round, stamp);
         Path indexDirPath = IndexService.indexDirOf(indexDirRoot, role, shardNum, version);
-        Files.createDirectories(indexDirPath);
+        // 先写临时目录，成功才改名 —— 否则中途失败会留下一个"最新的半成品"，
+        // 召回端 newest() 正好选中它、于是永久 503。见 IndexService.tempBuildDirOf
+        Path buildDir = IndexService.tempBuildDirOf(indexDirPath);
+        IndexService.sweepStaleBuildDirs(indexDirPath.getParent(), 60 * 60 * 1000L);
+        Files.createDirectories(buildDir);
 
         VectorIndexConfig config = new VectorIndexConfig(vectorFields)
+                .setStoredFields(storedFields)
                 .setModelDir(Path.of(modelDir != null ? modelDir : defaultModelDir))
                 .setPrimaryKeyFieldName(primaryKeyField)
                 .setM(m)
@@ -203,7 +209,9 @@ public class VectorIndexService {
                 vectorFields, config.getModelDir(), config.getDevice(), indexDirPath.toAbsolutePath());
 
         long t0 = System.currentTimeMillis();
-        try (VectorIndexWriter writer = new VectorIndexWriter(config, indexDirPath)) {
+        // built 在 try 之外声明，finally 才能看见它
+        boolean built = false;
+        try (VectorIndexWriter writer = new VectorIndexWriter(config, buildDir)) {
             for (int i = 0; i < batchCount; i++) {
                 long offset = (long) i * batchSize;
                 List<OriDocument> batch = dataSource.getBatchDocument(offset, batchSize, shardCount);
@@ -232,16 +240,27 @@ public class VectorIndexService {
                 return;
             }
             writer.commit();
-            // 轮次写进索引目录。位置在 commit 之后、push 之前 —— 早于 commit 会把半成品标上轮次
-            // （下一轮看到它就走短路、把半成品推出去），晚于 push 则打包时文件还不在。
+            // 轮次写进**临时目录**。位置在 commit 之后、改名之前 ——
+            // 早于 commit 会把半成品标上轮次（下一轮看到它就走短路、把半成品推出去）；
+            // 晚于推送则打包时文件还不在。改名之后它自然跟着进正式目录。
             if (round != null) {
-                IndexRound.write(indexDirPath, round);
-                // 紧接着就登记 —— 登记的那一刻起召回端就可能来拉，而拉的是磁盘上已完整的东西。
+                IndexRound.write(buildDir, round);
+            }
+            // ★ 到这里这一份才真正完整 —— 原子改名，它从此才是"最新那个目录"
+            Files.move(buildDir, indexDirPath, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            built = true;
+
+            if (round != null) {
+                // 改完名才登记 —— 登记的那一刻起召回端就可能来拉，拉的必须是已经改好名的那份
                 readyRegistry.advertise(round, version);
             }
             log.info("向量索引完成：收下 {}，主键缺失 {}，字段全空 {}，用时 {}s -> {}",
                     writer.accepted(), writer.droppedNoKey(), writer.droppedNoField(),
                     (System.currentTimeMillis() - t0) / 1000, indexDirPath.toAbsolutePath());
+        } finally {
+            if (!built) {
+                IndexService.deleteRecursively(buildDir);
+            }
         }
 
         // 放在最后、且在两段 try 之外：只有 commit 成功才会走到这里，不会发出"建好了"的假通知。

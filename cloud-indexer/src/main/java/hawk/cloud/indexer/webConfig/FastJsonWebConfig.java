@@ -32,7 +32,9 @@ public class FastJsonWebConfig implements WebMvcConfigurer {
 
     @Override
     public void extendMessageConverters(List<HttpMessageConverter<?>> converters) {
-        FastJsonHttpMessageConverter fastJson = new FastJsonHttpMessageConverter();
+        // 用我们自己的子类，不是原版 —— 原版在 Spring 7 上**解析失败会变成 500**
+        // （错误上报路径调了一个 7 里已经没有的构造器）。见 Spring7FastJsonHttpMessageConverter。
+        FastJsonHttpMessageConverter fastJson = new Spring7FastJsonHttpMessageConverter();
 
         FastJsonConfig config = new FastJsonConfig();
         config.setCharset(StandardCharsets.UTF_8);

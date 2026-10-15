@@ -497,16 +497,9 @@ public class DocWriter implements Runnable {
         return ret;
     }
 
+    /** 类型字节的拼法收敛在 {@link FieldType#toTypeByte} —— 那是要落盘的跨模块约定，别在这儿再拼一份。 */
     public byte getFieldType(Field field){
-        byte termType = 0b00000000;
-        if(field.isStored() == Field.Stored.YES){
-            termType |= 0b00000001;
-        }
-        if(field.isTokenized() == Field.Tokenized.YES){
-            termType |= 0b00000010;
-        }
-        termType |= FieldType.of(field).bit();
-        return termType;
+        return FieldType.toTypeByte(field);
     }
 
     private int storedOnlyFieldLength(Field field) {

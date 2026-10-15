@@ -10,6 +10,8 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -77,6 +79,16 @@ public class IndexPullJob {
     private final RegistryRegistrar registrar;
     private final IndexFetchClient fetchClient;
 
+    /**
+     * 两个检索器都要注入 —— **本节点按 role 只会用到其中一个**。
+     *
+     * <p>（为什么两个都注入而不是"按 role 条件注入"：它们都是 {@code @Component}，
+     * 而"本节点是哪个 role"是配置，不是 bean 的存在性。让 Spring 做条件化会把配置
+     * 泄漏到装配层，不如在这里按 role 选。）
+     */
+    private final LocalSearcher textSearcher;
+    private final LocalVectorSearcher vectorSearcher;
+
     /** 检查跑在这里，**不占 {@code scheduling-1}** —— 那个单线程池还要跑节点心跳重登记。 */
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "index-pull");
@@ -85,10 +97,29 @@ public class IndexPullJob {
     });
 
     public IndexPullJob(LocalIndexStore local, RegistryRegistrar registrar,
-                        IndexFetchClient fetchClient) {
+                        IndexFetchClient fetchClient,
+                        LocalSearcher textSearcher, LocalVectorSearcher vectorSearcher) {
         this.local = local;
         this.registrar = registrar;
         this.fetchClient = fetchClient;
+        this.textSearcher = textSearcher;
+        this.vectorSearcher = vectorSearcher;
+    }
+
+    /**
+     * 启动时就预热一次。
+     *
+     * <h2>为什么"装好之后预热"还不够</h2>
+     * 那是**换版**的场景。还有**重启**：节点重启后索引还在盘上（不需要重新拉），
+     * 但进程里的检索器是空的 —— 第一个查询照样要付那一秒多的冷启代价。
+     * 部署、崩溃重启都会走这条，而且是**每一次**都走。
+     *
+     * <p>提交到线程池而不是同步做：启动流程不该为了省第一个查询而被拖慢 1.5 秒。
+     * 真没有索引时它会立刻抛（那条 catch 会记一条 warn）—— 无害。
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void warmUpOnStartup() {
+        executor.submit(this::warmUpSearcher);
     }
 
     /** {@code @Scheduled} 只负责提交，活在线程池里干。 */
@@ -172,11 +203,40 @@ public class IndexPullJob {
         try {
             local.store().install(fetched.version(), fetched.zipFile());
             log.info("第 {} 轮已装好，当前版本 = {}", best.round(), local.store().newest());
+            warmUpSearcher();
         } catch (Exception e) {
             // 解压 / 校验失败：install 已经把 staging 删掉了，这里只记日志
             log.error("装第 {} 轮失败（包已丢弃，不会留下半成品）", best.round(), e);
         } finally {
             deleteQuietly(fetched.zipFile());
+        }
+    }
+
+    /**
+     * **装好之后立刻在后台把检索器打开** —— 把"打开"的代价从第一个用户查询挪到这里。
+     *
+     * <p>不预热会怎样（实测）：换版后的第一个查询要付 mmap + 图加载 + ONNX 会话（约 1.5 秒），
+     * 足以撞上协调器的分片超时（默认 3 秒），于是**那一片在这次查询里整片算 0 条** ——
+     * 换一次版就漏一次。虽然协调器会在 {@code failed} 里如实报出来（不是静默），
+     * 但那是可避免的损失。
+     *
+     * <p><b>跑在本任务自己的线程池上</b>（{@code index-pull}），不是 {@code scheduling-1} ——
+     * 这里会阻塞 1 秒多，绝不能占那个单线程池。
+     *
+     * <p><b>失败不影响安装成功</b>：索引已经装好了，预热只是省第一个查询的时间。
+     * 真失败（比如模型对不上）会在第一个查询那里以 503 的形式暴露出来，那条路本来就在。
+     */
+    private void warmUpSearcher() {
+        try {
+            if ("vector-recall".equals(local.role())) {
+                vectorSearcher.warmUp();
+            } else {
+                textSearcher.warmUp();
+            }
+            log.info("检索器已预热（{}）", local.role());
+        } catch (Exception e) {
+            log.warn("预热检索器失败 —— 索引已装好，但第一个查询会慢，甚至撞上协调器的分片超时：{}",
+                    e.getMessage());
         }
     }
 

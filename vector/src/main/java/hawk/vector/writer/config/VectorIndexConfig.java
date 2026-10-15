@@ -38,6 +38,15 @@ public class VectorIndexConfig {
     /** 文档里主键字段的名字。与 {@code IndexConfig#primaryKeyFieldName} 同义同默认。 */
     private String primaryKeyFieldName = "uniqueID";
 
+    /**
+     * 要**一并存原文**的字段名（可空）。
+     *
+     * <p>不配的话这份索引就只有向量 + 主键 —— 检索能返回 pk 和分数，但**回不了字段值**
+     * （向量图的文件里本来就没有原文的位置）。配了之后原文会另存一份
+     * （{@code stored.fdt/.fdx/.fdm}，见 {@code hawk.vector.stored}），检索结果才能带回字段。
+     */
+    private List<String> storedFields = List.of();
+
     private int m = JVectorGraph.DEFAULT_M;
 
     private int efConstruction = JVectorGraph.DEFAULT_EF_CONSTRUCTION;
@@ -97,6 +106,16 @@ public class VectorIndexConfig {
 
     public VectorIndexConfig setWeights(Map<String, Float> weights) {
         this.weights = new LinkedHashMap<>(weights);
+        return this;
+    }
+
+    public List<String> getStoredFields() {
+        return storedFields;
+    }
+
+    /** 要一并存原文的字段名。传 null 或空 = 不存原文。 */
+    public VectorIndexConfig setStoredFields(List<String> storedFields) {
+        this.storedFields = storedFields == null ? List.of() : List.copyOf(storedFields);
         return this;
     }
 

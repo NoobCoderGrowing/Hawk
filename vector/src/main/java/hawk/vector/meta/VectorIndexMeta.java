@@ -37,6 +37,21 @@ public class VectorIndexMeta {
     /** 单个字段的图文件名，位于 {@code <index-dir>/<字段名>/} 下。 */
     public static final String GRAPH_FILE = "graph.idx";
 
+    /**
+     * 当前磁盘格式版本。
+     *
+     * <p><b>为什么必须有</b>：存储字段（{@code stored.fdt/.fdx/.fdm}）是**后加**的能力。
+     * 读侧要能分清"旧格式的索引"（该拒绝、要求重建）和"新格式但没存字段"（合法）。
+     * 老 meta.json 里没有 {@link #formatVersion} ⇒ 反序列化得到 0 ⇒ 判为旧格式。
+     */
+    public static final int FORMAT_VERSION = 1;
+
+    /** 建索引时的磁盘格式版本。**缺省 0 = 旧格式**，读侧要求 {@code >= FORMAT_VERSION}。 */
+    public int formatVersion;
+
+    /** 一并存了原文的字段名（空 = 这份索引不带原文）。见 {@code hawk.vector.stored}。 */
+    public List<String> storedFields = new ArrayList<>();
+
     /** 模型标识（如 {@code BAAI/bge-small-zh-v1.5}）。 */
     public String modelName;
 

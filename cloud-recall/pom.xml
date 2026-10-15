@@ -26,6 +26,17 @@
             <version>1.0-SNAPSHOT</version>
         </dependency>
 
+        <!-- 向量检索（vector-recall 那条路）。**它会把 onnxruntime + tokenizers + jvector 拉进来**
+             —— 一个 text-recall 节点白背这几百 MB。
+             先这么挂着：一个 cloud-recall 进程按 role 只走其中一条路，但依赖是模块级的、分不开。
+             真要瘦身得把 text / vector 拆成两个服务，那是另一件事。
+             注意 onnxruntime 默认是 **CPU 版**（要 GPU 得 -Pgpu，见 vector/pom.xml）。 -->
+        <dependency>
+            <groupId>com.hawk</groupId>
+            <artifactId>vector</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+
         <!-- 版本由 spring-boot-starter-parent 管理 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

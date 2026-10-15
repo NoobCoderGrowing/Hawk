@@ -63,6 +63,19 @@ public class DataOutput {
         writeByte((byte)(input), buffer, pos);
     }
 
+    /**
+     * VLong 写进内存缓冲 —— 与写进 {@link FileChannel} 的那个**同一套 7 位分组的编码**，
+     * 只是落点不同。原先只有 FileChannel 版，而"攒批写块"需要先写进 byte[] 再整块压缩，
+     * 所以补这一个（向量侧的存储字段用得到）。
+     */
+    public static void writeVLong(long i, byte[] buffer, WrapInt pos){
+        while ((i & ~0x7FL) != 0L) {
+            writeByte((byte)((i & 0x7FL) | 0x80L), buffer, pos);
+            i >>>= 7;
+        }
+        writeByte((byte) i, buffer, pos);
+    }
+
     public static void writeVLong(long i, FileChannel fc){
         while ((i & ~0x7FL) != 0L) {
             writeByte((byte)((i & 0x7FL) | 0x80L), fc);

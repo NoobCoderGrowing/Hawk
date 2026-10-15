@@ -1,11 +1,14 @@
 package hawk.vector.search;
 
 import ai.onnxruntime.OrtException;
+import common.IndexFormatConfig;
 import directory.PkMapStore;
+import document.Document;
 import hawk.vector.graph.JVectorGraph;
 import hawk.vector.meta.VectorIndexMeta;
 import hawk.vector.model.ModelDescriptor;
 import hawk.vector.model.TextEncoder;
+import hawk.vector.stored.StoredFieldsReader;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -86,15 +89,19 @@ public class VectorSearcher implements Closeable {
     private final VectorIndexMeta meta;
     private final List<FieldIndex> fieldIndexes;
     private final TextEncoder encoder;
+    /** 存储字段（文档原文）。没有配 storedFields 的索引也**有**它 —— 只是里面没有字段。 */
+    private final StoredFieldsReader storedFields;
     /** 检索时的候选池大小（HNSW 的 efSearch）。 */
     private int rerankK = JVectorGraph.DEFAULT_RERANK_K;
 
     private VectorSearcher(Path indexDir, VectorIndexMeta meta,
-                           List<FieldIndex> fieldIndexes, TextEncoder encoder) {
+                           List<FieldIndex> fieldIndexes, TextEncoder encoder,
+                           StoredFieldsReader storedFields) {
         this.indexDir = indexDir;
         this.meta = meta;
         this.fieldIndexes = fieldIndexes;
         this.encoder = encoder;
+        this.storedFields = storedFields;
     }
 
     /** 打开索引；向量载入堆（检索快，但每张图占约 N × 维度 × 4 字节）。 */
@@ -141,6 +148,24 @@ public class VectorSearcher implements Closeable {
             sum = Math.max(1, meta.fields.size());
         }
 
+        // ★ 磁盘格式版本：旧格式（没有存储字段这一层）**直接拒绝**，要求重建。
+        //   与文本索引对 BKD 格式的做法一致（MMapDirectoryReader.loadBkd 要求 >= CURRENT）——
+        //   宁可要求重建，也不留"半吊子状态"：否则同一个查询打到不同版本的分片上，
+        //   一个有 fields 一个没有，而两边看起来都正常。
+        if (meta.formatVersion < VectorIndexMeta.FORMAT_VERSION) {
+            encoder.close();
+            throw new IOException("向量索引格式过旧（meta.formatVersion=" + meta.formatVersion
+                    + "，当前要求 " + VectorIndexMeta.FORMAT_VERSION + "）："
+                    + indexDir.toAbsolutePath() + "\n  需要重建索引");
+        }
+        StoredFieldsReader storedReader;
+        try {
+            storedReader = StoredFieldsReader.open(indexDir, new IndexFormatConfig());
+        } catch (IOException | RuntimeException e) {
+            encoder.close();
+            throw e;
+        }
+
         List<FieldIndex> indexes = new ArrayList<>();
         try {
             for (VectorIndexMeta.FieldMeta fm : meta.fields) {
@@ -156,17 +181,36 @@ public class VectorSearcher implements Closeable {
             }
         } catch (IOException | RuntimeException e) {
             indexes.forEach(FieldIndex::close);   // 半开状态不留给调用方
+            storedReader.close();
             encoder.close();
             throw e;
         }
         if (indexes.isEmpty()) {
+            storedReader.close();
             encoder.close();
             throw new IOException("索引里一个可用的字段都没有：" + indexDir.toAbsolutePath());
         }
         log.info("向量索引已加载：{} 个字段 {}，维度 {}，模型 {}",
                 indexes.size(), indexes.stream().map(i -> i.name).toList(),
                 meta.dim, meta.modelName);
-        return new VectorSearcher(indexDir, meta, indexes, encoder);
+        return new VectorSearcher(indexDir, meta, indexes, encoder, storedReader);
+    }
+
+    /**
+     * 按业务主键取原文（存储字段）。
+     *
+     * <p>就是向量检索的"取详情"这一步：{@link VectorHit} 给的是 pk，想要字段值再调这个。
+     *
+     * @return 该文档的字段；pk 不在这份索引里 → {@code null}；
+     *         在、但这份索引没存它的字段 → **空 Document**（两者得分得清）
+     */
+    public Document docByPk(long pk) {
+        return storedFields.docOf(pk);
+    }
+
+    /** 这份索引存了哪些字段（空 = 不带原文）。 */
+    public java.util.Set<String> storedFieldNames() {
+        return storedFields.storedFieldNames();
     }
 
     // ------------------------------------------------------------------ 检索
@@ -280,6 +324,7 @@ public class VectorSearcher implements Closeable {
         for (FieldIndex fi : fieldIndexes) {
             fi.close();
         }
+        storedFields.close();
         encoder.close();
     }
 }

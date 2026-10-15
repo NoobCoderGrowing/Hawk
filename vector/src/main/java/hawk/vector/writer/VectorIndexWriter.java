@@ -1,6 +1,7 @@
 package hawk.vector.writer;
 
 import ai.onnxruntime.OrtException;
+import common.IndexFormatConfig;
 import directory.PkMapStore;
 import document.Document;
 import field.Field;
@@ -10,6 +11,7 @@ import hawk.vector.graph.JVectorGraph;
 import hawk.vector.meta.VectorIndexMeta;
 import hawk.vector.model.ModelDescriptor;
 import hawk.vector.model.TextEncoder;
+import hawk.vector.stored.StoredFieldsWriter;
 import hawk.vector.writer.config.VectorIndexConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -82,6 +84,15 @@ public class VectorIndexWriter implements Closeable {
     private final Map<String, List<float[]>> vectors = new LinkedHashMap<>();
     private final Map<String, List<Long>> keys = new LinkedHashMap<>();
 
+    /**
+     * 存储字段（文档原文）的落盘器。它攒在内存里，{@link #commit} 时一次性写出三个文件。
+     *
+     * <p>格式参数用 {@link IndexFormatConfig} 的**默认值**（块 16 KiB + LZ4），与读侧
+     * （{@code StoredFieldsReader}）保持一致 —— **块大小是磁盘格式的一部分**，
+     * 两边不一致就读不出来。这里不把它做成可配，就是为了不给"两边配得不一样"留口子。
+     */
+    private final StoredFieldsWriter storedWriter;
+
     /** 惰性创建：只用 {@link #addVector} 的调用方不必为加载模型付出代价。 */
     private TextEncoder encoder;
 
@@ -95,6 +106,7 @@ public class VectorIndexWriter implements Closeable {
         this.config = config;
         this.indexDir = indexDir;
         this.fields = config.getVectorFields();
+        this.storedWriter = new StoredFieldsWriter(indexDir, new IndexFormatConfig(), config.getStoredFields());
         for (String f : fields) {
             pendingTexts.put(f, new ArrayList<>());
             pendingKeys.put(f, new ArrayList<>());
@@ -140,6 +152,9 @@ public class VectorIndexWriter implements Closeable {
             return;
         }
         accepted++;
+        // 存储字段与"这篇文档收不收"同步：只有真进了索引的文档才存原文 ——
+        // 检索命中的只可能是进了图的那些，存多余的没意义
+        storedWriter.addDoc(key, doc);
         if (maxPending() >= FLUSH_THRESHOLD) {
             flush();
         }
@@ -224,6 +239,10 @@ public class VectorIndexWriter implements Closeable {
             fieldKeys.clear();
         }
 
+        // 原文另存一份（三个文件）。**即使一个字段都不存也要写** ——
+        // 读侧靠 meta 里的 formatVersion 判新旧格式，不靠"文件在不在"。
+        storedWriter.write();
+
         VectorIndexMeta.save(indexDir, meta);
         committed = true;
         log.info("向量索引完成：{},d 条文档，{} 个字段 -> {}（主键缺失 {}，字段全空 {}）",
@@ -232,6 +251,8 @@ public class VectorIndexWriter implements Closeable {
 
     private VectorIndexMeta buildMeta() throws IOException, OrtException {
         VectorIndexMeta meta = new VectorIndexMeta();
+        meta.formatVersion = VectorIndexMeta.FORMAT_VERSION;
+        meta.storedFields = config.getStoredFields();
         meta.modelDir = config.getModelDir().toString();
         meta.primaryKeyField = config.getPrimaryKeyFieldName();
         meta.dim = dim;
@@ -339,6 +360,7 @@ public class VectorIndexWriter implements Closeable {
 
     @Override
     public void close() {
+        storedWriter.close();
         if (encoder != null) {
             encoder.close();
         }

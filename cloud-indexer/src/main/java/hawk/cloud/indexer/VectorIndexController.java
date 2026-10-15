@@ -128,8 +128,16 @@ public class VectorIndexController {
         Long round = request.getLong("round");
 
         // ---- 到这里参数都没问题，尝试抢占"正在建索引"这个状态 ----
+        // 要**一并存原文**的字段 = fieldList 里 isStored=YES 的那些。
+        // 这就是"向量检索也要能带回字段值"的来源 —— 向量图本身不存原文，
+        // 得另存一份（stored.fdt/.fdx/.fdm）。没标 stored 的字段就不存。
+        List<String> storedFields = fieldList.stream()
+                .filter(f -> f.isStored() == Field.Stored.YES)
+                .map(Field::getName)
+                .toList();
+
         boolean started = vectorIndexService.startAsync(
-                shardCount, fieldList, vectorFields, modelDir, device, round);
+                shardCount, fieldList, vectorFields, storedFields, modelDir, device, round);
         if (!started) {
             // 抢不到锁：本节点已经在建。立刻回，不排队、不阻塞
             log.info("收到 vectorIndex 请求，但本节点正在建向量索引，直接回 vector-indexing");
