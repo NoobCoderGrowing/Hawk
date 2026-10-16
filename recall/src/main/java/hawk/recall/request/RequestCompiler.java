@@ -7,9 +7,14 @@ import hawk.recall.query.Occur;
 import hawk.recall.query.Query;
 import hawk.recall.query.RangeQuery;
 import hawk.recall.query.TermQuery;
+import hawk.recall.reader.DirectoryReader;
 import hawk.segment.core.anlyzer.Tokenizer;
+import hawk.segment.core.anlyzer.TokenizerRegistry;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -17,13 +22,15 @@ import java.util.Objects;
  *
  * <p>这一层是**全流程唯一同时需要 tokenizer 和 schema 的地方**：
  * <ul>
- *   <li><b>tokenizer</b> —— 把 {@link Condition.Text} 里的原文切成词项</li>
+ *   <li><b>tokenizer</b> —— 把 {@link Condition.Text} 里的原文切成词项。<b>按字段各有一组</b>：
+ *       索引时某个字段用了哪些 tokenizer，查询时就得用同一组，否则切出来的词在倒排里不存在
+ *       （不报错，只是静默搜不到）。这一组由调用方从**索引**里读出来（fdm 每字段记着）。</li>
  *   <li><b>schema</b> —— 校验字段名，把"用户写错了"在编译期拦下来</li>
  * </ul>
  * 编完之后，{@code Searcher} 拿到的就是一棵纯 AST，既不需要分析器、也不需要 schema。
  *
  * <pre>
- *   var compiler = new RequestCompiler(tokenizer, Schema.from(reader));
+ *   var compiler = new RequestCompiler(tokenizers, Schema.from(reader));
  *   Query q = compiler.compile(Condition.Group.and(
  *           Condition.Group.or(
  *                   new Condition.Text("老黄冰糖", List.of("title"), Occur.SHOULD, Occur.MUST),
@@ -34,12 +41,38 @@ import java.util.Objects;
  */
 public final class RequestCompiler {
 
-    private final Tokenizer tokenizer;
+    /** 字段名 → 该字段在**索引里记录**的那一组分词器。 */
+    private final Map<String, List<Tokenizer>> tokenizers;
     private final Schema schema;
 
-    public RequestCompiler(Tokenizer tokenizer, Schema schema) {
-        this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer");
+    public RequestCompiler(Map<String, List<Tokenizer>> tokenizers, Schema schema) {
+        this.tokenizers = Objects.requireNonNull(tokenizers, "tokenizers");
         this.schema = Objects.requireNonNull(schema, "schema");
+    }
+
+    /**
+     * 按**索引里记的**配置建一个编译器：字段 → 那一组分词器从 fdm 读出来
+     * （{@link DirectoryReader#getFieldTokenizers()}），再经 {@link TokenizerRegistry} 解析成实例。
+     *
+     * <p><b>为什么以索引为准，而不是让调用方写死一份配置</b>：只有用建索引时那一组分词，
+     * 查询切出来的词才可能在倒排里存在。配置与索引对不上时的失败形态是**静默搜不到** ——
+     * 不报错、不抛异常，只是召回率下降，最难查。
+     *
+     * <p>实例由注册表缓存共享，所以同时持有多个版本快照也不会各读一遍 5.87 MB 词典。
+     */
+    public static RequestCompiler forReader(DirectoryReader reader) {
+        Map<String, List<Tokenizer>> byField = new HashMap<>();
+        reader.getFieldTokenizers().forEach((field, names) -> {
+            if (names.isEmpty()) {
+                return;   // 没被分词的字段（数值 / 只存原文），Schema 也不会把它算作可检索字段
+            }
+            List<Tokenizer> instances = new ArrayList<>(names.size());
+            for (String name : names) {
+                instances.add(TokenizerRegistry.get(name));
+            }
+            byField.put(field, instances);
+        });
+        return new RequestCompiler(byField, Schema.from(reader));
     }
 
     public Query compile(Condition condition) {
@@ -60,7 +93,15 @@ public final class RequestCompiler {
                 throw new IllegalArgumentException(
                         "没有可检索的文本字段「" + field + "」。" + schema.describe());
             }
-            List<TermQuery> terms = new StringQuery(field, text.text()).getTermQueryList(tokenizer);
+            List<Tokenizer> fieldTokenizers = tokenizers.get(field);
+            if (fieldTokenizers == null || fieldTokenizers.isEmpty()) {
+                // schema 说这个字段可检索，索引的 fdm 却没记它的 tokenizer 组 —— 不该发生。
+                // 抛错而不是回退到某个默认分词器：回退会切出索引里不存在的词，**静默搜不到**，
+                // 正是这个改动要消灭的那种失败模式。
+                throw new IllegalStateException("字段「" + field
+                        + "」在索引里没有记录 tokenizer 组，索引可能已损坏，请重建。");
+            }
+            List<TermQuery> terms = new StringQuery(field, text.text()).getTermQueryList(fieldTokenizers);
             if (terms.isEmpty()) {
                 // 这段文本在这个字段分不出任何词 —— 该字段无从匹配，跳过它。
                 // （注意：若外层是 MUST，跳过等于"少了一个必须满足的条件"；

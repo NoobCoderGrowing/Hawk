@@ -39,6 +39,14 @@
             <version>1.0-SNAPSHOT</version>
             <scope>compile</scope>
         </dependency>
+
+        <!-- 单测。只用到 JUnit 5 与 @TempDir，跟 core 模块的取法一致
+             （版本由 spring-boot-starter-parent 统一管理，本项目不写版本号）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
 <!-- 选择继承包-->
 
     </dependencies>

@@ -11,7 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import util.DataInput;
 import util.WrapLong;
 import util.bkd.BkdFileReader;
-import util.bkd.BkdFormatVersion;
 import util.bkd.BkdReader;
 import common.Pair;
 
@@ -26,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -60,6 +60,12 @@ public class MMapDirectoryReader extends DirectoryReader {
 
     private HashMap<String, Pair<byte[], Float>> fDMMap;
 
+    /**
+     * 字段名 → 该字段当初用的 tokenizer 名。由 {@link #constructFdmMap} 从 fdm 里读出来，
+     * 是 {@link DirectoryReader#getFieldTokenizers()} 的实现（{@code @Data} 生成的 getter 正好对上）。
+     */
+    private Map<String, List<String>> fieldTokenizers;
+
     private MemorySegment fRQBuffer;
 
     private FST termFST;
@@ -76,6 +82,7 @@ public class MMapDirectoryReader extends DirectoryReader {
         this.directory = directory;
         this.fDXMap = new TreeMap<>();
         this.fDMMap = new HashMap<>();
+        this.fieldTokenizers = new HashMap<>();
         this.bkdReaders = new HashMap<>();
         init();
     }
@@ -91,14 +98,9 @@ public class MMapDirectoryReader extends DirectoryReader {
     }
 
     private void loadBkd() {
-        int formatVersion = directory.getSegmentInfo().getFormatVersion();
-        // 必须 >= CURRENT（不是 >= BKD）：v1 用的是**跨零不单调**的旧 double 编码，
-        // 解出来是错的。与其静默给错结果，不如直接要求重建。
-        if (formatVersion < BkdFormatVersion.CURRENT) {
-            throw new IllegalStateException("索引的 BKD 格式版本是 " + formatVersion
-                    + "，当前需要 " + BkdFormatVersion.CURRENT
-                    + "（v1 的数值编码跨零不单调，已修复）。请重建索引。");
-        }
+        // 版本守卫**不在这里** —— 它在 {@code SegmentInfo.read()} 里，远早于本方法。
+        // 放在那里是必须的：本方法在 init() 里的顺序是 constructFdmMap → loadFrq → loadBkd，
+        // 等跑到这儿 fdm 早已按新格式解析完了，拦不住。
         String dirPath = directory.getPath().toAbsolutePath().toString();
         String bkdPath = dirPath + "/1.bkd";
         try {
@@ -177,6 +179,19 @@ public class MMapDirectoryReader extends DirectoryReader {
                 pos += 4;
                 int docCount = buffer.get(JAVA_INT_BE, pos);
                 pos += 4;
+                // 格式版本 v3 新增：这个字段当初用了哪些 tokenizer（见 INDEX_FORMAT.md §7）。
+                // 只有被分词的字段才非空 —— 数值字段、只存原文的字段这里是 0。
+                int tokenizerCount = buffer.get(JAVA_INT_BE, pos);
+                pos += 4;
+                List<String> tokenizerNames = new ArrayList<>(tokenizerCount);
+                for (int i = 0; i < tokenizerCount; i++) {
+                    int nameLength = buffer.get(JAVA_INT_BE, pos);
+                    pos += 4;
+                    byte[] nameBytes = DataInput.readBytes(buffer, pos, nameLength);
+                    pos += nameLength;
+                    tokenizerNames.add(new String(nameBytes, StandardCharsets.UTF_8));
+                }
+                fieldTokenizers.put(fieldName, tokenizerNames);
                 float avgFieldLength = fieldLengthSum/docCount;
                 fDMMap.put(fieldName, new Pair<>(new byte[]{fieldType}, avgFieldLength));
             }

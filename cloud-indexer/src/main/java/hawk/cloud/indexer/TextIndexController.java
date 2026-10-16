@@ -63,12 +63,13 @@ public class TextIndexController {
 
         // 本节点同时只建一份倒排索引。抢不到锁立刻回，不排队、不阻塞 ——
         // 排队会让"什么时候轮到我"不可预测，调用方（协调器）宁可知道这个节点忙着。
-        if (!indexService.startAsync(r.shardCount(), r.fieldList(), r.round())) {
+        if (!indexService.startAsync(r.shardCount(), r.fieldList(), r.fieldTokenizers(), r.round())) {
             log.info("收到 textIndex 请求，但本节点正在建倒排索引，直接回 text-indexing");
             return IndexApi.busy("text-indexing", role, shardNum, "倒排");
         }
 
-        log.info("已受理 textIndex 请求：shardCount={}（后台开建）", r.shardCount());
+        log.info("已受理 textIndex 请求：shardCount={}，本字段集分词配置={}（后台开建）",
+                r.shardCount(), r.fieldTokenizers());
         return ResponseEntity.accepted().body(IndexApi.acceptedBody(role, shardNum, "倒排"));
     }
 }

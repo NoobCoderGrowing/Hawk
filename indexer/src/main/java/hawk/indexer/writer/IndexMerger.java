@@ -21,6 +21,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -179,33 +180,49 @@ public class IndexMerger {
         }
     }
 
-    public void writeFdmRecord(FdmRecord record1, FdmRecord record2, FileChannel fc){
-        byte[] field = record1.getField();
-        int length = field.length;
-        byte type = record1.getType();
-        int fieldLengthSum = record1.getFieldLengthSum() + record2.getFieldLengthSum();
-        int docCount = record1.getDocCount() + record2.getDocCount();
-        DataOutput.writeInt(length, fc);
-        DataOutput.writeBytes(field, fc);
-        DataOutput.writeByte(type, fc);
-        DataOutput.writeInt(fieldLengthSum, fc);
-        DataOutput.writeInt(docCount, fc);
+    /**
+     * 合并两段里**同名字段**的记录：长度和文档数相加，tokenizer 列表必须一致。
+     *
+     * <p>为什么列表不一致就抛：同一个索引里同一字段被两种配置建过，两段倒排里的词来自不同的
+     * 分词方式 —— 合并出来的索引语义是混乱的。宁可要求重建，也不要悄悄取其中一份
+     * （与全仓对格式/配置不一致的一贯态度一致：报出来，别猜）。
+     */
+    public static void writeFdmRecord(FdmRecord record1, FdmRecord record2, FileChannel fc){
+        if (!record1.getTokenizers().equals(record2.getTokenizers())) {
+            throw new IllegalStateException("段合并失败：字段「"
+                    + new String(record1.getField(), StandardCharsets.UTF_8)
+                    + "」在两侧记的 tokenizer 不一致（" + record1.getTokenizers()
+                    + " vs " + record2.getTokenizers() + "）。同一索引里同一字段必须用同一套配置，请重建索引。");
+        }
+        writeFdmRecord(new FdmRecord(record1.getField(), record1.getType(),
+                record1.getFieldLengthSum() + record2.getFieldLengthSum(),
+                record1.getDocCount() + record2.getDocCount(),
+                record1.getTokenizers()), fc);
     }
 
-    public void writeFdmRecord(FdmRecord record, FileChannel fc){
+    public static void writeFdmRecord(FdmRecord record, FileChannel fc){
         byte[] field = record.getField();
         int length = field.length;
         byte type = record.getType();
         int fieldLengthSum = record.getFieldLengthSum();
         int docCount = record.getDocCount();
+        List<String> tokenizers = record.getTokenizers();
         DataOutput.writeInt(length, fc);
         DataOutput.writeBytes(field, fc);
         DataOutput.writeByte(type, fc);
         DataOutput.writeInt(fieldLengthSum, fc);
         DataOutput.writeInt(docCount, fc);
+        // 格式版本 v3 新增，见 INDEX_FORMAT.md §7。
+        // **漏写这里段合并就会把 tokenizer 信息丢掉** —— 合并是逐条读出再重写 fdm，不是字节拷贝。
+        DataOutput.writeInt(tokenizers.size(), fc);
+        for (String name : tokenizers) {
+            byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+            DataOutput.writeInt(nameBytes.length, fc);
+            DataOutput.writeBytes(nameBytes, fc);
+        }
     }
 
-    public FdmRecord readFdmRecord(SegmentCursor cursor){
+    public static FdmRecord readFdmRecord(SegmentCursor cursor){
         if(!cursor.hasRemaining()){
             return null;
         }
@@ -214,7 +231,13 @@ public class IndexMerger {
         byte fieldType = cursor.get();
         int fieldLengthSum = cursor.getInt();
         int docCount = cursor.getInt();
-        FdmRecord fdmRecord = new FdmRecord(field, fieldType, fieldLengthSum, docCount);
+        int tokenizerCount = cursor.getInt();
+        List<String> tokenizers = new ArrayList<>(tokenizerCount);
+        for (int i = 0; i < tokenizerCount; i++) {
+            int nameLength = cursor.getInt();
+            tokenizers.add(new String(cursor.readBytes(nameLength), StandardCharsets.UTF_8));
+        }
+        FdmRecord fdmRecord = new FdmRecord(field, fieldType, fieldLengthSum, docCount, tokenizers);
         return fdmRecord;
     }
 

@@ -43,7 +43,7 @@ public class NumberUtil {
      *
      * <p><b>旧实现翻的是全部 64 位（{@code b = ~b}），把负数也翻成了正数</b>，
      * 于是所有负数都排到正数后面，跨零的区间查询全错（实测 {@code atMost(field, 100)}
-     * 恒返回空）。见 {@link util.bkd.BkdFormatVersion}：这个修复**改了落盘编码**，
+     * 恒返回空）。见 {@link directory.IndexFormatVersion}：这个修复**改了落盘编码**，
      * 旧索引必须重建。
      */
     public static long double2SortableLong(double input){

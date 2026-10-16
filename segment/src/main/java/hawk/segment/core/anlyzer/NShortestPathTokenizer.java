@@ -76,28 +76,6 @@ public class NShortestPathTokenizer implements Tokenizer {
         return result;
     }
 
-    public HashSet<Term> tokenize(String value, String fieldName, int n){
-        this.n = n;
-        HashSet<Term> result = new HashSet<>();
-        if(value==null || value.length() == 0){ // check for empty str
-            return result;
-        }
-        value = stringTools.normalizeString(value);
-        String[] strArr = value.split(" ");
-        HanPinDigSeg hanPinDigSeg = new HanPinDigSeg();
-        int pos = 0;
-        for (int i = 0; i < strArr.length; i++) {
-            if(i > 0) {
-                pos ++;
-            }
-            //分割汉字、数字、英语字母成三个list
-            strArr[i] = stringTools.splitChineseDigitEnglishByComma(strArr[i]);
-            pos = stringTools.collectHanPinDigit(strArr[i], hanPinDigSeg, pos);
-        }
-        tokenize(hanPinDigSeg, result, fieldName);
-        return result;
-    }
-
     public void tokenize( HanPinDigSeg hanPinDigSeg,
                                    HashSet<Term> termSet, String fieldName){
         ArrayList<Phrase> hanziList = hanPinDigSeg.getHanZiList();

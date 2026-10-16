@@ -34,7 +34,7 @@ import java.util.concurrent.Semaphore;
  * **召回端下一轮自己会来拉** —— 索引器不需要知道有哪些召回节点。
  *
  * <h2>互斥锁</h2>
- * 本节点**同时只建一份向量索引**：{@link #running} 用 CAS 抢占，抢不到说明正在建，
+ * 本节点**同时只建一份向量索引**：{@link #fullPermit} 用 CAS 抢占，抢不到说明正在建，
  * 端点立刻回 {@code indexing} 而不是排队。理由是排队会让"什么时候轮到我"变得不可预测，
  * 而调用方（协调器）宁可立刻知道"这个节点忙着"，自己换个时间或换个副本再来。
  */
@@ -93,7 +93,7 @@ public class VectorIndexService {
     private final Semaphore fullPermit = new Semaphore(1);
 
     /**
-     * 后台建索引的线程。**单线程**：{@link #running} 已经保证了同时只有一份在跑，
+     * 后台建索引的线程。**单线程**：{@link #fullPermit} 已经保证了同时只有一份在跑，
      * 多线程池只会让队列里堆着永远不会被并行执行的任务。
      */
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {

@@ -4,10 +4,7 @@ import common.IndexFormatConfig;
 import directory.MMapDirectory;
 import hawk.recall.reader.DirectoryReader;
 import hawk.recall.request.RequestCompiler;
-import hawk.recall.request.Schema;
 import hawk.recall.search.Searcher;
-import hawk.segment.core.anlyzer.Tokenizer;
-import hawk.segment.core.anlyzer.NShortestPathTokenizer;
 
 import jakarta.annotation.PreDestroy;
 
@@ -58,7 +55,9 @@ public class LocalSearcher {
      *
      * @param version  版本目录名
      * @param searcher 检索器
-     * @param compiler 编译器（背靠本类那份**共享分词器**，见 {@link #tokenizer}）
+     * @param compiler 编译器。它背靠的分词器是**按这个版本、从索引里**解析出来的
+     *                 （{@link RequestCompiler#forReader}）—— 每个字段用了哪些 tokenizer
+     *                 是随版本变的，所以不能跨版本共享。
      * @param pkOfDoc  分片局部 docID → 业务主键。见下面 {@link #pkOf} 的说明
      */
     public record Snapshot(String version, Searcher searcher, RequestCompiler compiler, long[] pkOfDoc) {
@@ -84,39 +83,7 @@ public class LocalSearcher {
         T apply(Snapshot snapshot) throws Exception;
     }
 
-    /** 与索引器保持一致的分词窗口。**改这里必须同改索引器**（`IndexService`）。 */
-    private static final int TOKENIZER_N = 1;
-
     private final LocalIndexStore local;
-
-    /**
-     * **全进程一份**的分词器，所有版本共用。
-     *
-     * <h2>为什么必须共享 —— 是"贵"，不是"线程安全"</h2>
-     * 构造一个 {@link NShortestPathTokenizer} 会把 {@code data/npathword.data}
-     * （**5.87 MB、62 万行**）整个读进来灌成一个 HashSet。放在这里意味着**换版不再重读词典**
-     * —— 版本是分钟级一换的，每次重读纯属浪费。
-     *
-     * <h2>共享它是安全的（但"安全"是查出来的，不是设计出来的）</h2>
-     * 它的字段只有两处会被写，而且都在**构造函数**里：
-     * <ul>
-     *   <li>{@code NPathSet} —— 构造时加载的**只读词典**（之后只有 {@code contains}）；</li>
-     *   <li>{@code n} —— 构造时赋值。</li>
-     * </ul>
-     * <b>2 参数路径 {@code tokenize(value, field)} 全程不写任何实例字段</b>（其余赋值都是局部变量），
-     * 所以可以并发调用。实证：索引器本来就是这样用的 —— {@code DocWriter} 被
-     * {@code indexerThreadNum} 个线程并发调同一个实例，一直正常。
-     *
-     * <h2>⚠️ 什么会打破它</h2>
-     * 它还有一个 **public 的 3 参数重载 {@code tokenize(value, field, n)}，会写 {@code this.n}**。
-     * <b>今天没有任何调用方</b>（{@code Tokenizer} 接口只声明了 2 参数那个），所以现在是安全的 ——
-     * 但哪天有人想按查询动态调 {@code n} 就会踩上，而且**失败形态是"切出不一样的词"，
-     * 不抛异常、不报错**，极难查。
-     *
-     * <p>要根治得把 {@code n} 改成一路传参、再删掉那个重载（见 {@code CLOUD_RECALL_SEARCH_DESIGN.md} §6.2
-     * 的方案 B）—— 那要动 {@code segment}，暂时没做。**在那之前，谁也別去调 3 参数那个。**
-     */
-    private final Tokenizer tokenizer = new NShortestPathTokenizer(TOKENIZER_N);
 
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
@@ -268,9 +235,9 @@ public class LocalSearcher {
         DirectoryReader reader = DirectoryReader.open(MMapDirectory.open(dir));
         try {
             Searcher searcher = new Searcher(reader, new IndexFormatConfig());
-            // Schema 随版本重建（字段集合可能变），但**分词器是上面那份共享的** ——
-            // 换版不该重读 5.87 MB 词典。
-            RequestCompiler compiler = new RequestCompiler(tokenizer, Schema.from(reader));
+            // Schema 与分词器都随版本重建：字段集合会变，**每个字段用了哪些 tokenizer 也会变**。
+            // 分词器这一组以**索引里记的**为准（fdm 每字段一份），见 RequestCompiler.forReader。
+            RequestCompiler compiler = RequestCompiler.forReader(reader);
             return new Snapshot(version, searcher, compiler, reversePkMap(reader.getPkMap()));
         } catch (RuntimeException e) {
             reader.close();                                 // 半开着别漏

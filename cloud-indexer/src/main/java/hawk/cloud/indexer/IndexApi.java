@@ -6,12 +6,15 @@ import com.alibaba.fastjson.JSONObject;
 import field.Field;
 import field.FieldType;
 import field.PrimaryKeyField;
+import field.StringField;
+import hawk.segment.core.anlyzer.TokenizerRegistry;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +34,8 @@ import java.util.Map;
  * {
  *   "shardCount": 3,               // 必填
  *   "fieldList": [ ... ],          // 必填，形状见 parseFieldList
+ *                                  //   每个 StringField 可再带 "tokenizers": ["nshortest-1", ...]
+ *                                  //   见 parseFieldTokenizers
  *   "round": 1,                    // 可选：协调器带，旁路调用不带
  *   "vectorFields": ["title"],     // 可选：仅 /vectorIndex 用，/textIndex 忽略
  *   "modelDir": "...",             // 可选：仅 /vectorIndex 用
@@ -65,12 +70,16 @@ final class IndexApi {
     // ------------------------------------------------------------------ 请求
 
     /**
-     * 两个端点共同的入参。到这里 {@code fieldList} 已解析、主键已校验。
+     * 两个端点共同的入参。到这里 {@code fieldList} 已解析、主键已校验、每字段的 tokenizer 已校验。
      *
      * <p>类型专属的键（{@code vectorFields}/{@code modelDir}/{@code device}）**不在这里** ——
      * 它们各自从原始 {@link JSONObject} 里取，公共信封不认识它们。
+     *
+     * @param fieldTokenizers 字段名 → 该字段要用的 tokenizer 名。**只含显式配了 {@code tokenizers}
+     *                        的字段**；没配的字段不在 map 里，由 {@code IndexConfig} 的默认值兜底。
      */
-    record Request(int shardCount, List<Field> fieldList, Long round) {
+    record Request(int shardCount, List<Field> fieldList, Map<String, List<String>> fieldTokenizers,
+                   Long round) {
     }
 
     /**
@@ -118,14 +127,73 @@ final class IndexApi {
         }
 
         List<Field> fieldList;
+        Map<String, List<String>> fieldTokenizers;
         try {
             fieldList = parseFieldList(rawList);
             requireSinglePrimaryKey(fieldList);
+            fieldTokenizers = parseFieldTokenizers(rawList, fieldList);
         } catch (IllegalArgumentException e) {
             return Parsed.fail(e.getMessage());
         }
 
-        return Parsed.ok(new Request(shardCount, fieldList, body.getLong("round")));
+        return Parsed.ok(new Request(shardCount, fieldList, fieldTokenizers, body.getLong("round")));
+    }
+
+    /**
+     * 解析并校验每个字段的 {@code tokenizers} 键（**可选**：没写就交给默认值）。
+     *
+     * <p>为什么另起一趟遍历、而不是塞进 {@link #parseFieldList}：那一趟做的是**字段形状**校验
+     * （白名单、旧键名、枚举取值），注释很密、逻辑很微妙；而 tokenizer 与字段形状正交。
+     * 两趟各自只干一件事，改一个不会碰另一个。
+     *
+     * <h2>为什么必须显式读这个键</h2>
+     * fastjson 对**未知键静默忽略**（同一个理由让 {@code isTokenized} 改名时加了防呆）。
+     * 不读它、不校验它，一个拼错的 tokenizer 名就会退化成"用默认的分词器" ——
+     * 建出来的索引和预期不一致，而没有任何报错。
+     *
+     * @return 只有**显式配了** tokenizers 的字段才在返回的 map 里
+     * @throws IllegalArgumentException 消息可直接回给客户端（HTTP 400）
+     */
+    static Map<String, List<String>> parseFieldTokenizers(JSONArray rawList, List<Field> fieldList) {
+        Map<String, Field> byName = new HashMap<>();
+        for (Field f : fieldList) {
+            byName.put(f.getName(), f);
+        }
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        for (int i = 0; i < rawList.size(); i++) {
+            JSONObject item = rawList.getJSONObject(i);
+            Object rawTokenizers = item.get("tokenizers");
+            if (rawTokenizers == null) {
+                continue;   // 没配 —— 由 IndexConfig 的默认值兜底
+            }
+            String fieldName = item.getString("name");
+            if (!(rawTokenizers instanceof JSONArray raw)) {
+                throw new IllegalArgumentException("fieldList[" + i + "]「" + fieldName
+                        + "」的 tokenizers 必须是数组");
+            }
+            // 只有 StringField 会被分词（见 DocWriter.processIndexedField 的分支），
+            // 给数值字段配 tokenizer 是配错了 —— 静默忽略会让人以为生效了
+            if (!(byName.get(fieldName) instanceof StringField)) {
+                throw new IllegalArgumentException("fieldList[" + i + "]「" + fieldName
+                        + "」不是 StringField，只有文本字段会被分词，不能配 tokenizers");
+            }
+            if (raw.isEmpty()) {
+                throw new IllegalArgumentException("fieldList[" + i + "]「" + fieldName
+                        + "」的 tokenizers 不能是空数组：要分词就至少给一个名字，不配就把整个键去掉");
+            }
+            List<String> names = new ArrayList<>(raw.size());
+            for (int j = 0; j < raw.size(); j++) {
+                String name = raw.getString(j);
+                if (!TokenizerRegistry.isKnown(name)) {
+                    throw new IllegalArgumentException("fieldList[" + i + "]「" + fieldName
+                            + "」的 tokenizers[" + j + "] 认不出：" + name
+                            + "。可接受的形式：" + TokenizerRegistry.acceptedForms());
+                }
+                names.add(name);
+            }
+            result.put(fieldName, names);
+        }
+        return result;
     }
 
     /**

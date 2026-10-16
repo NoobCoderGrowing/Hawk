@@ -9,26 +9,21 @@ import directory.MMapDirectory;
 import document.Document;
 import field.Field;
 import field.FieldType;
-import field.NumberField;
 import field.PrimaryKeyField;
-import field.StringField;
 import hawk.indexer.writer.IndexWriter;
 import hawk.indexer.writer.config.IndexConfig;
-import hawk.segment.core.anlyzer.NShortestPathTokenizer;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.Comparator;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import jakarta.annotation.PreDestroy;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,8 +53,9 @@ import org.springframework.stereotype.Service;
  *       {@code PkMapStore.load} 在文件不存在时返回空 map，所以空目录上也安全。</li>
  *   <li>重复调用会往同一份索引里**再写一遍**，没有幂等保护 —— 同一份语料连调两次就是两份。
  *       （追加后 docID 如何分配属于 indexer 模块内部的语义，这里没有验证过。）</li>
- *   <li>tokenizer 写死 {@code NShortestPathTokenizer(1)}，与 {@code demo.BuildIndex} 一致；
- *       它状态里有可变的 HashSet，所以**每次调用新建一个**，不跨请求复用。</li>
+ *   <li><b>tokenizer 由请求体按字段给</b>（{@code fieldList} 每项的 {@code tokenizers} 键），
+ *       没给的走 {@code IndexConfig} 的默认值。实例由 {@link hawk.segment.core.anlyzer.TokenizerRegistry}
+ *       缓存共享 —— 词典是 5.87 MB / 62 万行，一个字段配几个就新建几个是不可接受的。</li>
  * </ul>
  */
 @Service
@@ -109,7 +105,7 @@ public class IndexService {
     /**
      * 索引线程数，传给 {@link IndexConfig} —— 它决定 {@link IndexWriter} 内部那个线程池的大小。
      *
-     * <p>不显式给的话 {@code IndexConfig(tokenizer)} 会用 {@code Constants.PROCESSOR_NUM}（CPU 核数），
+     * <p>不显式给的话 {@code IndexConfig()} 会用 {@code Constants.PROCESSOR_NUM}（CPU 核数），
      * 在核多的机器上会把并发拉满；所以这里默认给 3 并做成可配。
      */
     @Value("${hawk.cloud.indexer.indexer-threads:3}")
@@ -166,7 +162,7 @@ public class IndexService {
     }
 
     /**
-     * 后台建索引的线程。**单线程**：{@link #running} 已经保证同时只有一份在跑。
+     * 后台建索引的线程。**单线程**：{@link #fullPermit} 已经保证同时只有一份在跑。
      */
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "text-indexer");
@@ -177,12 +173,15 @@ public class IndexService {
     /**
      * 尝试开始一次**异步**建索引。
      *
+     * @param fieldTokenizers 字段名 → 该字段要用的 tokenizer 名（{@link IndexApi#parseFieldTokenizers}
+     *                        的产物）。**只含显式配了的字段**，其余走默认值
      * @param round 协调器给的索引轮次；**直接调 {@code /textIndex} 旁路调用时为 {@code null}**。
      *              非 null 时会写进索引目录（见 {@link IndexRound}），并且**若本节点已有这一轮就直接重登记**
      * @return {@code false} = 本节点正在建倒排索引（互斥锁没抢到），调用方应当立刻回
      *         {@code text-indexing}；{@code true} = 已受理，活已经在后台跑
      */
-    public boolean startAsync(int shardCount, List<Field> fieldList, Long round) {
+    public boolean startAsync(int shardCount, List<Field> fieldList,
+                              Map<String, List<String>> fieldTokenizers, Long round) {
         // tryAcquire 不排队：抢不到立刻回 409，让协调器自己决定怎么办
         if (!fullPermit.tryAcquire()) {
             return false;
@@ -190,7 +189,7 @@ public class IndexService {
         try {
             executor.submit(() -> {
                 try {
-                    index(shardCount, fieldList, round);
+                    index(shardCount, fieldList, fieldTokenizers, round);
                 } catch (Throwable t) {
                     // 后台异常没人接，必须在这里落地 —— 否则这个任务失败得悄无声息
                     log.error("倒排索引失败（shard-num={}）", shardNum, t);
@@ -220,11 +219,14 @@ public class IndexService {
      *
      * <p><b>只能从 {@link #startAsync} 进来</b> —— 互斥锁在那一层，绕过去就等于绕过了互斥。
      *
-     * @param shardCount 总分片数
-     * @param fieldList  要索引/存储的字段定义，决定每个字段是否分词、是否存储
-     * @param round      索引轮次；可为 {@code null}（旁路调用）
+     * @param shardCount      总分片数
+     * @param fieldList       要索引/存储的字段定义，决定每个字段是否分词、是否存储
+     * @param fieldTokenizers 字段名 → 该字段要用的 tokenizer 名；**只含显式配了的字段**，
+     *                        没配的由 {@link IndexConfig} 的默认值兜底
+     * @param round           索引轮次；可为 {@code null}（旁路调用）
      */
-    private void index(int shardCount, List<Field> fieldList, Long round) throws Exception {
+    private void index(int shardCount, List<Field> fieldList,
+                       Map<String, List<String>> fieldTokenizers, Long round) throws Exception {
         // ★ 短路：本节点已经有这一轮了，就别重算 —— 直接把那份重推一遍。
         // 这条把「没有送达、但建好了」这个**最常见的失败形态**从"重算 16 分钟"压到"重登记一下"：
         // 索引目录好好躺在盘上，召回端下一轮自己就来拉了，什么都不用重算。
@@ -267,8 +269,11 @@ public class IndexService {
         // 空目录也安全：PkMapStore.load 在文件不存在时返回空 map。
         // 把请求里认定的主键字段名传给 IndexConfig —— 索引器不再假定它叫 "uniqueID"，
         // 数据源（数据库列名等）叫什么都行，只要请求的 fieldList 说清楚即可。
+        // 每字段的 tokenizer 同理：名字由请求体给，没给的走 IndexConfig 的默认值。
+        IndexConfig indexConfig = new IndexConfig(indexerThreads, primaryKeyField);
+        indexConfig.setFieldTokenizers(fieldTokenizers);
         IndexWriter writer = new IndexWriter(
-                new IndexConfig(new NShortestPathTokenizer(1), indexerThreads, primaryKeyField),
+                indexConfig,
                 MMapDirectory.open(buildDir),          // ← 临时目录，成功才改名
                 true);
         boolean built = false;

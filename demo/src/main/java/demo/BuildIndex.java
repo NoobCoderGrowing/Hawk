@@ -8,7 +8,6 @@ import field.PrimaryKeyField;
 import field.StringField;
 import hawk.indexer.writer.IndexWriter;
 import hawk.indexer.writer.config.IndexConfig;
-import hawk.segment.core.anlyzer.NShortestPathTokenizer;
 
 import java.io.BufferedReader;
 import java.nio.charset.StandardCharsets;
@@ -37,9 +36,10 @@ public class BuildIndex {
         }
         Files.createDirectories(indexDir);
 
-        var tokenizer = new NShortestPathTokenizer(1);
-        // 第三个参数是主键字段名，默认 "uniqueID"，与下面 PrimaryKeyField 的名字一致
-        IndexWriter writer = new IndexWriter(new IndexConfig(tokenizer), MMapDirectory.open(indexDir), false);
+        // IndexConfig 的默认分词器是 nshortest-1（与这里以前写死的 new NShortestPathTokenizer(1) 一致）。
+        // 要按字段配多个 tokenizer 就 setFieldTokenizers(Map<字段名, List<名字>>)，见 cloud-indexer。
+        // 主键字段名默认 "uniqueID"，与下面 PrimaryKeyField 的名字一致。
+        IndexWriter writer = new IndexWriter(new IndexConfig(), MMapDirectory.open(indexDir), false);
 
         long count = 0;
         long t0 = System.currentTimeMillis();

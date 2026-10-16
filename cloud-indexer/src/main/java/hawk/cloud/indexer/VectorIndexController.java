@@ -79,6 +79,16 @@ public class VectorIndexController {
         IndexApi.Request r = parsed.request();
         IndexApi.logRequest("vectorIndex", r);
 
+        // tokenizers 是**倒排侧**的东西，本端点不消费它。静默忽略会让人以为配了就生效了 ——
+        // 而且 fieldList 是两个端点共用的同一个 body，把倒排的配置原样发到这儿是很自然的事。
+        // 所以显式拒掉，别让它"看起来成功了"。
+        if (!r.fieldTokenizers().isEmpty()) {
+            return IndexApi.badRequest(
+                    "fieldList 里的 tokenizers 是倒排索引（/textIndex）的配置，向量索引不消费它。"
+                            + "请把它从发给 /vectorIndex 的请求里去掉；两个端点共用同一个 body 时，"
+                            + "由调用方按 role 决定带不带。");
+        }
+
         // vectorFields 是本端点独有的参数，两条规则见 parseVectorFields
         List<String> vectorFields;
         try {

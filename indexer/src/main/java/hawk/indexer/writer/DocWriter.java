@@ -16,6 +16,7 @@ import util.bkd.BkdPoint;
 import util.bkd.FieldBkdWriter;
 import hawk.indexer.writer.config.IndexConfig;
 import hawk.segment.core.Term;
+import hawk.segment.core.anlyzer.TokenizerRegistry;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
@@ -263,12 +264,32 @@ public class DocWriter implements Runnable {
             byte type = fdmList.get(i).getValue().getLeft()[0];
             int fieldLengthSum = fdmList.get(i).getValue().getRight()[0];
             int docCount = fdmList.get(i).getValue().getRight()[1];
+            // 格式版本 v3 新增：这个字段当初用了哪些 tokenizer（见 INDEX_FORMAT.md §7）。
+            //
+            // 判据是「**被分词了**」，不是「被索引了」—— 这两件事只对 StringField 重合：
+            //   · 数值字段 isIndexed=YES 走的是 BKD 点索引（processIndexedField 的另一个分支），
+            //     它压根没经过 tokenize；
+            //   · 只存原文的字段（isIndexed=NO 且 isStored=YES）走 processIndexedFields 的第三条分支，
+            //     也没有。
+            // 两种都不该记 tokenizer —— 记了就是一条谎，而读端会照着它去解析、去分词。
+            // 只有「isIndexed=YES 的 StringField」才真的被分词过（这也是 Schema 认定"可检索文本字段"的口径）。
+            boolean tokenized = (type & FieldType.INDEXED_BIT) != 0
+                    && FieldType.byBit(type) == FieldType.STRING;
+            List<String> tokenizers = tokenized
+                    ? config.tokenizersOf(new String(field, StandardCharsets.UTF_8))
+                    : List.of();
             int length = field.length;
             DataOutput.writeInt(length, fc, pos);
             DataOutput.writeBytes(field, fc, pos);
             DataOutput.writeByte(type, fc, pos);
             DataOutput.writeInt(fieldLengthSum,fc,pos);
             DataOutput.writeInt(docCount, fc, pos);
+            DataOutput.writeInt(tokenizers.size(), fc, pos);
+            for (String name : tokenizers) {
+                byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+                DataOutput.writeInt(nameBytes.length, fc, pos);
+                DataOutput.writeBytes(nameBytes, fc, pos);
+            }
         }
     }
 
@@ -513,12 +534,16 @@ public class DocWriter implements Runnable {
         }
     }
 
+    /**
+     * @param count 本次要累加的词频。调用方算好再传进来（一个字段配多个 tokenizer 时要先合并，
+     *              见 {@link #mergeTokenizerFrequencies}），所以是"加多少"而不是写死的 +1。
+     */
     public void assembleFieldTermMap(HashMap<FieldTermPair, int[]> fieldTermMap, byte[] filedName, byte[] filedValue,
-                                     int fieldLength){
+                                     int fieldLength, int count){
         FieldTermPair fieldTermPair = new FieldTermPair(filedName, filedValue);
-        int[] preValue = fieldTermMap.putIfAbsent(fieldTermPair, new int[]{1, fieldLength});
+        int[] preValue = fieldTermMap.putIfAbsent(fieldTermPair, new int[]{count, fieldLength});
         if(preValue != null){
-            fieldTermMap.put(fieldTermPair, new int[]{preValue[0] + 1, fieldLength});
+            fieldTermMap.put(fieldTermPair, new int[]{preValue[0] + count, fieldLength});
         }else{// 8 bytes from docID, frequency and fieldLength
         }
     }
@@ -537,8 +562,9 @@ public class DocWriter implements Runnable {
      *
      * <p>按字段类型分两条路径：
      * <ul>
-     *   <li>{@link StringField}：经 {@link IndexConfig#getTokenizer()} 分词，每个 term 作为倒排条目；
-     *       同一字段内相同 term 出现多次时词频累加。</li>
+     *   <li>{@link StringField}：经 {@link IndexConfig#tokenizersOf} 取该字段配的**一组** tokenizer
+     *       分词，结果取**并集**入倒排；同一个词被多个 tokenizer 切出时词频取**最大**而不是相加
+     *       （见 {@link #mergeTokenizerFrequencies}）。</li>
      *   <li>{@link NumberField}：将 double 转为可排序 long（{@link NumberUtil#double2SortableLong}），
      *       再按 {@code precisionStep} 生成多级前缀 term（{@link NumberUtil#long2PrefixString}），
      *       以支持范围查询。</li>
@@ -556,17 +582,45 @@ public class DocWriter implements Runnable {
         byte[] filedName = field.serializeName();
         int filedLength = type.fieldLengthOf(field);
         if (type == FieldType.STRING) {
-            // 文本：分词 → 倒排
+            // 文本：分词 → 倒排。该字段可以配**一组** tokenizer，结果取并集。
             StringField sf = (StringField) field;
-            for (Term t : config.getTokenizer().tokenize(sf.getValue(), sf.getName())) {
+            Map<String, Integer> termFreq = mergeTokenizerFrequencies(config.tokenizersOf(sf.getName()), sf);
+            for (Map.Entry<String, Integer> entry : termFreq.entrySet()) {
                 assembleFieldTermMap(fieldTermMap, filedName,
-                        t.getValue().getBytes(StandardCharsets.UTF_8), filedLength);
+                        entry.getKey().getBytes(StandardCharsets.UTF_8), filedLength, entry.getValue());
             }
         } else if (type.isNumericPoint()) {
             // 数值：编成保序 long → BKD。两种数值类型编码不同，由 FieldType 决定
             docBkd.put(new ByteReference(filedName), type.encodePoint(field));
         }
         assembleFieldTypeMap(fieldTypeMap, filedName, new byte[]{termType}, filedLength);
+    }
+
+    /**
+     * 把该字段配的**一组** tokenizer 的分词结果合成「词 → 词频」。
+     *
+     * <h2>为什么取最大，而不是相加</h2>
+     * 同一个词常常被多个 tokenizer 切出来（比如 {@code nshortest-1} 和 {@code nshortest-3} 都切出
+     * 「冰糖」）。相加会让词频翻倍、BM25 分数虚高；取最大 = "最细的那个 tokenizer 在本文档里
+     * 找到了它几次"，对**重复出现的词**仍然正确（文中「冰糖」出现两次，两组都报 2，取最大仍是 2）。
+     *
+     * <h2>为什么不用 {@code Term.pos} 去重</h2>
+     * 拿 {@code (词, 位置)} 做并集键也能得到同样结果，但那会给 {@code pos} 加上一个**它从未承诺过**
+     * 的契约（"必须是输入串里的绝对偏移"）—— 它目前只在 {@link Term#equals} 里被读，检索路径上
+     * 完全是死字段。按值取最大不依赖它的任何约定，换个 pos 语义不同的 tokenizer 实现也不会静默出错。
+     *
+     * @param names 该字段配的 tokenizer 名（来自 {@link IndexConfig#tokenizersOf}，永不为空）
+     */
+    private Map<String, Integer> mergeTokenizerFrequencies(List<String> names, StringField field) {
+        Map<String, Integer> merged = new HashMap<>();
+        for (String name : names) {
+            Map<String, Integer> perTokenizer = new HashMap<>();
+            for (Term t : TokenizerRegistry.get(name).tokenize(field.getValue(), field.getName())) {
+                perTokenizer.merge(t.getValue(), 1, Integer::sum);
+            }
+            perTokenizer.forEach((term, count) -> merged.merge(term, count, Math::max));
+        }
+        return merged;
     }
 
 }

@@ -17,7 +17,6 @@ import hawk.recall.search.ScoreDoc;
 import hawk.recall.search.ScoreMode;
 import hawk.recall.search.Searcher;
 import hawk.recall.search.TopDocs;
-import hawk.segment.core.anlyzer.NShortestPathTokenizer;
 
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -54,9 +53,10 @@ public class RecallDemo {
 
     public static void main(String[] args) throws Exception {
         DirectoryReader reader = DirectoryReader.open(MMapDirectory.open(Path.of("index-data/goods")));
-        var tokenizer = new NShortestPathTokenizer(1);
-        Searcher searcher = new Searcher(reader, new IndexConfig(tokenizer));
-        RequestCompiler compiler = new RequestCompiler(tokenizer, Schema.from(reader));
+        Searcher searcher = new Searcher(reader, new IndexConfig());
+        // 分词器**从索引里读**（fdm 每个字段记着当初用了哪些）—— 只有用建索引时那一组，
+        // 切出来的词才可能在倒排里存在。见 RequestCompiler.forReader 的说明。
+        RequestCompiler compiler = RequestCompiler.forReader(reader);
 
         System.out.println("可检索字段: " + Schema.from(reader).describe() + "\n");
 
