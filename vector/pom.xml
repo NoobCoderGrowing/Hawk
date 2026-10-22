@@ -35,6 +35,13 @@
     </properties>
 
     <dependencies>
+        <!-- 单测：只用到 JUnit 5，跟 core / indexer 的取法一致（版本由父 pom 统一管理）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <!-- 输入模型（Document / Field）与主键映射（PkMapStore）—— 与 indexer 共用同一套 -->
         <dependency>
             <groupId>com.hawk</groupId>

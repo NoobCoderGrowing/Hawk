@@ -20,6 +20,13 @@
     -->
 
     <dependencies>
+        <!-- 单测：只用到 JUnit 5，跟 core / indexer / vector 的取法一致。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>com.hawk</groupId>
             <artifactId>recall</artifactId>

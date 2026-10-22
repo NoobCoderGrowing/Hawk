@@ -8,6 +8,7 @@ import hawk.vector.graph.JVectorGraph;
 import hawk.vector.meta.VectorIndexMeta;
 import hawk.vector.model.ModelDescriptor;
 import hawk.vector.model.TextEncoder;
+import hawk.vector.query.VectorCondition;
 import hawk.vector.stored.StoredFieldsReader;
 import io.github.jbellis.jvector.vector.types.VectorFloat;
 import org.slf4j.Logger;
@@ -19,8 +20,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 向量检索 —— 对标 {@code recall.search.Searcher}。
@@ -36,6 +39,12 @@ import java.util.Map;
  * <h2>多字段怎么查</h2>
  * 每个字段一张图，各查一遍，再按权重把分数加起来。<b>query 只编码一次</b> ——
  * 所有字段共用一个模型，同一个查询向量可以直接喂给每张图。
+ *
+ * <p><b>可以只查其中几个字段</b>（{@link #search(float[], int, int, Set)}）—— 正因为图是逐字段
+ * 独立存的，"跳过某张图"不需要任何额外数据。这在"多字段混一张图"的设计里做不到。
+ *
+ * <p>更复杂的查询用 {@link VectorCondition} 的树：{@code Text}（可选字段）+ {@code Group}
+ * （AND/OR），见 {@link #search(VectorCondition, int)}。
  *
  * <p><b>融合用加权线性，不用 RRF。</b> RRF（倒数排名融合）存在的意义是规避不可比的分数
  * —— 比如 BM25 分数和余弦相似度量纲完全不同。而这里所有字段出自同一个模型，余弦分数
@@ -226,28 +235,34 @@ public class VectorSearcher implements Closeable {
     }
 
     public VectorHit[] search(float[] queryVector, int topK, int rerankK) {
+        return search(queryVector, topK, rerankK, null);
+    }
+
+    /**
+     * 在**指定字段**的图上检索。
+     *
+     * <p>能这么做的原因是索引结构：一个字段一张图、各自一份 {@code pk.map}，所以"跳过某张图"
+     * 不需要任何额外数据 —— 这在"多字段混一张图"的设计里是做不到的。
+     *
+     * @param fields 要搜的字段；{@code null} 或空 = 所有字段。
+     *               非空时每个名字都必须在索引里有图，否则抛 {@link IllegalArgumentException}
+     *               —— 一个拼错的字段名静默变成"搜全部"，是最难查的那类错
+     */
+    public VectorHit[] search(float[] queryVector, int topK, int rerankK, Set<String> fields) {
         int candidateK = Math.max(topK * CANDIDATE_FACTOR, CANDIDATE_MIN);
-        VectorFloat<?> qv = JVectorGraph.toVector(queryVector);
+        return topN(searchGraphs(queryVector, candidateK, fields), topK);
+    }
 
-        // 主键 → 融合分。用 LinkedHashMap 而不是 TreeMap：只在最后排一次序
-        Map<Long, Float> merged = new LinkedHashMap<>();
-        for (FieldIndex fi : fieldIndexes) {
-            JVectorGraph.Hits hits = fi.graph.search(qv, candidateK, rerankK);
-            int[] ordinals = hits.ordinals();
-            float[] scores = hits.scores();
-            for (int i = 0; i < ordinals.length; i++) {
-                long key = fi.keyOf(ordinals[i]);
-                if (key >= 0) {
-                    merged.merge(key, fi.weight * scores[i], Float::sum);
-                }
-            }
-        }
-
-        return merged.entrySet().stream()
-                .sorted((a, b) -> Float.compare(b.getValue(), a.getValue()))
-                .limit(topK)
-                .map(e -> new VectorHit(e.getKey(), e.getValue()))
-                .toArray(VectorHit[]::new);
+    /**
+     * 按**查询树**检索（{@link VectorCondition}）。
+     *
+     * <p>过采样在这里统一算：整棵树的每个 {@code Text} 叶子都取
+     * {@code max(topK × 4, 64)} 条候选，这样 {@code AND} 求交时不会因为"每个子句只取 topK 条"
+     * 而大面积漏掉。注意这只是降低漏掉的概率、**不能消除** —— 见 {@link VectorCondition.Group}。
+     */
+    public VectorHit[] search(VectorCondition condition, int topK) throws OrtException {
+        int candidateK = Math.max(topK * CANDIDATE_FACTOR, CANDIDATE_MIN);
+        return topN(evaluate(condition, candidateK), topK);
     }
 
     /** 候选池大小。越大召回越高、越慢。见 {@link JVectorGraph#DEFAULT_RERANK_K}。 */
@@ -274,6 +289,116 @@ public class VectorSearcher implements Closeable {
     }
 
     // ------------------------------------------------------------------ 内部
+
+    /** 递归求值。{@code limit} 是**每个叶子**最多取多少条（已经过采样过，内部不再放大）。 */
+    private Map<Long, Float> evaluate(VectorCondition condition, int limit) throws OrtException {
+        return switch (condition) {
+            case VectorCondition.Text t -> {
+                float[] qv = encoder.encodeOne(t.text(), ModelDescriptor.Role.QUERY);
+                yield searchGraphs(qv, limit, t.allFields() ? null : new LinkedHashSet<>(t.fields()));
+            }
+            case VectorCondition.Group g -> evaluateGroup(g, limit);
+        };
+    }
+
+    private Map<Long, Float> evaluateGroup(VectorCondition.Group group, int limit) throws OrtException {
+        List<Map<Long, Float>> parts = new ArrayList<>(group.children().size());
+        for (VectorCondition child : group.children()) {
+            parts.add(evaluate(child, limit));
+        }
+        return combine(group.relation(), parts);
+    }
+
+    /**
+     * AND = 交集（文档必须出现在**每一个** part 里），OR = 并集。
+     * 两种关系的分数都是**命中子句的分数之和** —— 所有子句过同一个模型，余弦同量纲，直接相加即可。
+     *
+     * <p>抽成静态是为了能脱离索引与模型单测：这是树求值里唯一有分支逻辑的部分。
+     *
+     * @param parts 每个子句的结果（pk → 分数）；空列表 → 空结果
+     */
+    static Map<Long, Float> combine(VectorCondition.Relation relation, List<Map<Long, Float>> parts) {
+        if (parts == null || parts.isEmpty()) {
+            return Map.of();
+        }
+        if (relation == VectorCondition.Relation.OR) {
+            Map<Long, Float> union = new LinkedHashMap<>();
+            for (Map<Long, Float> part : parts) {
+                part.forEach((pk, score) -> union.merge(pk, score, Float::sum));
+            }
+            return union;
+        }
+        // 交集：从第一份出发，逐个与后面的取交；分数累加 ——
+        // 越是被所有子句都排在前面的文档，留下来越靠前
+        Map<Long, Float> intersection = new LinkedHashMap<>(parts.get(0));
+        for (int i = 1; i < parts.size(); i++) {
+            Map<Long, Float> next = new LinkedHashMap<>();
+            for (Map.Entry<Long, Float> entry : intersection.entrySet()) {
+                Float score = parts.get(i).get(entry.getKey());
+                if (score != null) {
+                    next.put(entry.getKey(), entry.getValue() + score);
+                }
+            }
+            intersection = next;
+        }
+        return intersection;
+    }
+
+    /** 在（可选的）字段子集上检索，返回最多 {@code candidateK} 条。**内部不再放大候选数。** */
+    private Map<Long, Float> searchGraphs(float[] queryVector, int candidateK, Set<String> fields) {
+        List<FieldIndex> targets = (fields == null || fields.isEmpty())
+                ? fieldIndexes
+                : selectFields(fields);
+        VectorFloat<?> qv = JVectorGraph.toVector(queryVector);
+
+        // 主键 → 融合分。用 LinkedHashMap 而不是 TreeMap：只在最后排一次序
+        Map<Long, Float> merged = new LinkedHashMap<>();
+        for (FieldIndex fi : targets) {
+            JVectorGraph.Hits hits = fi.graph.search(qv, candidateK, rerankK);
+            int[] ordinals = hits.ordinals();
+            float[] scores = hits.scores();
+            for (int i = 0; i < ordinals.length; i++) {
+                long key = fi.keyOf(ordinals[i]);
+                if (key >= 0) {
+                    merged.merge(key, fi.weight * scores[i], Float::sum);
+                }
+            }
+        }
+        return merged;
+    }
+
+    /**
+     * 字段名 → 实际存在的图。
+     *
+     * @throws IllegalArgumentException 有名字在索引里不存在 —— **不静默忽略**：
+     *         那样一个拼错的字段名会变成"少搜了一个字段"，结果看起来正常但就是不对
+     */
+    private List<FieldIndex> selectFields(Set<String> fields) {
+        List<FieldIndex> selected = new ArrayList<>(fields.size());
+        for (String name : fields) {
+            FieldIndex match = null;
+            for (FieldIndex fi : fieldIndexes) {
+                if (fi.name.equals(name)) {
+                    match = fi;
+                    break;
+                }
+            }
+            if (match == null) {
+                throw new IllegalArgumentException("索引里没有向量字段「" + name + "」。现有字段："
+                        + fieldIndexes.stream().map(f -> f.name).toList());
+            }
+            selected.add(match);
+        }
+        return selected;
+    }
+
+    private static VectorHit[] topN(Map<Long, Float> merged, int topK) {
+        return merged.entrySet().stream()
+                .sorted((a, b) -> Float.compare(b.getValue(), a.getValue()))
+                .limit(topK)
+                .map(e -> new VectorHit(e.getKey(), e.getValue()))
+                .toArray(VectorHit[]::new);
+    }
 
     /**
      * 加载 ordinal → 主键 的对照表。

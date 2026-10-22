@@ -24,16 +24,17 @@ import java.util.Map;
  * POST /search
  * {
  *   "query":       { … },           // 可选：**倒排**那一路的查询（Condition 树）
- *   "vectorQuery": "老黄冰糖",       // 可选：**向量**那一路的查询（一段文本）
+ *   "vectorQuery": { … },           // 可选：**向量**那一路的查询（VectorCondition 树）
+ *                                   //   如 {"type":"text","text":"老黄冰糖","fields":["title"]}
  *   "limit":       10,              // 可选，默认 10
- *   "fields":      ["title"]        // 可选，转发给分片
+ *   "fields":      ["title"]        // 可选，转发给分片（这是**返回**字段，不是检索字段）
  * }
  * </pre>
  * **给了哪一路就查哪一路**；两路都给就是多路召回（并发查，然后归并去重）。都不给 → 400。
  *
  * <h2>协调器仍然不认识查询语法</h2>
  * 它知道**有两路**（不然没法路由），但 `query` 里那个 Condition 树的形状、`vectorQuery`
- * 那段文本怎么被编码 —— 它一概不看，原样转发。以后 DSL 加条件类型、向量那边换模型，
+ * 是文本还是查询树、怎么被编码 —— 它一概不看，原样转发。以后 DSL 加条件类型、向量那边换模型，
  * **这里一行都不用改**。
  *
  * <h2>归并为什么要去重：跨路重复</h2>
@@ -72,10 +73,19 @@ public class SearchController {
 
     @PostMapping("/search")
     public ResponseEntity<?> search(@RequestBody JSONObject request) {
-        JSONObject query = request.getJSONObject("query");
-        String vectorQuery = request.getString("vectorQuery");
+        // 两路**都只接受对象**（查询树）。不给 = 不查那一路。
+        // 协调器不解析树的内容 —— 只判断"给没给、是不是对象"，树的合法性由对应分片校验。
+        JSONObject query;
+        JSONObject vectorQuery;
+        try {
+            query = requireObject(request, "query");
+            vectorQuery = requireObject(request, "vectorQuery");
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+
         boolean hasText = query != null;
-        boolean hasVector = vectorQuery != null && !vectorQuery.isBlank();
+        boolean hasVector = vectorQuery != null;
         if (!hasText && !hasVector) {
             return ResponseEntity.badRequest().body(Map.of("message",
                     "至少要给一路查询：query（倒排）或 vectorQuery（向量）"));
@@ -128,8 +138,10 @@ public class SearchController {
         return body;
     }
 
-    /** 向量那一路：分片端把这段文本编码成向量（模型在它那儿，不在协调器）。 */
-    private static JSONObject vectorBody(String vectorQuery, int limit, JSONArray fields) {
+    /**
+     * 向量那一路：查询树**原样转发**，协调器不解析它（分片端自己编译、自己编码）。
+     */
+    private static JSONObject vectorBody(JSONObject vectorQuery, int limit, JSONArray fields) {
         JSONObject body = new JSONObject();
         body.put("query", vectorQuery);
         body.put("limit", limit);
@@ -139,6 +151,26 @@ public class SearchController {
             body.put("fields", fields);
         }
         return body;
+    }
+
+    /**
+     * 取一个**必须是对象**的查询键（查询树）。缺省返回 {@code null}，类型不对抛给调用方转 400。
+     *
+     * <p>两条路都走这里 —— 它们在**形状上完全一致**：都是一个对象、都可以不给。
+     *
+     * <p>为什么不用 {@code request.getJSONObject(key)}：它遇到字符串/数字会抛 fastjson 的
+     * 异常，那会变成 **500**，而这是**调用方写错了参数**，该回 400。
+     */
+    private static JSONObject requireObject(JSONObject request, String key) {
+        Object raw = request.get(key);
+        if (raw == null) {
+            return null;
+        }
+        if (raw instanceof JSONObject object) {
+            return object;
+        }
+        throw new IllegalArgumentException(
+                key + " 必须是对象（查询树），收到 " + raw.getClass().getSimpleName());
     }
 
     private int resolveLimit(Integer requested) {

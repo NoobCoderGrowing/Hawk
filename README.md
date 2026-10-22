@@ -295,10 +295,25 @@ try (var s = VectorSearcher.open(Path.of("index-data/goods-vec"))) {
         System.out.println(h.uniqueId() + "\t" + h.score());
     }
     Document d = s.docByPk(49732L);                     // 按业务主键取原文
+
+    // 只查指定的字段 —— 图是逐字段存的，跳过某张图不需要任何额外数据
+    s.search(queryVector, 10, rerank, Set.of("title"));
+
+    // 查询树：Text（可选 fields）+ Group（AND / OR，可嵌套）
+    s.search(new VectorCondition.Group(VectorCondition.Relation.AND, List.of(
+            new VectorCondition.Text("保温杯", List.of("title")),
+            new VectorCondition.Text("吸管",   List.of("descript")))), 10);
 }
 ```
 
-- `search(String, int)` 走编码器；批量检索请复用 `search(float[], int[, rerankK])`（**所有字段共用同一个查询向量**）。
+- `search(String, int)` 走编码器，等价于「`Text(text, 所有字段)`」；批量检索请复用 `search(float[], int[, rerankK])`（**所有字段共用同一个查询向量**）。
+- **可以只查其中几个字段**（`search(float[], topK, rerankK, Set<String> fields)`）。指定了索引里不存在的字段名会**抛异常**，而不是静默退回"查全部"。
+- **查询树**（`VectorCondition`）只有两个节点：`Text(text, fields)` 与 `Group(AND|OR, children)`。数值区间（`range`）**不支持** —— 向量索引里没有数值索引，做了也只能是近似过滤。
+  **`AND` 是近似的**：每个子句只返回自己的前 K 条，所以交集是"各子句前 K 条之间"的交集。每个叶子按 `max(topK × 4, 64)` 过采样以降低漏掉的概率，但**不能消除**；因此含 `group` 的查询要标 `totalExact=false`。
+
+云端两个端点的对应关系：**`POST /search`（协调器）的 `vectorQuery` 与 `query` 一样只接受对象**（查询树），
+原样转发给分片；`POST /vectorSearch`（召回分片）的 `query` 除此之外还接受**字符串**（text 简写，等价于
+`{"type":"text","text":…}`），那是给直接调分片的人留的。
 - 每个字段取回的候选数是 `max(topK × 4, 64)` 而不是 `topK`：某个文档在 A 字段排第 11、在 B 字段排第 1，若每张图只取 10 条，它在 A 里的贡献就丢了。
 - `open(indexDir, modelDir, cacheVectors)`：`modelDir` 传 `null` 表示用 `meta.json` 里记的那个（**换机部署时应当显式传**）；`cacheVectors=false` 让图**磁盘驻留** —— 字段一多就该关掉（3 个字段载入堆是 600 MB 量级，磁盘驻留每张图只要约 5 MB）。
 - **打开时校验模型**：`dim` 与 `modelFingerprint` 必须与当前 `TextEncoder` 一致，否则**启动即失败**。换模型必须重建索引。

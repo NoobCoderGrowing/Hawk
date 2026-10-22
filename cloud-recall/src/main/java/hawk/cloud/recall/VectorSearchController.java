@@ -2,6 +2,7 @@ package hawk.cloud.recall;
 
 import com.alibaba.fastjson.JSONObject;
 
+import hawk.vector.query.VectorCondition;
 import hawk.vector.search.VectorHit;
 
 import org.slf4j.Logger;
@@ -26,16 +27,29 @@ import java.util.Set;
  * POST /vectorSearch
  * {
  *   "query": "老黄冰糖",     // 查询**文本**；本节点用自己那份模型编码成向量
+ *                            // 也可以给一棵查询树，见下
  *   "limit": 10,             // 可选
- *   "fields": ["title"]      // 可选；不传 = 返回索引里存的所有字段
+ *   "fields": ["title"]      // 可选；不传 = 返回索引里存的所有字段（**这是返回字段**）
  * }
  *
  * 200 {"totalHits":10,"totalExact":true,
  *      "hits":[{"pk":49732,"score":0.8405,"fields":{"title":"…"}}]}
  *
  * 503 {"status":"no-index", …}    ← 本节点服务不了这个版本 —— 没索引，**或模型对不上/索引打不开**
- * 400 {"message": …}              ← query 缺失 / 空
+ * 400 {"message": …}              ← query 缺失 / 写法不对 / 指定了不存在的字段
  * </pre>
+ *
+ * <h2>查询树（{@link VectorCondition}）</h2>
+ * <pre>
+ *   {"query": {"type":"text",  "text":"保温杯", "fields":["title"]}}   // fields 可省 = 所有向量字段
+ *   {"query": {"type":"group", "relation":"OR", "children":[ … ]}}     // AND / OR 可嵌套
+ * </pre>
+ * <b>只支持 {@code text} / {@code group}</b>：{@code range} / {@code longRange} 会明确回 400 ——
+ * 向量索引里没有数值索引，真做了也只能是近似过滤（见 {@link VectorCondition} 的类注释）。
+ *
+ * <p><b>含 {@code group} 的查询 {@code totalExact} 一律为 {@code false}</b>：每个子句只返回自己的前 K 条，
+ * 所以 AND 的交集、OR 的并集都只是"各子句前 K 条之间"的结果，不是全量精确值。
+ * 单节点 {@code text} 查询保持 {@code true}（与改动前一致）。
  *
  * <h2>契约边界同文本侧：只保证「本分片的前 N」</h2>
  * 跨分片怎么归并、要不要重排序、N 取多大 —— 全是调用方的事。
@@ -83,16 +97,20 @@ public class VectorSearchController {
 
     @PostMapping("/vectorSearch")
     public ResponseEntity<?> search(@RequestBody JSONObject request) {
-        String query = request.getString("query");
-        if (query == null || query.isBlank()) {
-            return badRequest("缺少 query（向量检索的 query 是一段文本，本节点自己编码成向量）");
+        // query 可以是字符串（简写）或查询树。解析失败是**调用方写错了** → 400，
+        // 不要落到下面那个 catch (Exception) 里变成 500。
+        VectorCondition condition;
+        try {
+            condition = VectorConditionJson.parse(request.get("query"));
+        } catch (IllegalArgumentException e) {
+            return badRequest(e.getMessage());
         }
         int limit = resolveLimit(request.getInteger("limit"));
         Set<String> wanted = FieldsJson.resolve(request);
 
         try {
             Map<String, Object> body = local.query(snapshot -> {
-                VectorHit[] hits = snapshot.searcher().search(query, limit);
+                VectorHit[] hits = snapshot.searcher().search(condition, limit);
 
                 List<Map<String, Object>> hitJson = new ArrayList<>(hits.length);
                 for (VectorHit hit : hits) {
@@ -107,7 +125,9 @@ public class VectorSearchController {
 
                 Map<String, Object> out = new LinkedHashMap<>();
                 out.put("totalHits", hits.length);
-                out.put("totalExact", true);
+                // 单节点 text = 精确（就是本次 ANN 返回的那一份）；含 group 则一定是近似 ——
+                // 每个子句只返回前 K 条，交集/并集都只在这些前 K 之间成立。见类注释。
+                out.put("totalExact", !(condition instanceof VectorCondition.Group));
                 // 如实报出这份索引存了哪些字段 —— 调用方据此分清"字段为空"和"索引没存"
                 out.put("storedFields", snapshot.searcher().storedFieldNames());
                 out.put("hits", hitJson);
@@ -121,6 +141,10 @@ public class VectorSearchController {
             return ResponseEntity.status(503).body(Map.of(
                     "status", "no-index",
                     "message", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            // 查询里指定了一个索引中不存在的向量字段 —— 调用方写错了，是 400 不是 500。
+            // （查询树的语法错误在进 local.query 之前就拦掉了，这里是字段名校验。）
+            return badRequest(e.getMessage());
         } catch (Exception e) {
             log.error("向量检索失败", e);
             return ResponseEntity.internalServerError()
