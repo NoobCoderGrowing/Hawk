@@ -30,7 +30,7 @@ import java.util.Map;
  * <h2>本类只做三件事</h2>
  * <ol>
  *   <li>校验 {@code role} 与 {@code shardCount}（协调器**必须**知道这两个，它要靠它们决定循环几次）；
- *       其余字段不解析 —— 那是索引器的 {@code IndexApi#parse}（cloud-indexer 模块）的职责，
+ *       其余字段不解析 —— 那是索引器的 {@code IndexApi#parse}（`hawk.cloud.indexer` 包）的职责，
  *       在这里抄一份就是第三份拷贝（而且那个方法跨模块、跨包都够不着）。
  *       两个索引端点的入参与响应**逐字同形**，所以下面转发出去的 body 对两者都是合法的。</li>
  *   <li>调 {@link IndexBuildDispatcher}；</li>

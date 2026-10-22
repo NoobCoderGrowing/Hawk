@@ -19,7 +19,7 @@ import java.nio.charset.StandardCharsets;
  *   IndexService.toField()             定义 + 原始值 → 类
  * </pre>
  * 全靠人记得，漏一处就是**静默出错**（字段被悄悄丢掉、或类型位认不出）。
- * 加 {@link LongField} 时就漏了 cloud-indexer 那两处 —— 本类把这些收成一处。
+ * 加 {@link LongField} 时就漏了 hawk-cloud 那两处 —— 本类把这些收成一处。
  *
  * <h2>类型位</h2>
  * fdm 里每个字段一个字节，位含义：
@@ -227,7 +227,7 @@ public enum FieldType {
     /**
      * 取字段的**值本身**，类型按 JSON 的语义给：字符串给 {@code String}，数值给 {@code Double}/{@code Long}。
      *
-     * <p>给"把命中的文档发到网上"用（{@code cloud-recall} 的检索响应）。
+     * <p>给"把命中的文档发到网上"用（{@code hawk-cloud} 的检索响应）。
      *
      * <p><b>放在这里而不是调用方</b>：字段类型的 {@code instanceof} 分发一旦散到外面去，
      * 就又多一个"加新字段类型时会漏掉"的地方 —— 这个枚举存在的理由就是把那几处收敛到一处。

@@ -1,0 +1,194 @@
+# hawk-cloud 的**唯一**配置 —— 三个角色（indexer / recall / coordinator）共用这一个 jar、这一份文件，
+# 由 hawk.cloud.role 决定启动时装配哪一套（见 CloudApplication 与 IndexerRole / RecallRole / CoordinatorRole）。
+#
+# 三棵配置树按前缀分开（hawk.cloud.indexer.* / .recall.* / .coordinator.*），互不冲突；
+# 没被选中的角色那棵树不会被任何 @Value 读到。
+server:
+  port: ${HAWK_PORT:8090}          # 三个角色共用一个变量；旧的三组 HAWK_CLOUD_*_PORT 已作废
+
+hawk:
+  cloud:
+    # ★ 角色开关，也是**唯一的启动必填项**。取值与原来一致：
+    #   text-indexer / vector-indexer → 装配 hawk.cloud.indexer
+    #   text-recall  / vector-recall  → 装配 hawk.cloud.recall
+    #   coordinator                   → 装配 hawk.cloud.coordinator
+    # 刻意**不给默认值**：没设就启动失败，而不是悄悄起成某个角色、跑起来还没人发现。
+    role: ${HAWK_ROLE}
+
+    # ================================================================ 索引器
+    indexer:
+      # 各模块代码里读的是带前缀的键，这里统一指回上面那个开关。
+      role: ${hawk.cloud.role}
+
+      # 索引**根**目录。实际输出目录会再拼上角色、分片名与当日日期：
+      #   {index-dir}/{role}/{shard-num}/{yyyy-MM-dd-HH-mm-ss}（见 IndexStamp）
+      #   例如 cloud/index/text-indexer/shard-0/2026-10-13
+      # 相对路径以**启动时的工作目录**为基准。
+      index-dir: ${HAWK_INDEX_DIR:cloud/index}
+
+      # 索引线程数。传给 IndexConfig，决定 IndexWriter 内部那个线程池的大小。
+      # 不配的话 IndexConfig 会用 CPU 核数（Constants.PROCESSOR_NUM），核多的机器会把并发拉满。
+      indexer-threads: ${HAWK_INDEXER_THREADS:3}
+
+      # 注册中心（JRegistry）地址，格式 host:port。留空则跳过登记，只记一条 WARN。
+      registry-address: ${HAWK_REGISTRY_ADDRESS:{1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}}
+
+      # 登记内容：key = /cloud/{role}/{shard-num}/{shard-id}，value = {ip}:{port}
+      #   shard-num 第几个分片，是一段名字（如 shard-1），不是数字
+      #   shard-id  该分片的副本编号（如 id-0）—— 一个分片有多个副本，靠它区分
+      #   ip / port 本节点对外地址，作为 value 写入；port 默认跟随 server.port
+      shard-num: ${HAWK_SHARD_NUM:shard-0}
+      shard-id: ${HAWK_SHARD_ID:id-0}
+      ip: ${HAWK_NODE_IP:127.0.0.1}
+      port: ${HAWK_NODE_PORT:${server.port}}
+
+      # 心跳式重登记间隔（毫秒）。节点只在启动时登记一次，而这条 key 可能被协调器的健康检查
+      # 误删（失败计数跨了节点重启那种情形），定期重发能把存活窗口压到一个心跳周期内。
+      register-interval-ms: ${HAWK_REGISTER_INTERVAL_MS:60000}
+
+      # 向量索引（只有 role=vector-indexer 的节点用得到）。请求体里可以带 modelDir / device 覆盖。
+      vector:
+        # ONNX 模型目录：model.json + encoder.onnx + tokenizer.json
+        model-dir: ${HAWK_MODEL_DIR:model/bge-small-zh-v1.5}
+        # auto = 有 GPU 用 GPU、没有回退 CPU。注意回退只打一行 WARN，速度差 10~50 倍 ——
+        # 想确认真在用 GPU，看启动日志里那句 "ONNX 会话已建立：… 设备 CUDA device 0"
+        device: ${HAWK_DEVICE:auto}
+        # HNSW 参数，与建索引时写入 meta.json 的保持一致
+        m: ${HAWK_VECTOR_M:16}
+        ef-construction: ${HAWK_VECTOR_EF_CONSTRUCTION:100}
+
+      # 数据源。type 决定用哪个实现：
+      #   csv   → 读 file-path 指向的制表符分隔文件（skip-header 决定是否跳表头）
+      #   mysql → 连 url 上的库，读 table 表，按 shard-column 取模筛出本分片的行
+      # 加新实现（远端接口…）时在 IndexService.buildDataSource 里加一个 case。
+      #
+      # batch-size 归在数据源下（分页是数据源的事），IndexService 算 offset 时也读它 ——
+      # 同一个键，所以两处不会不一致。
+      data-source:
+        type: ${DATA_SOURCE:csv}
+        batch-size: ${HAWK_BATCH_SIZE:1000}
+
+        # ---- csv 用 ----
+        file-path: ${FILE_PATH:goods.csv}
+        skip-header: ${HAWK_SKIP_HEADER:true}
+
+        # ---- mysql 用 ----
+        # 密码支持 HAWK_MYSQL_PASSWORD 环境变量覆盖；这里给的是本机开发库的值，
+        # 正式环境别把口令留在配置文件里。
+        url: ${HAWK_MYSQL_URL:jdbc:mysql://127.0.0.1:3306/hawk}
+        username: ${HAWK_MYSQL_USERNAME:hawk}
+        password: ${HAWK_MYSQL_PASSWORD:hawk}
+        table: ${HAWK_MYSQL_TABLE:goods}
+        # 用来算分片的列：SQL 里是 WHERE MOD(shard-column, shardCount) = 本节点分片下标
+        shard-column: ${HAWK_MYSQL_SHARD_COLUMN:id}
+
+    # ================================================================ 召回分片
+    recall:
+      role: ${hawk.cloud.role}
+
+      # 索引目录（含 segment.info / 1.fdt / 1.frq …，或向量索引的 meta.json / {field}/graph.idx）。
+      # 相对路径以**启动时的工作目录**为基准。完整路径 = {index-dir}/{role}/{shard-num}/{版本名}。
+      index-dir: ${HAWK_INDEX_DIR:cloud/recall}
+
+      # ---- 拉取索引（见 IndexPullJob / INDEX_PULL_MODEL_DESIGN.md）----
+      # 本节点定时扫注册中心，看哪个索引器有**比自己更新**的轮次，有就拉下来装好。
+      # 拉取失败只记一条日志、**不设重试上限** —— 定时扫描本身就是无限的幂等重试。
+      # 这和协调器那边"重下发必须设上限"是相反的，因为代价不同：这边重试的是一次传输
+      # （廉价、幂等），那边重试的是重算一遍索引（向量 10 万篇 16 分钟）。
+      #
+      # 这个间隔还要和"索引器保留几份"配着看：索引器只留最新 2 份，
+      # 所以必须保证 2 × 构建间隔 > 本间隔，否则某一轮还没被拉走就被删了。
+      pull-interval-ms: ${HAWK_RECALL_PULL_INTERVAL_MS:60000}
+
+      pull:
+        # 一次下载的等待上限（毫秒）。这是**真的在传数据**（200 MB 级），
+        # 别和"等一个受理回执"那类秒级超时混。
+        timeout-ms: ${HAWK_RECALL_PULL_TIMEOUT_MS:600000}
+        # 拉下来的临时包放哪；留空则放在本分片的索引目录下 ——
+        # 文件名带 `.staging-` 前缀，于是会被 IndexStore.cleanStaleStaging 统一收走。
+        tmp-dir: ${HAWK_RECALL_PULL_TMP_DIR:}
+
+      # ---- 向量检索（只有 role=vector-recall 的节点用得到，见 VectorSearchController）----
+      vector:
+        # 查询文本要现编码成向量，所以本节点必须有一份 ONNX 模型目录。
+        # ⚠️ **必须与索引器建索引时用的那一份一致** —— meta.json 里记了指纹，
+        #    对不上时打开索引会失败、这个版本一直回 503。这是刻意的：
+        #    宁可服务不了，也不要拿一个不同的模型编码查询、然后把一堆不相干结果当"正常"返回。
+        model-dir: ${HAWK_MODEL_DIR:model/bge-small-zh-v1.5}
+
+        # 向量要不要载入堆。默认 false（磁盘驻留）—— 召回节点是常驻的，
+        # 堆该留给并发查询：3 个字段载入堆是 600 MB 量级，磁盘驻留每张图只要约 5 MB。
+        cache-vectors: ${HAWK_RECALL_CACHE_VECTORS:false}
+
+      # 注册中心地址。留空则跳过登记，只记一条 WARN。两种写法都认：
+      #   · 单节点     127.0.0.1:6001
+      #   · 集群节点表 {1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}
+      # 注意**不要在外面再套一层引号** —— 那会让它退化成单节点写法而解析失败。
+      registry-address: ${HAWK_REGISTRY_ADDRESS:{1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}}
+
+      shard-num: ${HAWK_SHARD_NUM:shard-1}
+      shard-id: ${HAWK_SHARD_ID:id-0}
+      ip: ${HAWK_NODE_IP:127.0.0.1}
+      port: ${HAWK_NODE_PORT:${server.port}}
+      register-interval-ms: ${HAWK_REGISTER_INTERVAL_MS:60000}
+
+    # ================================================================ 协调器
+    coordinator:
+      role: ${hawk.cloud.role}
+
+      # 总分片数。两个用途：
+      #   · POST /index/build 的 shardCount 缺省值（请求体里给了就用请求体的）
+      #   · round tracker 决定要检查 shard-0 … shard-（N-1）
+      shard-count: ${HAWK_SHARD_COUNT:3}
+
+      # ---- 发起索引构建（POST /index/build，见 IndexBuildController / IndexBuildDispatcher）----
+      build:
+        # 协调器 → 索引器单次派发的等待上限。索引器只做「校验 + startAsync」，**立刻**回 202，
+        # 所以 5 秒已经很宽（建连超时在代码里固定 2 秒）。别和"真的在传 200 MB"的超时混。
+        timeout-ms: ${HAWK_BUILD_TIMEOUT_MS:5000}
+
+      # 注册中心地址，写法与 indexer / recall 一致。
+      # 协调器从这里 listAll 出四类节点（见 roleType.md），每类一个字典：
+      #   cloud/text-indexer    倒排索引器
+      #   cloud/vector-indexer  向量索引器
+      #   cloud/text-recall     倒排搜索分片
+      #   cloud/vector-recall   向量索引分片
+      registry-address: ${HAWK_REGISTRY_ADDRESS:{1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}}
+
+      # 协调器自己也向注册中心登记，好让 indexer / recall 能按地址找到它并发通知。
+      # **它不是分片节点** —— 不配 shard-num / shard-id，登记出来的 key 只有一段：
+      #   /cloud/coordinator -> {ip}:{port}
+      ip: ${HAWK_NODE_IP:127.0.0.1}
+      port: ${HAWK_NODE_PORT:${server.port}}
+      register-interval-ms: ${HAWK_REGISTER_INTERVAL_MS:60000}
+
+      # 轮询间隔（毫秒），默认 60 秒。管的是「成员与地址」——从注册中心拉谁在册。
+      poll-interval-ms: ${HAWK_COORDINATOR_POLL_MS:60000}
+
+      # ---- 对外检索（POST /search，见 SearchController）----
+      search:
+        # 单次分片请求的等待上限。一个分片自己慢，不该拖住其它分片。
+        shard-timeout-ms: ${HAWK_SEARCH_SHARD_TIMEOUT_MS:3000}
+        # 整轮扇出的总预算。到点就用已回来的那部分，没回来的记进 failed
+        #（**不能当成"那一片没结果"** —— 那会静默少掉 1/N 的语料）。
+        total-timeout-ms: ${HAWK_SEARCH_TOTAL_TIMEOUT_MS:5000}
+        default-limit: ${HAWK_SEARCH_DEFAULT_LIMIT:10}
+        max-limit: ${HAWK_SEARCH_MAX_LIMIT:1000}
+
+      # ---- round tracker（见 RoundTracker）----
+      # 「每一轮索引有没有真的建成」靠它收敛：定时查召回副本报的 round，没有就重下发。
+      #
+      # ⚠️ 这个间隔**必须远大于一次构建的耗时**：构建是分钟级（向量 10 万篇 ≈ 16 分钟），
+      #    间隔小于构建耗时就会在构建**刚开始**时判"这一轮没人建" → 重下发 → 两个副本同时建同一片。
+      round-check-interval-ms: ${HAWK_ROUND_CHECK_INTERVAL_MS:1800000}
+
+      # 重下发次数上限。到顶就写"放弃标记"放行下一轮，并打 ERROR。
+      # 没有上限的话，一个永久坏的分片会被每 30 分钟重建一轮，**永远建下去**。
+      round-max-attempts: ${HAWK_ROUND_MAX_ATTEMPTS:3}
+
+logging:
+  level:
+    root: INFO
+    # NettyClient 把每一条收到的报文都按 INFO 打出来，轮询一轮就是两条全量 ls 结果。
+    # 降成 WARN：原来的 coordinator 就是这么配的，合并后三个角色统一。
+    io.github.noobcodergrowing.jregistryclient: WARN

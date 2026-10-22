@@ -1,4 +1,4 @@
-package hawk.cloud.indexer;
+package hawk.cloud.recall;
 
 import io.github.noobcodergrowing.jregistryclient.JRegistryClient;
 import io.github.noobcodergrowing.jregistrycore.KV;
@@ -20,14 +20,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 启动时向 JRegistry 注册中心登记本索引节点。
+ * 启动时向 JRegistry 注册中心登记本检索节点。
+ *
+ * <p>与 cloud-indexer 的 RegistryRegistrar 是同一套逻辑，只有配置前缀不同
+ * （{@code hawk.cloud.recall.*} 而非 {@code hawk.cloud.indexer.*}）。
  *
  * <h2>登记内容</h2>
  * <pre>
- *   key   = /cloud/{role}/{shard-num}/{shard-id}      例：/cloud/indexer/shard-1/id-0
- *   value = {ip}:{port}                               例：127.0.0.1:8091
+ *   key   = /cloud/{role}/{shard-num}/{shard-id}      例：/cloud/recall/shard-1/id-0
+ *   value = {ip}:{port}                               例：127.0.0.1:8092
  * </pre>
- * 占位符全部取自 {@code hawk-cloud-indexer.yml} 的 {@code hawk.cloud.indexer.*}。
+ * 占位符全部取自 {@code hawk-cloud.yml} 的 {@code hawk.cloud.recall.*}。
  * 节点地址放在 **value** 里，不是 key 的一段 —— key 只标识「哪个副本」。
  *
  * <p>两个编号含义不同，而且都是**字符串**、不是数字：
@@ -46,7 +49,7 @@ import java.util.Map;
  *
  * <h2>失败不阻断启动</h2>
  * 没配 registry-address、地址格式不对、所有节点都连不上 —— 都只记日志后返回。
- * 本地开发不该为了跑起一个索引节点而先起注册中心。
+ * 本地开发不该为了跑起一个检索节点而先起注册中心。
  */
 @Component
 public class RegistryRegistrar implements DisposableBean {
@@ -62,42 +65,28 @@ public class RegistryRegistrar implements DisposableBean {
     /** value 的类型标记。值是纯地址文本，不是 JSON。 */
     private static final String VALUE_DATA_TYPE = "string";
 
-    @Value("${hawk.cloud.indexer.registry-address:}")
+    @Value("${hawk.cloud.recall.registry-address:}")
     private String registryAddress;
 
-    @Value("${hawk.cloud.indexer.role}")
+    @Value("${hawk.cloud.recall.role}")
     private String role;
 
     /** 第几个分片。路径里的一段名字（如 {@code shard-1}），不是数字。 */
-    @Value("${hawk.cloud.indexer.shard-num}")
+    @Value("${hawk.cloud.recall.shard-num}")
     private String shardNum;
 
     /** 该分片的副本编号（如 {@code id-0}）。同一分片的多个副本靠它区分。 */
-    @Value("${hawk.cloud.indexer.shard-id}")
+    @Value("${hawk.cloud.recall.shard-id}")
     private String shardId;
 
-    @Value("${hawk.cloud.indexer.ip}")
+    @Value("${hawk.cloud.recall.ip}")
     private String ip;
 
-    @Value("${hawk.cloud.indexer.port}")
+    @Value("${hawk.cloud.recall.port}")
     private int port;
 
     /** 连上注册中心后才赋值；未登记时为 null，{@link #destroy()} 据此跳过注销。 */
     private JRegistryClient client;
-
-    /**
-     * 给 {@link IndexReadyRegistry} 用的长连接。
-     *
-     * <p><b>每次现取，不要缓存</b> —— 掉线重连时 {@link #ensureConnected()} 会把 {@code client}
-     * 换成另一个实例。复用同一个实例是刻意的：{@code JRegistryClient} 内部有心跳与重连状态机，
-     * 再新建一个会各维护一套连接、互相干扰。
-     *
-     * @return 当前连接；**从未连上**时为 {@code null}（未配 registry-address 或一直连不上）——
-     *         调用方要自己判空，别直接调它的方法
-     */
-    JRegistryClient clientOrNull() {
-        return client;
-    }
 
     /** 本次登记的 key，注销时原样删除。 */
     private String key;
@@ -115,7 +104,7 @@ public class RegistryRegistrar implements DisposableBean {
     }
 
     /**
-     * 心跳式重登记：每 {@code hawk.cloud.indexer.register-interval-ms}（默认 60 秒）重发一次 set。
+     * 心跳式重登记：每 {@code hawk.cloud.recall.register-interval-ms}（默认 60 秒）重发一次 set。
      *
      * <p>为什么需要：节点只在启动时登记一次，而这条 key 有可能被别人删掉 —— 最现实的一种是
      * cloud-coordinator 的健康检查。它连续探测失败到阈值时会删 key；如果失败计数恰好跨了节点
@@ -126,8 +115,8 @@ public class RegistryRegistrar implements DisposableBean {
      * <p>{@code initialDelay} 取与间隔相同的值：首次登记交给上面的 {@link #register()}，
      * 心跳从第二个周期才开始，免得在 HTTP 端口还没监听时就登记。
      */
-    @Scheduled(fixedDelayString = "${hawk.cloud.indexer.register-interval-ms:60000}",
-               initialDelayString = "${hawk.cloud.indexer.register-interval-ms:60000}")
+    @Scheduled(fixedDelayString = "${hawk.cloud.recall.register-interval-ms:60000}",
+               initialDelayString = "${hawk.cloud.recall.register-interval-ms:60000}")
     public void reRegister() {
         registerOnce(false);
     }
@@ -136,7 +125,7 @@ public class RegistryRegistrar implements DisposableBean {
     private void registerOnce(boolean startup) {
         if (registryAddress == null || registryAddress.isBlank()) {
             if (!warnedUnconfigured) {
-                log.warn("hawk.cloud.indexer.registry-address 未配置，跳过注册中心登记");
+                log.warn("hawk.cloud.recall.registry-address 未配置，跳过注册中心登记");
                 warnedUnconfigured = true;
             }
             return;
@@ -205,36 +194,6 @@ public class RegistryRegistrar implements DisposableBean {
      * <p>保留这段是为了那少数能赢下竞争的情况，成本为零。死节点的清理应当依赖注册中心侧的
      * 租约/心跳，不要依赖这里的 delete。
      */
-    /**
-     * 列出注册中心里某个路径下的节点 —— 推送索引时靠它找召回分片（方案 §2.2）。
-     *
-     * <p><b>路径不要带前导斜杠</b>（与 cloud-coordinator 的 NodeRegistry 一致），
-     * 形如 {@code cloud/vector-recall/shard-0}。
-     *
-     * <p><b>复用本类已有的 {@link JRegistryClient}，不要新建第二个</b> ——
-     * 它内部有心跳与重连状态机，两个实例各维护一套连接会互相干扰。
-     *
-     * <p>返回的 KV 要**看 {@code isOffline()}** —— 注册中心跟踪每个 key 的上下线状态，
-     * 推到已下线的副本上只会白等超时。**过滤是调用方的事**（这里不做，因为
-     * "有哪些副本"和"哪些能推"是两个问题）。
-     *
-     * @return 该路径下的节点；未连上注册中心、路径不存在、或请求失败时返回**空列表**（不是 null）
-     */
-    public List<KV> listNodes(String path) {
-        JRegistryClient c = this.client;
-        if (c == null || !c.isConnected()) {
-            log.warn("注册中心未连接，列不出 {} 下的节点", path);
-            return List.of();
-        }
-        List<KV> kvs = c.listAll(path);
-        if (kvs == null) {
-            // listAll 把"路径不存在"和"请求失败"都表示成 null —— 这两种分不开，只能记一句合并的
-            log.warn("{} 下没有节点（路径不存在，或注册中心请求失败）", path);
-            return List.of();
-        }
-        return kvs;
-    }
-
     @Override
     public void destroy() {
         if (client == null) {
@@ -289,6 +248,35 @@ public class RegistryRegistrar implements DisposableBean {
     /** 本节点身份 key：{@code /cloud/{role}/{shard-num}/{shard-id}}。 */
     public String nodeKey() {
         return registrationKey(role, shardNum, shardId);
+    }
+
+    /**
+     * 列出注册中心里某个路径下的键值对 —— {@link IndexPullJob} 靠它找"哪些索引器有我需要的轮次"，
+     * 以及那些索引器的地址。
+     *
+     * <p><b>路径不要带前导斜杠</b>（与 cloud-coordinator 的 NodeRegistry 一致），
+     * 形如 {@code cloud/index-ready/vector-indexer/shard-0}。
+     *
+     * <p><b>复用本类已有的 {@link JRegistryClient}，不要新建第二个</b> ——
+     * 它内部有心跳与重连状态机，两个实例各维护一套连接会互相干扰。
+     *
+     * <p>返回的 KV 要**看 {@code isOffline()}** —— 注册中心跟踪每个 key 的上下线状态，
+     * 从一个已离线的节点拉索引只会白等超时。**过滤是调用方的事**（这里不做）。
+     *
+     * @return 该路径下的键值对；未连上注册中心、路径不存在、或请求失败时返回**空列表**（不是 null）
+     */
+    public List<KV> listNodes(String path) {
+        JRegistryClient c = this.client;
+        if (c == null || !c.isConnected()) {
+            log.debug("注册中心未连接，列不出 {} 下的节点", path);
+            return List.of();
+        }
+        List<KV> kvs = c.listAll(path);
+        if (kvs == null) {
+            // listAll 把"路径不存在"和"请求失败"都表示成 null —— 这两种分不开，只能当空
+            return List.of();
+        }
+        return kvs;
     }
 
     /** 本节点对外地址，供 health 明细展示。 */

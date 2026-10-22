@@ -15,9 +15,7 @@
         <module>core</module>
         <module>demo</module>
         <module>vector</module>
-        <module>cloud-coordinator</module>
-        <module>cloud-indexer</module>
-        <module>cloud-recall</module>
+        <module>hawk-cloud</module>
     </modules>
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -62,7 +60,7 @@
                 <artifactId>mysql-connector-java</artifactId>
                 <version>5.1.12</version>
             </dependency>
-            <!-- 真正的 JDBC 驱动，给 cloud-indexer 连 MySQL 用。
+            <!-- 真正的 JDBC 驱动，给 hawk-cloud 的索引器角色连 MySQL 用。
                  上面那条 5.1.12 是 2012 年的，不支持 MySQL 8 默认的 caching_sha2_password
                  （实测报 "Client does not support authentication protocol requested by server"），
                  所以驱动得用新的；两条各司其职，不冲突。 -->

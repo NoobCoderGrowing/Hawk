@@ -1,6 +1,7 @@
-package hawk.cloud.coordinator;
+package hawk.cloud.indexer;
 
 import io.github.noobcodergrowing.jregistryclient.JRegistryClient;
+import io.github.noobcodergrowing.jregistrycore.KV;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,22 +20,17 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 启动时向 JRegistry 注册中心登记本协调器。
- *
- * <p>与 cloud-indexer / cloud-recall 的 RegistryRegistrar 是同一套逻辑，只有配置前缀不同
- * （{@code hawk.cloud.coordinator.*}）。区别在于：**协调器不是分片节点**。
+ * 启动时向 JRegistry 注册中心登记本索引节点。
  *
  * <h2>登记内容</h2>
  * <pre>
- *   key   = /cloud/{role}           role=coordinator 时只有一段，例：/cloud/coordinator
- *         = /cloud/{role}/{shard-num}/{shard-id}        其余角色，例：/cloud/recall/shard-1/id-0
- *   value = {ip}:{port}                              例：127.0.0.1:8090
+ *   key   = /cloud/{role}/{shard-num}/{shard-id}      例：/cloud/indexer/shard-1/id-0
+ *   value = {ip}:{port}                               例：127.0.0.1:8091
  * </pre>
- * 协调器没有分片、没有副本，所以 {@code shard-num} / {@code shard-id} **不必配**（配了也不用，
- * 见 {@link #registrationKey}）。占位符取自 {@code hawk-cloud-coordinator.yml} 的
- * {@code hawk.cloud.coordinator.*}；节点地址放在 **value** 里，不是 key 的一段。
+ * 占位符全部取自 {@code hawk-cloud.yml} 的 {@code hawk.cloud.indexer.*}。
+ * 节点地址放在 **value** 里，不是 key 的一段 —— key 只标识「哪个副本」。
  *
- * <p>其余角色那两个编号含义不同，而且都是**字符串**、不是数字：
+ * <p>两个编号含义不同，而且都是**字符串**、不是数字：
  * {@code shard-num} 是**第几个分片**（如 {@code shard-1}），
  * {@code shard-id} 是**该分片的副本编号**（如 {@code id-0}）——
  * 一个分片有多个副本，靠 shard-id 区分是哪一个。
@@ -50,7 +46,7 @@ import java.util.Map;
  *
  * <h2>失败不阻断启动</h2>
  * 没配 registry-address、地址格式不对、所有节点都连不上 —— 都只记日志后返回。
- * 本地开发不该为了跑起一个检索节点而先起注册中心。
+ * 本地开发不该为了跑起一个索引节点而先起注册中心。
  */
 @Component
 public class RegistryRegistrar implements DisposableBean {
@@ -66,33 +62,42 @@ public class RegistryRegistrar implements DisposableBean {
     /** value 的类型标记。值是纯地址文本，不是 JSON。 */
     private static final String VALUE_DATA_TYPE = "string";
 
-    @Value("${hawk.cloud.coordinator.registry-address:}")
+    @Value("${hawk.cloud.indexer.registry-address:}")
     private String registryAddress;
 
-    @Value("${hawk.cloud.coordinator.role}")
+    @Value("${hawk.cloud.indexer.role}")
     private String role;
 
-    /**
-     * 第几个分片。路径里的一段名字（如 {@code shard-1}），不是数字。
-     *
-     * <p><b>协调器不需要它</b>，所以没写默认值的 **{@code :}** —— 配不配都不影响启动
-     * （若这里的占位符没有默认值，而 yml 里又不配，Spring 会直接报 could not resolve placeholder）。
-     */
-    @Value("${hawk.cloud.coordinator.shard-num:}")
+    /** 第几个分片。路径里的一段名字（如 {@code shard-1}），不是数字。 */
+    @Value("${hawk.cloud.indexer.shard-num}")
     private String shardNum;
 
-    /** 该分片的副本编号（如 {@code id-0}）。同一分片的多个副本靠它区分。协调器不需要它，见上。 */
-    @Value("${hawk.cloud.coordinator.shard-id:}")
+    /** 该分片的副本编号（如 {@code id-0}）。同一分片的多个副本靠它区分。 */
+    @Value("${hawk.cloud.indexer.shard-id}")
     private String shardId;
 
-    @Value("${hawk.cloud.coordinator.ip}")
+    @Value("${hawk.cloud.indexer.ip}")
     private String ip;
 
-    @Value("${hawk.cloud.coordinator.port}")
+    @Value("${hawk.cloud.indexer.port}")
     private int port;
 
     /** 连上注册中心后才赋值；未登记时为 null，{@link #destroy()} 据此跳过注销。 */
     private JRegistryClient client;
+
+    /**
+     * 给 {@link IndexReadyRegistry} 用的长连接。
+     *
+     * <p><b>每次现取，不要缓存</b> —— 掉线重连时 {@link #ensureConnected()} 会把 {@code client}
+     * 换成另一个实例。复用同一个实例是刻意的：{@code JRegistryClient} 内部有心跳与重连状态机，
+     * 再新建一个会各维护一套连接、互相干扰。
+     *
+     * @return 当前连接；**从未连上**时为 {@code null}（未配 registry-address 或一直连不上）——
+     *         调用方要自己判空，别直接调它的方法
+     */
+    JRegistryClient clientOrNull() {
+        return client;
+    }
 
     /** 本次登记的 key，注销时原样删除。 */
     private String key;
@@ -110,7 +115,7 @@ public class RegistryRegistrar implements DisposableBean {
     }
 
     /**
-     * 心跳式重登记：每 {@code hawk.cloud.coordinator.register-interval-ms}（默认 60 秒）重发一次 set。
+     * 心跳式重登记：每 {@code hawk.cloud.indexer.register-interval-ms}（默认 60 秒）重发一次 set。
      *
      * <p>为什么需要：节点只在启动时登记一次，而这条 key 有可能被别人删掉 —— 最现实的一种是
      * cloud-coordinator 的健康检查。它连续探测失败到阈值时会删 key；如果失败计数恰好跨了节点
@@ -121,8 +126,8 @@ public class RegistryRegistrar implements DisposableBean {
      * <p>{@code initialDelay} 取与间隔相同的值：首次登记交给上面的 {@link #register()}，
      * 心跳从第二个周期才开始，免得在 HTTP 端口还没监听时就登记。
      */
-    @Scheduled(fixedDelayString = "${hawk.cloud.coordinator.register-interval-ms:60000}",
-               initialDelayString = "${hawk.cloud.coordinator.register-interval-ms:60000}")
+    @Scheduled(fixedDelayString = "${hawk.cloud.indexer.register-interval-ms:60000}",
+               initialDelayString = "${hawk.cloud.indexer.register-interval-ms:60000}")
     public void reRegister() {
         registerOnce(false);
     }
@@ -131,7 +136,7 @@ public class RegistryRegistrar implements DisposableBean {
     private void registerOnce(boolean startup) {
         if (registryAddress == null || registryAddress.isBlank()) {
             if (!warnedUnconfigured) {
-                log.warn("hawk.cloud.coordinator.registry-address 未配置，跳过注册中心登记");
+                log.warn("hawk.cloud.indexer.registry-address 未配置，跳过注册中心登记");
                 warnedUnconfigured = true;
             }
             return;
@@ -200,6 +205,36 @@ public class RegistryRegistrar implements DisposableBean {
      * <p>保留这段是为了那少数能赢下竞争的情况，成本为零。死节点的清理应当依赖注册中心侧的
      * 租约/心跳，不要依赖这里的 delete。
      */
+    /**
+     * 列出注册中心里某个路径下的节点 —— 推送索引时靠它找召回分片（方案 §2.2）。
+     *
+     * <p><b>路径不要带前导斜杠</b>（与 cloud-coordinator 的 NodeRegistry 一致），
+     * 形如 {@code cloud/vector-recall/shard-0}。
+     *
+     * <p><b>复用本类已有的 {@link JRegistryClient}，不要新建第二个</b> ——
+     * 它内部有心跳与重连状态机，两个实例各维护一套连接会互相干扰。
+     *
+     * <p>返回的 KV 要**看 {@code isOffline()}** —— 注册中心跟踪每个 key 的上下线状态，
+     * 推到已下线的副本上只会白等超时。**过滤是调用方的事**（这里不做，因为
+     * "有哪些副本"和"哪些能推"是两个问题）。
+     *
+     * @return 该路径下的节点；未连上注册中心、路径不存在、或请求失败时返回**空列表**（不是 null）
+     */
+    public List<KV> listNodes(String path) {
+        JRegistryClient c = this.client;
+        if (c == null || !c.isConnected()) {
+            log.warn("注册中心未连接，列不出 {} 下的节点", path);
+            return List.of();
+        }
+        List<KV> kvs = c.listAll(path);
+        if (kvs == null) {
+            // listAll 把"路径不存在"和"请求失败"都表示成 null —— 这两种分不开，只能记一句合并的
+            log.warn("{} 下没有节点（路径不存在，或注册中心请求失败）", path);
+            return List.of();
+        }
+        return kvs;
+    }
+
     @Override
     public void destroy() {
         if (client == null) {
@@ -214,29 +249,51 @@ public class RegistryRegistrar implements DisposableBean {
         client.shutdown();
     }
 
-    /** 协调器的 role 名 —— 它不是分片节点，key 里不带 shard 段。 */
-    static final String COORDINATOR_ROLE = "coordinator";
-
-    /**
-     * 拼 key。静态以便单测。
-     *
-     * <p>{@code role=coordinator} 时只有 {@code /cloud/coordinator} 一段 —— 协调器没有分片、
-     * 没有副本，硬塞 {@code shard-0/id-0} 这种占位只会让 key 看起来像台分片节点。
-     * 其余角色是 {@code /cloud/{role}/{shard-num}/{shard-id}}。
-     *
-     * <p>判定按 **role 的值**而不是"shard 配置是否为空"：这样即使有人给协调器配了 shard-*，
-     * 它登记出来的 key 也不会变成四段式。
-     */
+    /** 拼 key：{@code /cloud/{role}/{shard-num}/{shard-id}}。静态以便单测。 */
     static String registrationKey(String role, String shardNum, String shardId) {
-        if (COORDINATOR_ROLE.equals(role)) {
-            return "/cloud/" + role;
-        }
         return "/cloud/" + role + "/" + shardNum + "/" + shardId;
     }
 
     /** 登记值：本节点对外地址 {@code {ip}:{port}}。 */
     private String nodeAddress() {
         return ip + ":" + port;
+    }
+
+    // ------------------------------------------------- healthcheck 读取的状态
+
+    /** 是否配了注册中心地址。没配属于正常（本地开发常没有注册中心），不算异常。 */
+    public boolean isRegistryConfigured() {
+        return registryAddress != null && !registryAddress.isBlank();
+    }
+
+    /** 现在是否仍连着注册中心 —— 登记那一刻连上、之后掉线都会反映在这里。 */
+    public boolean isRegistered() {
+        return client != null && client.isConnected();
+    }
+
+    /** 本节点角色。 */
+    public String role() {
+        return role;
+    }
+
+    /** 第几个分片（如 {@code shard-1}）。 */
+    public String shardNum() {
+        return shardNum;
+    }
+
+    /** 该分片的副本编号（如 {@code id-0}）。 */
+    public String shardId() {
+        return shardId;
+    }
+
+    /** 本节点身份 key：{@code /cloud/{role}/{shard-num}/{shard-id}}。 */
+    public String nodeKey() {
+        return registrationKey(role, shardNum, shardId);
+    }
+
+    /** 本节点对外地址，供 health 明细展示。 */
+    public String address() {
+        return nodeAddress();
     }
 
     /**

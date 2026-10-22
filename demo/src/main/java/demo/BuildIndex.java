@@ -37,7 +37,7 @@ public class BuildIndex {
         Files.createDirectories(indexDir);
 
         // IndexConfig 的默认分词器是 nshortest-1（与这里以前写死的 new NShortestPathTokenizer(1) 一致）。
-        // 要按字段配多个 tokenizer 就 setFieldTokenizers(Map<字段名, List<名字>>)，见 cloud-indexer。
+        // 要按字段配多个 tokenizer 就 setFieldTokenizers(Map<字段名, List<名字>>)，见 hawk-cloud。
         // 主键字段名默认 "uniqueID"，与下面 PrimaryKeyField 的名字一致。
         IndexWriter writer = new IndexWriter(new IndexConfig(), MMapDirectory.open(indexDir), false);
 
