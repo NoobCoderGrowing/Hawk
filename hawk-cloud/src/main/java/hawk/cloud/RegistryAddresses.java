@@ -1,4 +1,4 @@
-package hawk.cloud.coordinator;
+package hawk.cloud;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,14 +17,17 @@ import java.util.Map;
  * </pre>
  * 节点表按 key 的数值升序排列，返回顺序即尝试顺序。
  *
- * <p><b>注意：这段逻辑在 cloud-indexer 与 cloud-recall 的 RegistryRegistrar 里各有一份
- * 一模一样的拷贝。</b>三处重复，改一处漏两处的风险是实在的 —— 该抽到一个共享模块里去，
- * 只是还没做（见提交说明）。
+ * <p><b>放在 {@code hawk.cloud} 根包</b>，而不是某个角色包里：协调器的 {@code NodeRegistry}
+ * 与 mcp 角色的 {@code CoordinatorLocator} 都要用它。角色包之间刻意不互相 import
+ * （见 {@code hawk-cloud/pom.xml} 的说明），共享的小工具只能放在两者之上的根包里。
+ *
+ * <p><b>注意：indexer / recall 的 RegistryRegistrar 里还各有一份同样的解析逻辑。</b>
+ * 那两处仍是私有实现，改语法时要同步。
  *
  * <p>这里**不容错外层引号**：值应当直接是 {@code {1:'…'}}，再套一层 {@code "…"} 会让整体
  * 退化成「单节点」分支而解析失败。节点值本身的那对单引号是表语法的一部分，会被去掉。
  */
-final class RegistryAddresses {
+public final class RegistryAddresses {
 
     private static final Logger log = LoggerFactory.getLogger(RegistryAddresses.class);
 
@@ -32,7 +35,7 @@ final class RegistryAddresses {
     }
 
     /** @return 候选节点；一个都解析不出时返回空列表 */
-    static List<InetSocketAddress> parse(String raw) {
+    public static List<InetSocketAddress> parse(String raw) {
         if (raw == null || raw.isBlank()) {
             return List.of();
         }

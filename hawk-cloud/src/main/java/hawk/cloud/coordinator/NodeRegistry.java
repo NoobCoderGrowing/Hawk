@@ -1,5 +1,6 @@
 package hawk.cloud.coordinator;
 
+import hawk.cloud.RegistryAddresses;
 import io.github.noobcodergrowing.jregistryclient.JRegistryClient;
 import io.github.noobcodergrowing.jregistrycore.KV;
 

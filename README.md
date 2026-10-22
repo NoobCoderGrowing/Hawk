@@ -6,7 +6,7 @@ Hawk 是一个**垂直搜索引擎**的检索内核实现：写入端（indexer�
 
 > **单机链路**：`core` / `segment` / `indexer` / `recall` / `demo`
 > **向量链路**：`vector`（依赖 `core`；与 `indexer` 定位一致的单机索引 SDK）
-> **分布式链路**：`hawk-cloud`（**一个 jar**，按 `HAWK_ROLE` 起索引器 / 召回分片 / 协调器）
+> **分布式链路**：`hawk-cloud`（**一个 jar**，按 `HAWK_ROLE` 起索引器 / 召回分片 / 协调器 / MCP 入口）
 
 > 索引文件格式的逐字节说明见 [`INDEX_FORMAT.md`](INDEX_FORMAT.md)。
 >
@@ -28,7 +28,7 @@ hawk (pom)
 ├── recall            召回层：DirectoryReader / Searcher / Query / Similarity / IndexAdmin
 ├── demo              示例与命令行入口：BuildIndex（建索引）、检索、删除文档
 ├── vector            向量索引 SDK：ONNX 文本编码 + HNSW 索引（依赖 core，详见 §3）
-└── hawk-cloud        分布式层：**一个 jar 三个角色**（索引器 / 召回分片 / 协调器），按 HAWK_ROLE 装配
+└── hawk-cloud        分布式层：**一个 jar 四种角色**（索引器 / 召回分片 / 协调器 / MCP 入口），按 HAWK_ROLE 装配
 ```
 
 依赖关系：
@@ -126,10 +126,10 @@ deleted.ids      软删除主键集合
 
 ### 1.7 分布式层（`hawk-cloud`）
 
-上面五个模块都是**单机库**。分布式能力在 `hawk-cloud` 里：它**一个 jar 三个角色**，不是新的索引实现，
+上面五个模块都是**单机库**。分布式能力在 `hawk-cloud` 里：它**一个 jar 四种角色**，不是新的索引实现，
 只是把 `indexer` / `recall` / `vector` 包装成服务并拉起协调。
 
-启动时由 `HAWK_ROLE` 决定装配哪一套（`CloudApplication` + `IndexerRole` / `RecallRole` / `CoordinatorRole`，
+启动时由 `HAWK_ROLE` 决定装配哪一套（`CloudApplication` + `IndexerRole` / `RecallRole` / `CoordinatorRole` / `McpRole`，
 **只扫描当前角色那一个包** —— 否则两个 `POST /search` 会一起注册、启动就失败）：
 
 | `HAWK_ROLE` | 装配的包 | 职责 |
@@ -137,6 +137,7 @@ deleted.ids      软删除主键集合
 | `text-indexer` / `vector-indexer` | `hawk.cloud.indexer` | 建索引服务：`/textIndex`、`/vectorIndex`、`/index/download`，产出后登记到注册中心 |
 | `text-recall` / `vector-recall` | `hawk.cloud.recall` | 召回分片：定时从注册中心发现新轮次，**拉取**索引后本地检索（`/search`、`/vectorSearch`） |
 | `coordinator` | `hawk.cloud.coordinator` | 协调器：派发建索引（`/index/build`）、跟踪轮次收敛、把查询扇出到各分片再**多路融合**（`/search`） |
+| `mcp` | `hawk.cloud.mcp` | MCP 入口：`POST /mcp`（Streamable HTTP），把 `hawk_search` 工具调用转发成一次 `POST /search`；协调器地址**只从注册中心发现**（`/cloud/coordinator`）；**不碰索引与检索逻辑** |
 
 **必须设 `HAWK_ROLE`** —— 它在 `hawk-cloud.yml` 里没有默认值，没设就启动失败（而不是悄悄起成某个角色）。
 端口也统一成 `HAWK_PORT`（默认 8090）。
@@ -452,13 +453,14 @@ Hawk/
 │       ├── model/      ModelDescriptor、TextEncoder、OnnxDevice
 │       ├── stored/     StoredFields / Writer / Reader（原文存储）
 │       └── util/       NpyReader（保留但当前无调用方）
-├── hawk-cloud/         分布式层（一个 jar 三个角色，详见 §1.7）
+├── hawk-cloud/         分布式层（一个 jar 四种角色，详见 §1.7）
 │   ├── src/main/java/hawk/cloud/
-│   │   ├── *.java      启动类 + 三个按角色生效的装配类
+│   │   ├── *.java      启动类 + 四个按角色生效的装配类
 │   │   ├── indexer/    索引器角色
 │   │   ├── recall/     召回分片角色
-│   │   └── coordinator/协调器角色
-│   └── Dockerfile      一个镜像跑三种角色（HAWK_ROLE 区分）
+│   │   ├── coordinator/协调器角色
+│   │   └── mcp/        MCP 入口角色
+│   └── Dockerfile      一个镜像跑四种角色（HAWK_ROLE 区分）
 ├── goods.csv           示例语料（10 万条商品标题）
 ├── model/              模型权重与商品向量（大文件不进 git，见 §2）
 ├── model.tar.gz        上面那个目录的打包（不进 git）

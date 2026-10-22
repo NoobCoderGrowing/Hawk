@@ -1,10 +1,27 @@
-# hawk-cloud 的**唯一**配置 —— 三个角色（indexer / recall / coordinator）共用这一个 jar、这一份文件，
-# 由 hawk.cloud.role 决定启动时装配哪一套（见 CloudApplication 与 IndexerRole / RecallRole / CoordinatorRole）。
+# hawk-cloud 的**唯一**配置 —— 四个角色（indexer / recall / coordinator / mcp）共用这一个 jar、
+# 这一份文件，由 hawk.cloud.role 决定启动时装配哪一套
+# （见 CloudApplication 与 IndexerRole / RecallRole / CoordinatorRole / McpRole）。
 #
-# 三棵配置树按前缀分开（hawk.cloud.indexer.* / .recall.* / .coordinator.*），互不冲突；
+# 各角色配置树按前缀分开（hawk.cloud.indexer.* / .recall.* / .coordinator.* / .mcp.*），互不冲突；
 # 没被选中的角色那棵树不会被任何 @Value 读到。
 server:
-  port: ${HAWK_PORT:8090}          # 三个角色共用一个变量；旧的三组 HAWK_CLOUD_*_PORT 已作废
+  port: ${HAWK_PORT:8090}          # 各角色共用一个变量；旧的三组 HAWK_CLOUD_*_PORT 已作废
+
+spring:
+  ai:
+    mcp:
+      server:
+        # ⚠️ 默认关闭。starter 的自动配置是**全局**的，其余角色的 classpath 上也有它；
+        #    只有 McpEnabledPostProcessor 在 hawk.cloud.role=mcp 时把它置为 true。
+        #    别在这里改成 true —— 那样 indexer / recall / coordinator 会各自多出一个空的 POST /mcp。
+        enabled: false
+        name: hawk-mcp
+        version: 1.0.0
+        # STREAMABLE = Streamable HTTP，单端点 POST /mcp。
+        # （SSE 是已弃用的旧传输；STATELESS 是 MCP 2026-07-28 的方向，等 Java SDK 3.x 再切）
+        protocol: STREAMABLE
+        streamable-http:
+          mcp-endpoint: /mcp
 
 hawk:
   cloud:
@@ -12,6 +29,7 @@ hawk:
     #   text-indexer / vector-indexer → 装配 hawk.cloud.indexer
     #   text-recall  / vector-recall  → 装配 hawk.cloud.recall
     #   coordinator                   → 装配 hawk.cloud.coordinator
+    #   mcp                           → 装配 hawk.cloud.mcp（MCP 入口，转发给 coordinator）
     # 刻意**不给默认值**：没设就启动失败，而不是悄悄起成某个角色、跑起来还没人发现。
     role: ${HAWK_ROLE}
 
@@ -185,6 +203,29 @@ hawk:
       # 重下发次数上限。到顶就写"放弃标记"放行下一轮，并打 ERROR。
       # 没有上限的话，一个永久坏的分片会被每 30 分钟重建一轮，**永远建下去**。
       round-max-attempts: ${HAWK_ROUND_MAX_ATTEMPTS:3}
+
+    # ================================================================ MCP 入口
+    # 它**不是分片**：不登记、不建索引、也不直接读索引。
+    # 只把 JSON-RPC 的 tools/call 转发成一次 POST /search（见 HawkSearchMcpTool / HawkSearchClient）。
+    mcp:
+      # 协调器地址**只从注册中心发现**（没有静态地址配置）。
+      # 协调器会登记到 /cloud/coordinator，value 是 {ip}:{port}（不带 scheme）；
+      # 写法与 indexer / recall 一致。
+      registry-address: ${HAWK_REGISTRY_ADDRESS:{1:'127.0.0.2:6001',2:'127.0.0.2:6002',3:'127.0.0.3:6003'}}
+
+      # 发现轮询间隔（毫秒）。启动时先同步拉一次，之后按这个间隔刷新；
+      # 拉取失败或暂时没有在线协调器时**保留上一轮快照**，不清空。
+      discovery-poll-ms: ${HAWK_MCP_DISCOVERY_POLL_MS:60000}
+
+      connect-timeout-ms: ${HAWK_MCP_CONNECT_TIMEOUT_MS:2000}
+      # 单次检索的等待上限。要 **大于** 协调器的整轮扇出预算
+      # （hawk.cloud.coordinator.search.total-timeout-ms，默认 5000），
+      # 否则协调器还在等分片，MCP 这边已经超时了。
+      read-timeout-ms: ${HAWK_MCP_READ_TIMEOUT_MS:7000}
+      # 工具结果会进**模型上下文**，上限比协调器的 1000 小得多；
+      # 只是给模型的展示上限，不影响协调器 /search 的实际能力。
+      default-limit: ${HAWK_MCP_DEFAULT_LIMIT:10}
+      max-limit: ${HAWK_MCP_MAX_LIMIT:100}
 
 logging:
   level:

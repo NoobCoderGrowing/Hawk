@@ -11,6 +11,21 @@
 
     <artifactId>hawk-cloud</artifactId>
 
+    <dependencyManagement>
+        <dependencies>
+            <!-- MCP server（Spring AI 2.0）。只 import BOM，不在这里覆盖任何版本：
+                 Spring AI 2.0.0 对应 MCP Java SDK 2.0.0 / spec 2025-11-25，
+                 与父 pom 的 Boot 4.1 / Spring 7 是配套的。 -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>2.0.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <!--
         分布式层的**唯一**可执行模块 —— 把原来云端的三个模块（cloud-indexer / cloud-recall /
         cloud-coordinator）合并成一个 jar，靠 hawk.cloud.role 决定启动时装配哪一套：
@@ -18,14 +33,15 @@
             text-indexer / vector-indexer → hawk.cloud.indexer
             text-recall  / vector-recall  → hawk.cloud.recall
             coordinator                   → hawk.cloud.coordinator
+            mcp                           → hawk.cloud.mcp（MCP 入口，转发给 coordinator）
 
         为什么合并：三处部署本来就用**同一个镜像**、只差环境变量，分成三个产物只会让版本漂。
-        为什么保留三个包：它们之间没有任何互相 import，包根也互不重叠；拍平到一个包会让
+        为什么保留各角色包：它们之间没有任何互相 import，包根也互不重叠；拍平到一个包会让
         SearchController / RegistryRegistrar / HealthController 等 8 组同名类撞车。
-        装配由 CloudApplication + IndexerRole / RecallRole / CoordinatorRole 负责，
+        装配由 CloudApplication + IndexerRole / RecallRole / CoordinatorRole / McpRole 负责，
         **只扫描当前角色那一个包** —— 否则两个 POST /search 会一起注册，启动就失败。
 
-        依赖是三者的并集。没被选中的角色不会实例化任何 bean，也不会加载 ONNX / JDBC，
+        依赖是各角色的并集。没被选中的角色不会实例化任何 bean，也不会加载 ONNX / JDBC，
         所以多出来的只是 jar 体积，不是运行成本。
     -->
 
@@ -79,6 +95,15 @@
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
+        </dependency>
+
+        <!-- MCP 入口（HAWK_ROLE=mcp）。Streamable HTTP 单端点 POST /mcp。
+             注意 starter 的自动配置是**全局**的：其余角色的 classpath 上也有它，
+             所以 hawk-cloud.yml 里默认 enabled=false，由 McpEnabledPostProcessor
+             只在 mcp 角色里打开。 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
         </dependency>
 
         <dependency>
