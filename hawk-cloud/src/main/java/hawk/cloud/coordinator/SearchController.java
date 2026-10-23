@@ -18,7 +18,7 @@ import java.util.Map;
 
 /**
  * 对外检索入口：{@code POST /search}。**多路召回 + 归并**。
- * 方案见 {@code CLOUD_RECALL_SEARCH_DESIGN.md}。
+ * 方案见 {@code DESIGN.md §5}。
  *
  * <pre>
  * POST /search

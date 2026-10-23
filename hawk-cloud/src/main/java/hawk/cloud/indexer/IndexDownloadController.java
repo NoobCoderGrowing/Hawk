@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 让召回端把索引拉走：{@code GET /index/download}。方案见 {@code INDEX_PULL_MODEL_DESIGN.md} §3.2。
+ * 让召回端把索引拉走：{@code GET /index/download}。方案见 {@code DESIGN.md} §4.2。
  *
  * <pre>
  * GET /index/download?shard=shard-0&amp;round=11

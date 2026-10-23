@@ -212,7 +212,7 @@ public class IndexMerger {
         DataOutput.writeByte(type, fc);
         DataOutput.writeInt(fieldLengthSum, fc);
         DataOutput.writeInt(docCount, fc);
-        // 格式版本 v3 新增，见 INDEX_FORMAT.md §7。
+        // 格式版本 v3 新增，见 DESIGN.md §6.7。
         // **漏写这里段合并就会把 tokenizer 信息丢掉** —— 合并是逐条读出再重写 fdm，不是字节拷贝。
         DataOutput.writeInt(tokenizers.size(), fc);
         for (String name : tokenizers) {

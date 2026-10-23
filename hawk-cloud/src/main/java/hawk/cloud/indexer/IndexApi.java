@@ -42,7 +42,7 @@ import java.util.Map;
  *   "device": "cpu"                // 可选：仅 /vectorIndex 用
  * }
  * 两个端点**只取自己认识的键，未知键一律忽略** —— 所以同一个 body 发给任一端点都合法，
- * 协调器因此不需要两套 body 构造代码（这条性质也写在 INDEX_BUILD_DISPATCH_DESIGN.md）。
+ * 协调器因此不需要两套 body 构造代码（这条性质也写在 DESIGN.md §3）。
  *
  * 响应（两个端点逐键同形）：
  *   202 {"status":"accepted","role":…,"shardNum":…,"note":…}

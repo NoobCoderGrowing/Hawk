@@ -29,7 +29,7 @@ import java.util.TreeMap;
 
 /**
  * 把「存储字段」（文档原文）落盘 —— 结构照搬文本索引的 {@code .fdt/.fdx/.fdm} 三件套。
- * 方案与取舍见 {@code CLOUD_RECALL_SEARCH_DESIGN.md} 与 {@code VECTOR_STORED_FIELDS_DESIGN.md}。
+ * 方案与取舍见 {@code DESIGN.md} §5.6 与 §7。
  *
  * <h2>三个文件，按**访问模式**切</h2>
  * <pre>

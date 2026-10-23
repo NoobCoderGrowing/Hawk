@@ -108,7 +108,7 @@ hawk:
       # 相对路径以**启动时的工作目录**为基准。完整路径 = {index-dir}/{role}/{shard-num}/{版本名}。
       index-dir: ${HAWK_INDEX_DIR:cloud/recall}
 
-      # ---- 拉取索引（见 IndexPullJob / INDEX_PULL_MODEL_DESIGN.md）----
+      # ---- 拉取索引（见 IndexPullJob / DESIGN.md §4）----
       # 本节点定时扫注册中心，看哪个索引器有**比自己更新**的轮次，有就拉下来装好。
       # 拉取失败只记一条日志、**不设重试上限** —— 定时扫描本身就是无限的幂等重试。
       # 这和协调器那边"重下发必须设上限"是相反的，因为代价不同：这边重试的是一次传输
@@ -166,7 +166,7 @@ hawk:
         timeout-ms: ${HAWK_BUILD_TIMEOUT_MS:5000}
 
       # 注册中心地址，写法与 indexer / recall 一致。
-      # 协调器从这里 listAll 出四类节点（见 roleType.md），每类一个字典：
+      # 协调器从这里 listAll 出四类节点（见 DESIGN.md §1.1），每类一个字典：
       #   cloud/text-indexer    倒排索引器
       #   cloud/vector-indexer  向量索引器
       #   cloud/text-recall     倒排搜索分片

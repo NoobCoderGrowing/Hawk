@@ -21,7 +21,7 @@ import java.util.HexFormat;
 
 /**
  * 从索引器把一个索引包拉下来，并在**解压之前**验完整性。
- * 方案见 {@code INDEX_PULL_MODEL_DESIGN.md} §3.3。
+ * 方案见 {@code DESIGN.md} §4.3。
  *
  * <h2>与"推"模型里那段接收代码的关系</h2>
  * 逻辑原本在"推"模型里的接收端（收 HTTP 请求体），搬到这边变成"拉"模型的下载端：

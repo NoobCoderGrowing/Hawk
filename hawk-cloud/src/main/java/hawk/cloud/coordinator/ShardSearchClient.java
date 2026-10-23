@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 把一次检索扇给**一个 role** 的所有分片，每个分片挑一个副本。
- * 方案见 {@code CLOUD_RECALL_SEARCH_DESIGN.md} §2 / §7。
+ * 方案见 {@code DESIGN.md} §5.2 / §5.8。
  *
  * <h2>职责边界</h2>
  * 本类只做"把请求发出去、把回来的东西收齐"——**不做归并、不做去重、不懂查询语法**。

@@ -10,7 +10,7 @@ import java.nio.file.Path;
 
 /**
  * 读索引目录里的 {@code round} 文件 —— 这一份索引是**第几轮**构建的。
- * 方案见 {@code INDEX_BUILD_DISPATCH_DESIGN.md} §7.3。
+ * 方案见 {@code DESIGN.md} §3.7。
  *
  * <h2>这个文件从哪来</h2>
  * 不是本模块写的，是**索引器**写的：它在 commit 之后把轮次写进索引目录，

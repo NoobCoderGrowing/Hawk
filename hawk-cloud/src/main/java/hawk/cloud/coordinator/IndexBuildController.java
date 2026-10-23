@@ -14,7 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 发起索引构建：{@code POST /index/build}。方案见 {@code INDEX_BUILD_DISPATCH_DESIGN.md} §3。
+ * 发起索引构建：{@code POST /index/build}。方案见 {@code DESIGN.md} §3.6。
  *
  * <pre>
  * POST /index/build

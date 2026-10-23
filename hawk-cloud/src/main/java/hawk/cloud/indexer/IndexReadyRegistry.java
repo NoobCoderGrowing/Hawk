@@ -17,7 +17,7 @@ import java.nio.file.Path;
 import java.util.Comparator;
 
 /**
- * 把「我这儿有第 R 轮的索引」登记到注册中心。方案见 {@code INDEX_PULL_MODEL_DESIGN.md} §3.1。
+ * 把「我这儿有第 R 轮的索引」登记到注册中心。方案见 {@code DESIGN.md} §4.2。
  *
  * <pre>
  *   cloud/index-ready/{indexerRole}/{shardNum}/{shardId}  ->  {"round":11,"version":"v0000000011-2026-10-15-01-01-23"}

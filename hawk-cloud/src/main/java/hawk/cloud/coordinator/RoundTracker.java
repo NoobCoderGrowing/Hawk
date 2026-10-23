@@ -19,7 +19,7 @@ import java.util.concurrent.Executors;
 
 /**
  * 让每一轮索引**收敛**：定时检查每个分片「有没有召回副本建成当前轮次」，没有就重下发。
- * 方案见 {@code INDEX_BUILD_DISPATCH_DESIGN.md} §7。
+ * 方案见 {@code DESIGN.md} §3.8。
  *
  * <h2>它是"状态收敛"（level-triggered），不是"事件驱动"</h2>
  * 判据是「**现在有没有**副本报当前轮次」，不是「有没有收到过通知」。于是下面这些失败模式

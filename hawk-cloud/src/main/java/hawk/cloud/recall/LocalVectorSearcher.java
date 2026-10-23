@@ -16,7 +16,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * 本节点**当前版本**的向量检索器 —— {@link LocalSearcher} 的向量侧对照物。
- * 方案见 {@code CLOUD_RECALL_SEARCH_DESIGN.md} §6（换版那套是一样的）。
+ * 方案见 {@code DESIGN.md} §5.7（换版那套是一样的）。
  *
  * <h2>和文本侧的三处不同</h2>
  * <ol>

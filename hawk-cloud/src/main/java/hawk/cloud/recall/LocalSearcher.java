@@ -20,7 +20,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * 本节点**当前版本**的检索器 —— 开着 reader 的那一层。方案见 {@code CLOUD_RECALL_SEARCH_DESIGN.md} §6。
+ * 本节点**当前版本**的检索器 —— 开着 reader 的那一层。方案见 {@code DESIGN.md} §5.7。
  *
  * <h2>它解决两件事</h2>
  * <ol>

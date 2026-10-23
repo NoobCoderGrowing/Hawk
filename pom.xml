@@ -14,6 +14,7 @@
         <module>recall</module>
         <module>core</module>
         <module>demo</module>
+        <module>cloud-demo</module>
         <module>vector</module>
         <module>hawk-cloud</module>
     </modules>

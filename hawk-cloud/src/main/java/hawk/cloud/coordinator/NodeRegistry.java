@@ -22,7 +22,7 @@ import java.util.Map;
  * 从 JRegistry 拉取四类节点，每类各维护**一个独立的字典**，按固定间隔轮询跟踪变化。
  *
  * <h2>四种 role 与四个字典</h2>
- * 见仓库根目录的 {@code roleType.md}，四类节点都在 {@code cloud} 根路径下各占一棵子树：
+ * 见仓库根目录的 {@code DESIGN.md §1.1}，四类节点都在 {@code cloud} 根路径下各占一棵子树：
  * <pre>
  *   cloud/text-indexer     倒排索引器       → {@link #textIndexers()}
  *   cloud/vector-indexer   向量索引器       → {@link #vectorIndexers()}
@@ -67,7 +67,7 @@ public class NodeRegistry implements DisposableBean {
     /** 节点在注册中心里的根路径（不要带前导斜杠，listAll 返回的 key 就是这个形式）。 */
     private static final String ROOT = "cloud";
 
-    /** 四种节点 role。见 roleType.md —— 这是一组封闭取值，所以写死在代码里而非配置。 */
+    /** 四种节点 role。见 DESIGN.md §1.1 —— 这是一组封闭取值，所以写死在代码里而非配置。 */
     private static final String ROLE_TEXT_INDEXER = "text-indexer";
     private static final String ROLE_VECTOR_INDEXER = "vector-indexer";
     private static final String ROLE_TEXT_RECALL = "text-recall";

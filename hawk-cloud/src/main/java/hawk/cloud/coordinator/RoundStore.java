@@ -12,7 +12,7 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * 索引轮次（{@code round}）的存放处 —— 一个从 0 开始、**全局唯一**的计数器，落在 JRegistry 里。
- * 方案见 {@code INDEX_BUILD_DISPATCH_DESIGN.md} §7.4。
+ * 方案见 {@code DESIGN.md} §3.7。
  *
  * <h2>为什么要放进注册中心</h2>
  * 放内存里会在**协调器重启**时归零，于是所有分片看起来都"没有 round 0" → 整个集群全量重建一遍。

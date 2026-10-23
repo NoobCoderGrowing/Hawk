@@ -14,7 +14,7 @@ import java.util.List;
 
 /**
  * 判「某个 role 的某个分片，有没有索引器副本建成了第 {@code expected} 轮」。
- * 方案见 {@code INDEX_PULL_MODEL_DESIGN.md} §3.4。
+ * 方案见 {@code DESIGN.md} §3.8。
  *
  * <h2>为什么读注册中心，而不是去问召回端</h2>
  * 拉取模型里索引器建完会登记「我这儿有第 R 轮」，那**就是**权威答案。

@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  *   "round": 1                // 可选，协调器带；旁路调用不带
  * }
  * </pre>
- * 见仓库根目录的 {@code textIndex.md}，以及 {@link IndexApi} 里的完整契约。
+ * 见仓库根目录的 {@code DESIGN.md §2}，以及 {@link IndexApi} 里的完整契约。
  *
  * <h2>只接参数，不做索引</h2>
  * 端点只做**校验 + 提交**：真正的建索引在 {@link IndexService#startAsync} 的后台线程里跑，

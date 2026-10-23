@@ -179,7 +179,7 @@ public class MMapDirectoryReader extends DirectoryReader {
                 pos += 4;
                 int docCount = buffer.get(JAVA_INT_BE, pos);
                 pos += 4;
-                // 格式版本 v3 新增：这个字段当初用了哪些 tokenizer（见 INDEX_FORMAT.md §7）。
+                // 格式版本 v3 新增：这个字段当初用了哪些 tokenizer（见 DESIGN.md §6.7）。
                 // 只有被分词的字段才非空 —— 数值字段、只存原文的字段这里是 0。
                 int tokenizerCount = buffer.get(JAVA_INT_BE, pos);
                 pos += 4;

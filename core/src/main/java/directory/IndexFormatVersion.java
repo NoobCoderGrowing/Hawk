@@ -37,7 +37,7 @@ public final class IndexFormatVersion {
     public static final int BKD_V2 = 2;
 
     /**
-     * 第三版：{@code N.fdm} 每条字段记录**末尾追加**一组 tokenizer 名字（见 {@code INDEX_FORMAT.md} §7）。
+     * 第三版：{@code N.fdm} 每条字段记录**末尾追加**一组 tokenizer 名字（见 {@code DESIGN.md} §6.7）。
      *
      * <p>加它的原因：召回时要用**建索引时那组** tokenizer 分词，否则切出来的词在倒排里不存在 ——
      * 不报错，只是静默搜不到。名字落盘后读端就能照用，也能对不上时报出来。

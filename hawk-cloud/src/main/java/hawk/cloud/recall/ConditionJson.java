@@ -10,7 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 把检索请求的 JSON 解成 {@link Condition}。方案见 {@code CLOUD_RECALL_SEARCH_DESIGN.md} §6.2。
+ * 把检索请求的 JSON 解成 {@link Condition}。方案见 {@code DESIGN.md} §5.7.4。
  *
  * <h2>为什么必须手写，不能靠 fastjson</h2>
  * 两条，都是本仓库踩过的坑：

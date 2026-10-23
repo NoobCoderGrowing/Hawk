@@ -10,7 +10,7 @@ import java.nio.file.Path;
 
 /**
  * 索引轮次**随索引走**：在索引目录根下放一个 {@code round} 小文件，内容是轮次的十进制文本。
- * 方案见 {@code INDEX_BUILD_DISPATCH_DESIGN.md} §7.3。
+ * 方案见 {@code DESIGN.md} §3.7。
  *
  * <h2>为什么要落盘，而不是只记在内存里</h2>
  * 协调器的 round tracker 靠"召回副本报的 round 等不等于当前轮次"判断这一轮有没有人建成。

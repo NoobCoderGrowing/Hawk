@@ -26,7 +26,7 @@ import java.util.concurrent.Executors;
 
 /**
  * 定时扫注册中心，发现哪个索引器有比自己更新的索引就拉下来。
- * 方案见 {@code INDEX_PULL_MODEL_DESIGN.md} §3.3。
+ * 方案见 {@code DESIGN.md} §4.3。
  *
  * <pre>
  * 每 pull-interval-ms：

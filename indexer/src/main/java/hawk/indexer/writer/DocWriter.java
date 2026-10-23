@@ -264,7 +264,7 @@ public class DocWriter implements Runnable {
             byte type = fdmList.get(i).getValue().getLeft()[0];
             int fieldLengthSum = fdmList.get(i).getValue().getRight()[0];
             int docCount = fdmList.get(i).getValue().getRight()[1];
-            // 格式版本 v3 新增：这个字段当初用了哪些 tokenizer（见 INDEX_FORMAT.md §7）。
+            // 格式版本 v3 新增：这个字段当初用了哪些 tokenizer（见 DESIGN.md §6.7）。
             //
             // 判据是「**被分词了**」，不是「被索引了」—— 这两件事只对 StringField 重合：
             //   · 数值字段 isIndexed=YES 走的是 BKD 点索引（processIndexedField 的另一个分支），

@@ -11,7 +11,7 @@ import java.util.List;
 
 public class BkdReader {
 
-    /** .bkd 里的 Int/Long 都是 big-endian（见 INDEX_FORMAT §12）。
+    /** .bkd 里的 Int/Long 都是 big-endian（见 DESIGN.md §6.12）。
      *
      *  两个 FFM 坑与 MMapDirectoryReader.JAVA_INT_BE 同因：
      *  1) 字节序——ValueLayout.JAVA_INT/JAVA_LONG 默认用 ByteOrder.nativeOrder()（x86 小端），

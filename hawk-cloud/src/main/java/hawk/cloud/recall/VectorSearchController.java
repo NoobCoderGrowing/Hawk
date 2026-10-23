@@ -21,7 +21,7 @@ import java.util.Set;
 
 /**
  * 分片内的**向量**检索：{@code POST /vectorSearch}。
- * 方案见 {@code CLOUD_RECALL_SEARCH_DESIGN.md}（文本侧的对照物是 {@link SearchController}）。
+ * 方案见 {@code DESIGN.md §5}（文本侧的对照物是 {@link SearchController}）。
  *
  * <pre>
  * POST /vectorSearch

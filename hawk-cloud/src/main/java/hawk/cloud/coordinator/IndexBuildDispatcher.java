@@ -24,7 +24,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 发起索引构建：给每个分片**随机挑一个在线副本**，把请求透传过去。
- * 方案见 {@code INDEX_BUILD_DISPATCH_DESIGN.md} §2。
+ * 方案见 {@code DESIGN.md} §3.2。
  *
  * <h2>它是路由器，不是校验器</h2>
  * 协调器对字段 schema **零知识** —— `fieldList` / `vectorFields` 白名单的唯一权威是索引器的

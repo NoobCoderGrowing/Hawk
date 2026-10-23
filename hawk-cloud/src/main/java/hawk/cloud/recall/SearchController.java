@@ -27,7 +27,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 分片内的检索：{@code POST /search}。方案见 {@code CLOUD_RECALL_SEARCH_DESIGN.md}。
+ * 分片内的检索：{@code POST /search}。方案见 {@code DESIGN.md §5}。
  *
  * <pre>
  * POST /search

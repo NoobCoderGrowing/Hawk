@@ -33,7 +33,7 @@ public abstract class DirectoryReader {
     public abstract HashMap<String, Pair<byte[], Float>> getFDMMap();
 
     /**
-     * 字段名 → 该字段当初用的 **tokenizer 名**（来自 fdm，见 {@code INDEX_FORMAT.md} §7）。
+     * 字段名 → 该字段当初用的 **tokenizer 名**（来自 fdm，见 {@code DESIGN.md} §6.7）。
      *
      * <p>只有**被分词过**的字段才有条目（数值字段、只存原文的字段不在里面）。召回时按这份记录
      * 去解析出分词器实例，保证查询侧和索引侧用**同一组** —— 否则切出来的词在倒排里不存在，

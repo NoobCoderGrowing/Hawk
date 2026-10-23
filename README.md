@@ -8,7 +8,7 @@ Hawk 是一个**垂直搜索引擎**的检索内核实现：写入端（indexer�
 > **向量链路**：`vector`（依赖 `core`；与 `indexer` 定位一致的单机索引 SDK）
 > **分布式链路**：`hawk-cloud`（**一个 jar**，按 `HAWK_ROLE` 起索引器 / 召回分片 / 协调器 / MCP 入口）
 
-> 索引文件格式的逐字节说明见 [`INDEX_FORMAT.md`](INDEX_FORMAT.md)。
+> 索引文件格式的逐字节说明见 [`DESIGN.md`](DESIGN.md)（§6）。
 >
 > 参与开发请联系：wenjun.yao@uqconnect.edu.au
 
@@ -114,7 +114,7 @@ deleted.ids      软删除主键集合
 1.bkd            数值字段 BKD 树（叶子 512 点）
 ```
 
-格式细节（VInt 编码、各文件字段偏移、合并策略、限制）见 [`INDEX_FORMAT.md`](INDEX_FORMAT.md)。
+格式细节（VInt 编码、各文件字段偏移、合并策略、限制）见 [`DESIGN.md`](DESIGN.md)（§6）。
 
 ### 1.6 分词模块
 
@@ -145,11 +145,11 @@ deleted.ids      软删除主键集合
 几条与单机库不同的约定，读代码前先知道：
 
 - **拉取，不是推送。** 索引器只把"最新轮次"登记到注册中心，召回端定时去拉。推送模型（`IndexPusher` / `/repush` / `/indexComplete`）已整套删除。
-- **两个建索引端点（`/textIndex` / `/vectorIndex`）入参与响应逐字同形**，公共信封在 `IndexApi`（`hawk-cloud` 的 `hawk.cloud.indexer` 包）。协调器因此不需要按 role 分支构造 body 或解析响应；路径仍由它按注册中心的 role 选。契约见 `textIndex.md`。
+- **两个建索引端点（`/textIndex` / `/vectorIndex`）入参与响应逐字同形**，公共信封在 `IndexApi`（`hawk-cloud` 的 `hawk.cloud.indexer` 包）。协调器因此不需要按 role 分支构造 body 或解析响应；路径仍由它按注册中心的 role 选。契约见 [`DESIGN.md`](DESIGN.md) §2。
 - **协调器归并用 RRF（倒数排名融合），不是分数相加**，并按业务主键去重。跨 role（BM25 vs 余弦）与跨分片（BM25 用的是本分片的 `df` / `avgDocLength`）的分数都不可比，只能看排名。
 - 因此**多路时 `totalHits` 只是上界**（`totalExact=false`），单路且各分片都精确时才是精确值。
 - 召回的契约是"**本分片前 N**"；索引未就绪的分片返回 **503**（与"没匹配"区分开）。
-- 设计文档见 `INDEX_BUILD_DISPATCH_DESIGN.md`、`INDEX_PULL_MODEL_DESIGN.md`、`CLOUD_RECALL_SEARCH_DESIGN.md`。
+- 设计文档见 [`DESIGN.md`](DESIGN.md) §3–§5。
 
 ---
 
@@ -465,7 +465,7 @@ Hawk/
 ├── model/              模型权重与商品向量（大文件不进 git，见 §2）
 ├── model.tar.gz        上面那个目录的打包（不进 git）
 ├── index-data/         倒排索引（派生，已 gitignore）
-├── INDEX_FORMAT.md     索引文件格式说明
+├── DESIGN.md           设计说明（角色、构建与分发、检索、索引格式）
 └── README.md
 ```
 

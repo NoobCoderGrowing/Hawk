@@ -51,7 +51,7 @@ import java.util.Map;
  *
  * <h2>role 不在这里校验</h2>
  * 本服务同时挂着 {@code /textIndex} 和 {@code /vectorIndex}，**由协调器按注册中心里各节点的
- * role 决定把哪个请求发过来**（见 {@code roleType.md}）。端点自己判断 role 是多余的。
+ * role 决定把哪个请求发过来**（见 {@code DESIGN.md §1.1}）。端点自己判断 role 是多余的。
  */
 @RestController
 public class VectorIndexController {

@@ -12,7 +12,7 @@ import java.util.TreeSet;
 
 /**
  * 把多路（多 role × 多分片）召回的候选**去重 + 融合**成一份有序结果。
- * 方案见 {@code CLOUD_RECALL_SEARCH_DESIGN.md}。
+ * 方案见 {@code DESIGN.md §5}。
  *
  * <h2>去重：按业务主键</h2>
  * 一篇文档可能被**多条路**召回（比如既被文本 BM25 命中、又被向量近邻命中）。

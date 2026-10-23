@@ -47,7 +47,7 @@ public class VectorIndexService {
 
     /**
      * 建完之后登记「我这儿有第 R 轮」—— 召回端定时扫注册中心，看到就来拉。
-     * 见 {@code INDEX_PULL_MODEL_DESIGN.md}。
+     * 见 {@code DESIGN.md §4}。
      */
     private final IndexReadyRegistry readyRegistry;
 
